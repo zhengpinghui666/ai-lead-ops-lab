@@ -28,13 +28,13 @@
     },
     {
       "name": "CAPTCHA_WORKFLOW.md",
-      "sha256": "b5fed6e975ba546b129d15aba42379429900338e21484b3d09c48f94073e25d1",
-      "bytes": 17978
+      "sha256": "57c389097d1a2e73330fa5490316de167f08ec8ff9bcc2b6dd8b8af76091949d",
+      "bytes": 20134
     },
     {
       "name": "COLLECTION_FRESHNESS.md",
-      "sha256": "426c8349ba5e26384301a34d9a8d498c11488615dd1f6069a1eeb685d0b1965a",
-      "bytes": 8967
+      "sha256": "b45f3543e32b9687c3cdbdc8b25a9c6523ece670fafe7c7b2734768296ce3f0d",
+      "bytes": 10185
     },
     {
       "name": "COLLECTION_HTTP.md",
@@ -43,8 +43,8 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "a3294cc67a8e8b4815eed7da0430da6403e93c13a9b6a351c046d90f345076ec",
-      "bytes": 33670
+      "sha256": "3a4e488d006d86eed2e88cf6496b41d41b8c7e277682f942bfef6749718e62e9",
+      "bytes": 35825
     },
     {
       "name": "EXTERNAL_ACCESS.md",
@@ -58,8 +58,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "c9c396d225b3e325b2eafe77499c22f92546bd0fa05c3a9f2a9e20456fad8f31",
-      "bytes": 77269
+      "sha256": "96b6e1da01768a08523dc0c204c517eec927efdf42ad661eb31731eb964b9dfa",
+      "bytes": 79425
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -178,8 +178,8 @@
     },
     {
       "name": "captcha_learning.cjs",
-      "sha256": "5e2e195f670d18a2ef5929cf8e20f95526bb41e826f115268893d99f994472c3",
-      "bytes": 13817
+      "sha256": "d9acfaa3e0295acd45c88e4035456370f2c9fadfd846fb97af8ca6b1ce0d695a",
+      "bytes": 13861
     },
     {
       "name": "captcha_point.py",
@@ -268,8 +268,8 @@
     },
     {
       "name": "collector_runner.cjs",
-      "sha256": "f15f523e54807c713c4141681eabbd8c6fb97c5f33809f4085507c5f2ecaeba1",
-      "bytes": 8177
+      "sha256": "3afbf7a3ffe1fa3993f7c2ea9dc7b81dcb51d9d343595df12d0f9c7a5e003fff",
+      "bytes": 8236
     },
     {
       "name": "collector_verification.cjs",
@@ -1083,18 +1083,18 @@
     },
     {
       "name": "tests/fixtures/playwright_fixture.cjs",
-      "sha256": "81ed3a6eb072a7d8e806c92f58011c561caaa764e349ff9f689bc505afce12a7",
-      "bytes": 4940
+      "sha256": "c087aca6a414f3b1712c713e588b38777e7dd6bfa061019eb66a0357b08f30e3",
+      "bytes": 5129
     },
     {
       "name": "tests/fixtures/playwright_parallel_fixture.cjs",
-      "sha256": "c697ebb7aeef8cf01012c577d442aba0e9f6d3b3e968852544b415e50f756b4a",
-      "bytes": 3727
+      "sha256": "ad99d688232725f2d28e04365b3520551b362eb2e0dda4d44ab5ad44f8e146eb",
+      "bytes": 3906
     },
     {
       "name": "tests/fixtures/playwright_verification_fixture.cjs",
-      "sha256": "0c2e4b143a9b2ec94a85606e691bb0e4b60c5a94a1fa15a5a5f2ad3a33d2e666",
-      "bytes": 5266
+      "sha256": "f271ae59df9384bcb9cac823516a0a547a7ea414208cf8a9e8d169bf771d4b5a",
+      "bytes": 5430
     },
     {
       "name": "uid_bootstrap.py",

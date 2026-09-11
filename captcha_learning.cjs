@@ -76,7 +76,7 @@ const atom=value=>typeof value==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(value)?
 let sourceVersion;
 async function version(){
   if(!sourceVersion){
-    const names=['captcha_engine.py','captcha_point.py','captcha_slider.py','captcha_browser.cjs','captcha_point_browser.cjs','collector_verification.cjs','captcha_verdict.cjs','captcha_learning.cjs','requirements-captcha.txt'];
+    const names=['captcha_engine.py','captcha_point.py','captcha_slider.py','captcha_browser.cjs','captcha_point_browser.cjs','collector_runner.cjs','browser_config.cjs','collector_verification.cjs','captcha_verdict.cjs','captcha_learning.cjs','requirements-captcha.txt'];
     const files={};for(const name of names)files[name]=hash(await fs.readFile(path.join(__dirname,name)));
     sourceVersion={files,digest:hash(JSON.stringify(files))};
   }

@@ -49,4 +49,4 @@ class Page extends EventEmitter{
   locator(selector){const self=this;return {innerText:async()=>self.challenge()?'请完成安全验证':'合成公开评论',count:async()=>0,evaluateAll:async()=>[],isVisible:async()=>false,hover:async()=>{},first(){return this;},click:async()=>{}};}
   getByRole(){return this.locator('button');}
 }
-module.exports={chromium:{launchPersistentContext:async()=>{ctx=new Context();return ctx;}}};
+module.exports={devices:{'Desktop Chrome':{userAgent:'fixture Desktop Chrome'}},chromium:{launchPersistentContext:async(profile,options)=>{if(options.userAgent!=='fixture Desktop Chrome')throw Error('Desktop client configuration missing');ctx=new Context();return ctx;}}};

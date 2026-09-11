@@ -70,4 +70,4 @@ class Page extends EventEmitter{
   }
   getByRole(){return this.locator('button');}
 }
-module.exports={chromium:{launchPersistentContext:async(profile,options)=>{trace(options.headless?'headless-browser':'visible-browser');return new Context();}}};
+module.exports={devices:{'Desktop Chrome':{userAgent:'fixture Desktop Chrome'}},chromium:{launchPersistentContext:async(profile,options)=>{if(options.userAgent!=='fixture Desktop Chrome')throw Error('Desktop client configuration missing');trace(options.headless?'headless-browser':'visible-browser');return new Context();}}};
