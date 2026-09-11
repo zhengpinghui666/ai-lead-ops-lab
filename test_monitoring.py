@@ -119,6 +119,51 @@ class MonitorTests(unittest.TestCase):
         self.assertIsNone(self.at('2026-09-09T10:00:59+00:00'))
         self.assertIsNotNone(self.at('2026-09-09T10:01:00+00:00'))
 
+    def incomplete_page(self, task):
+        col.checkpoint(task,{'type':'targets','records':[{'video_id':VIDEO}]})
+        self.video(task);self.comment(task)
+        col.checkpoint(task,{'type':'checkpoint','video_id':VIDEO,'status':'partial','detail':'取得部分评论，但页面未能继续加载'})
+        self.finish(task,'partial')
+
+    def test_incomplete_pages_retry_with_backoff_and_preserve_partial_history(self):
+        self.baseline();mon.command('start');task=sch.tick(NOW)
+        history=[]
+        for delay in (60,120,240):
+            history.append(task);self.incomplete_page(task);finished=app.now();sch.tick()
+            due=(datetime.fromisoformat(finished)+timedelta(seconds=delay)).isoformat()
+            self.assertEqual(mon.state()['next_run_at'],due)
+            self.assertTrue(mon.state()['enabled'])
+            self.assertIn('部分评论',mon.state()['detail'])
+            self.assertIsNone(self.at((datetime.fromisoformat(due)-timedelta(seconds=1)).isoformat()))
+            task=self.at(due)
+        self.incomplete_page(task);sch.tick();self.assertFalse(mon.state()['enabled'])
+        with app.db() as c:
+            self.assertTrue(all(c.execute('SELECT status FROM collection_tasks WHERE id=?',(t,)).fetchone()[0]=='partial' for t in history))
+
+    def test_incomplete_page_retry_rejects_parser_gates_and_unread_targets(self):
+        task=self.task();self.incomplete_page(task)
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            self.assertEqual(sch.transient_batch_wait(c,row),0)
+            self.assertIsNone(sch.transient_batch_wait(c,{**dict(row),'skipped':2}))
+            for stage,snapshot in [('needs_verification',{}),('finished-error',{'responses':[{'status':403}]}),
+                    ('finished-error',{'responses':[{'body_error':'invalid_json','status':200}]}),
+                    ('finished-error',{'navigation_error':'navigation_timeout'})]:
+                c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(task,stage,json.dumps(snapshot),NOW))
+                self.assertIsNone(sch.transient_batch_wait(c,row))
+                c.execute('DELETE FROM collection_diagnostics WHERE task_id=?',(task,))
+            for status,detail in [('reading',''),('partial','1 次响应解析失败'),('done','已读完本批预算')]:
+                c.execute('UPDATE collection_checkpoints SET status=?,detail=? WHERE task_id=?',(status,detail,task))
+                self.assertIsNone(sch.transient_batch_wait(c,row))
+
+    def test_restart_and_explicit_stop_do_not_auto_resume_incomplete_page(self):
+        self.baseline();mon.command('start');task=sch.tick(NOW)
+        self.incomplete_page(task);sch.tick();mon.command('stop')
+        self.assertIsNone(self.at('2026-09-09T11:00:00+00:00'))
+        mon.command('start');self.assertTrue(mon.state()['enabled'])
+        sch.recover();self.assertFalse(mon.state()['enabled'])
+        self.assertIsNone(self.at('2026-09-09T12:00:00+00:00'))
+
     def test_timeout_recovery_rejects_ambiguous_or_gated_evidence(self):
         task=self.task();self.finish(task,'network_error')
         base={'navigation_error':'navigation_timeout','navigation_http_status':None,

@@ -48,11 +48,40 @@ def transient_http_wait(connection, task):
         return None
 
 
+def transient_batch_wait(connection, task):
+    """Keep ordinary incomplete page reads distinct from parser/auth failures."""
+    if not task or task['status'] != 'partial':
+        return transient_http_wait(connection, task)
+    if task['transport'] != 'local_browser' or not task['finished_at'] or task['skipped']:
+        return None
+    observed = sum(task[k] for k in ('comments','filtered_old','filtered_unknown','filtered_future','filtered_keyword','filtered_blocked'))
+    if observed <= 0:
+        return None
+    checkpoints = connection.execute('SELECT status,detail FROM collection_checkpoints WHERE task_id=?', (task['id'],)).fetchall()
+    partial = [row for row in checkpoints if row['status'] == 'partial']
+    if (not partial or any(row['status'] not in ('done','unavailable','partial') for row in checkpoints)
+            or any(row['detail'] != '取得部分评论，但页面未能继续加载' for row in partial)):
+        return None
+    try:
+        for row in connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=?', (task['id'],)):
+            if row['stage'].startswith(('captcha', 'needs_')):
+                return None
+            snapshot = json.loads(row['snapshot'])
+            if snapshot.get('navigation_error') or snapshot.get('navigation_http_status') not in (None,200):
+                return None
+            for response in snapshot.get('responses', []):
+                if response.get('body_error') or response.get('status') not in (None,200):
+                    return None
+        return 0
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 def transient_retry_seconds(connection, plan, task):
     """At most three retries (60/120/240s) within one monitor activation."""
     if not plan['continuous'] or plan['status'] != 'running' or not plan['activated_at']:
         return 0
-    requested = transient_http_wait(connection, task)
+    requested = transient_batch_wait(connection, task)
     if requested is None:
         return 0
     rows = connection.execute('''SELECT * FROM collection_tasks WHERE request_id LIKE ? AND id<=?
@@ -63,7 +92,7 @@ def transient_retry_seconds(connection, plan, task):
     failures = 0
     for row in rows:
         if ((row['kind'], row['target'], row['transport']) != (plan['kind'], plan['target'], plan['transport'])
-                or transient_http_wait(connection, row) is None):
+                or transient_batch_wait(connection, row) is None):
             break
         failures += 1
     return max(60 * 2**(failures-1), requested, plan['interval_seconds']) if 1 <= failures <= 3 else 0
@@ -187,7 +216,7 @@ def command(plan_id, action, mode='live', *, allow_monitor=False):
             if retry:
                 healthy = bool(c.execute("SELECT 1 FROM collection_tasks WHERE transport=? AND status='completed' AND comments+filtered_old+filtered_unknown+filtered_future+filtered_keyword+filtered_blocked>0 LIMIT 1",(row['transport'],)).fetchone())
             if row['continuous'] and latest and (row['kind'],row['target'])==(latest['kind'],latest['target']):
-                upstream = transient_http_wait(c, latest)
+                upstream = transient_batch_wait(c, latest)
                 if upstream is not None:
                     healthy = bool(c.execute("""SELECT 1 FROM collection_tasks WHERE transport=? AND kind=? AND target=?
                         AND status='completed' AND comments+filtered_old+filtered_unknown+filtered_future+filtered_keyword+filtered_blocked>0 LIMIT 1""",
@@ -201,6 +230,8 @@ def command(plan_id, action, mode='live', *, allow_monitor=False):
             detail = '监控已开启；按批检查滚动时间范围，直到关闭或遇到需要处理的状态' if row['continuous'] else '已启用有限调度；空闲时按优先级执行，遇到验证或失败暂停'
             if retry and latest['status'] == 'network_error':
                 detail = f'监控已开启；上次页面或接口暂不可用，等待至 {due} 后检查原目标，后续最多连续自动重试 3 次。'
+            elif retry and latest['status'] == 'partial':
+                detail = f'监控已开启；上批评论未完全加载，保留部分结果与断点，等待至 {due} 后检查原目标；最多连续自动检查 3 次。'
         else:
             status, due = 'paused', None
             detail = '监控已关闭；已阻止后续批次，保留已有数据' if row['continuous'] else '已暂停后续批次；如需结束当前浏览器任务，请使用任务的停止按钮'
@@ -281,7 +312,8 @@ def tick(instant=None):
                     retry = transient_retry_seconds(c, p, task)
                     if retry:
                         due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=retry)).astimezone(timezone.utc).isoformat(timespec='seconds')
-                        detail=f'页面或接口暂不可用；等待 {retry} 秒后在后台重试原监控目标，最多连续自动重试 3 次。可随时关闭监控。'
+                        reason='部分评论未能继续加载，保留部分结果与断点' if task['status']=='partial' else '页面或接口暂不可用'
+                        detail=f'{reason}；等待 {retry} 秒后在后台重试原监控目标，最多连续自动重试 3 次。可随时关闭监控。'
                     else:
                         new_status, detail = 'attention', f'上批结果 {task["status"]}：{task["detail"]}；计划停止自动执行'
                 elif not p['continuous'] and p['run_count'] >= p['run_limit']:

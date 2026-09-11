@@ -43,8 +43,8 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "4e062a65e337dc03e9e4f6acbd5f2ba0cc004100a30ae5b5752a318e1b08276a",
-      "bytes": 45811
+      "sha256": "e149724d1c6c459f0f40cd22321a6070edcebdacbfa5c0b22172324931022491",
+      "bytes": 47512
     },
     {
       "name": "EXTERNAL_ACCESS.md",
@@ -58,8 +58,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "6b2b50830481e5de270651c62e66ed84389656ca6c08622150cbd64f5e759e74",
-      "bytes": 87227
+      "sha256": "06cda1ed38ca62a87a52a876cdcad1c4e30d52092e34631862771a572ff0a702",
+      "bytes": 88928
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -108,8 +108,8 @@
     },
     {
       "name": "MONITOR_CENTER.md",
-      "sha256": "a7aa9c346003e1fda54fdbf89e3aac219563766b86a1cd939360c55fe3eed27b",
-      "bytes": 7599
+      "sha256": "6b06fe4d610fa53ce7cce83eef40d514ced290959b2d8321dcff2a08517ea75e",
+      "bytes": 9304
     },
     {
       "name": "PORTABILITY.md",
@@ -233,8 +233,8 @@
     },
     {
       "name": "collection_scheduler.py",
-      "sha256": "746792ffc1f77097154ccdde820d8c57c4d1646675ebb9a3a17a4ab9be580f51",
-      "bytes": 23246
+      "sha256": "f3a41a517c3fcc7ea34a5e11d1ffad429b578dd424254ab9a3adb73914123749",
+      "bytes": 25265
     },
     {
       "name": "collector.py",
@@ -958,8 +958,8 @@
     },
     {
       "name": "test_monitoring.py",
-      "sha256": "6cce104c79b8d3a344d76dfeda888cb1bb3ce70b9387ffcd587e4dd58993bbd8",
-      "bytes": 37514
+      "sha256": "43a29612d19da93f3050e1ed17239475bfef9be9abb2a4686ebde9ed2e189664",
+      "bytes": 40589
     },
     {
       "name": "test_parallel_worker.cjs",
