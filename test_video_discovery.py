@@ -189,12 +189,79 @@ class DiscoveryTests(unittest.TestCase):
     def test_wrong_identity_and_unknown_payload_are_never_candidates(self):
         for operation,payload in [('detail',{'status_code':0,'aweme_detail':item('123456')}),
                 ('author',{'status_code':0,'aweme_list':[item(author={'sec_uid':'ANOTHER_AUTHOR'})],'has_more':0}),
-                ('related',{'status_code':0,'data':[]}),('author',{'status_code':0,'aweme_list':[],'has_more':1,'max_cursor':1})]:
+                ('related',{'status_code':0,'data':[]}),('author',{'status_code':0,'aweme_list':[],'has_more':1,'max_cursor':0})]:
             with self.subTest(operation=operation),self.assertRaises(http.ReadError):
                 discovery.parse_discovery(payload,operation,video=VIDEO,sec_uid=AUTHOR)
         unknown=discovery.parse_discovery({'status_code':0,'aweme_detail':item(create_time=None,statistics={})},'detail',video=VIDEO)
         self.assertIsNone(unknown['rows'][0]['published_at'])
         self.assertIsNone(unknown['rows'][0]['comment_count'])
+
+    def test_author_empty_middle_page_continues_and_retains_both_sides(self):
+        calls, diagnostics = [], []
+        def exchange(url, headers, cancelled):
+            parsed=urlsplit(url);query=parse_qs(parsed.query)
+            if parsed.path==sessions.READ_PATHS['detail']:
+                calls.append('detail')
+                payload={'status_code':0,'aweme_detail':item()}
+            else:
+                cursor=int(query['max_cursor'][0]);calls.append(cursor)
+                payload={0:dict(aweme_list=[item()],has_more=1,max_cursor=200),
+                    200:dict(aweme_list=[],has_more=1,max_cursor=100),
+                    100:dict(aweme_list=[item(PARENT)],has_more=0,max_cursor=0)}[cursor]
+                payload.update(status_code=0,private_token='SECRET_VALUE',status_msg='PRIVATE_MESSAGE')
+            return 200,'application/json',json.dumps(payload).encode()
+        client=http.Client(session(),signer=FakeSigner(),transport=exchange,diagnostic=diagnostics.append)
+        result=discovery.discover(client,[VIDEO],author_pages=3,include_related=False)
+        self.assertEqual(result['status'],'completed')
+        self.assertEqual(calls,['detail',0,200,100])
+        self.assertEqual({r['video_id'] for r in result['candidates']},{VIDEO,PARENT})
+        middle=diagnostics[2]
+        self.assertTrue(middle['has_more'])
+        self.assertEqual((middle['rows'],middle['next_cursor']),(0,100))
+        self.assertEqual(middle['page_visibility']['state'],'empty_page_with_more')
+        self.assertEqual(middle['response_shape']['item_count'],0)
+        for secret in ('SECRET_VALUE','private_token','PRIVATE_MESSAGE',AUTHOR):
+            self.assertNotIn(secret,json.dumps(diagnostics))
+
+    def test_author_empty_pages_consume_budget(self):
+        calls=[]
+        def exchange(url, headers, cancelled):
+            parsed=urlsplit(url);calls.append(parsed.path)
+            payload={'status_code':0,'aweme_detail':item()} if parsed.path==sessions.READ_PATHS['detail'] else {
+                'status_code':0,'aweme_list':[],'has_more':1,'max_cursor':1000-len(calls)*100}
+            return 200,'application/json',json.dumps(payload).encode()
+        client=http.Client(session(),signer=FakeSigner(),transport=exchange)
+        result=discovery.discover(client,[VIDEO],author_pages=3,include_related=False)
+        self.assertEqual(len(calls),4)  # One detail and the original three-page budget.
+        self.assertEqual(result['candidates'],[])
+        self.assertFalse(result['all_douyin'])
+
+    def test_empty_author_page_does_not_relax_invalid_envelopes_or_cursor_progress(self):
+        base={'status_code':0,'aweme_list':[],'has_more':1,'max_cursor':100}
+        for change in ({'max_cursor':200},{'max_cursor':300},{'max_cursor':0},{'max_cursor':-1},
+                       {'max_cursor':True},{'max_cursor':'100'},{'has_more':True},{'aweme_list':None},
+                       {'aweme_list':{}},{'status_code':True},{'status_code':4},{'verify_type':1}):
+            with self.subTest(change=change), self.assertRaises(http.ReadError):
+                discovery.parse_discovery({**base,**change},'author',sec_uid=AUTHOR,requested_cursor=200)
+        with self.assertRaises(http.ReadError):
+            discovery.parse_discovery({k:v for k,v in base.items() if k!='aweme_list'},'author',requested_cursor=200)
+        # Other endpoints retain their own empty-with-more rejection.
+        with self.assertRaises(http.ReadError):discovery.parse_discovery(base,'related')
+        with self.assertRaises(http.ReadError):http.parse_page({'status_code':0,'comments':[],'has_more':1,'cursor':100},'comments',VIDEO)
+
+    def test_author_nonadvancing_cursor_stops_after_preserving_first_page(self):
+        calls=[];diagnostics=[]
+        def exchange(url, headers, cancelled):
+            parsed=urlsplit(url);calls.append(parsed.path)
+            payload={'status_code':0,'aweme_detail':item()} if len(calls)==1 else {
+                'status_code':0,'aweme_list':[item()] if len(calls)==2 else [],'has_more':1,'max_cursor':200}
+            return 200,'application/json',json.dumps(payload).encode()
+        client=http.Client(session(),signer=FakeSigner(),transport=exchange,diagnostic=diagnostics.append)
+        result=discovery.discover(client,[VIDEO],author_pages=3,include_related=False)
+        self.assertEqual(result['status'],'partial')
+        self.assertEqual(len(calls),3)
+        self.assertEqual(len(result['candidates']),1)
+        self.assertEqual(diagnostics[-1]['reason'],'non_advancing_author_cursor')
 
     def test_dedup_retains_multiple_sources_and_bounds_pages(self):
         calls=[]

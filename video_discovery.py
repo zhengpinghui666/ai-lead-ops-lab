@@ -37,27 +37,52 @@ def video_row(item):
             'metrics': video_metadata.extract(item)}
 
 
-def parse_discovery(body, operation, *, video='', sec_uid=''):
+def discovery_shape(body):
+    """Whitelist structure and paging evidence; no content or identity fields."""
+    result = {'version': 'http-discovery-shape-v1', 'body_type': type(body).__name__}
     if not isinstance(body, dict):
-        raise ReadError('schema_changed')
+        return result
+    for key in ('status_code', 'has_more', 'max_cursor', 'aweme_list', 'aweme_detail'):
+        value = body.get(key)
+        result[key + '_type'] = type(value).__name__ if key in body else 'missing'
+        if type(value) is int and -(2**63) <= value < 2**63:
+            result[key] = value
+    result['verification_indicated'] = bool(body.get('verify_type') or body.get('verify_data'))
+    if isinstance(body.get('aweme_list'), list):
+        result['item_count'] = len(body['aweme_list'])
+    return result
+
+
+def parse_discovery(body, operation, *, video='', sec_uid='', requested_cursor=0):
+    if not isinstance(body, dict):
+        raise ReadError('schema_changed', {'reason': 'invalid_discovery_body'})
     if body.get('verify_type') or body.get('verify_data'):
         raise ReadError('needs_verification')
     if type(body.get('status_code')) is not int:
-        raise ReadError('schema_changed')
+        raise ReadError('schema_changed', {'reason': 'invalid_status_code'})
     if body['status_code']:
         raise ReadError('upstream_rejected', {'business_code': body['status_code']})
     if operation == 'detail':
         row = video_row(body.get('aweme_detail'))
         if row is None or row['video_id'] != video:
-            raise ReadError('schema_changed')
+            raise ReadError('schema_changed', {'reason': 'invalid_video_detail'})
         rows, skipped, more, cursor = [row], 0, 0, 0
     elif operation in ('author', 'related'):
         items = body.get('aweme_list')
         more = body.get('has_more', 0 if operation == 'related' else None)
         cursor = body.get('max_cursor', 0 if operation == 'related' or more == 0 else None)
-        if (not isinstance(items, list) or len(items) > 1000 or type(more) is not int or more not in (0, 1)
-                or type(cursor) is not int or not 0 <= cursor < 2**63 or not items and more):
-            raise ReadError('schema_changed')
+        if not isinstance(items, list) or len(items) > 1000:
+            raise ReadError('schema_changed', {'reason': 'invalid_discovery_container'})
+        if type(more) is not int or more not in (0, 1):
+            raise ReadError('schema_changed', {'reason': 'invalid_has_more'})
+        if type(cursor) is not int or not 0 <= cursor < 2**63:
+            raise ReadError('schema_changed', {'reason': 'invalid_cursor'})
+        # Author max_cursor walks backwards through time. A valid empty page
+        # can still have a next page; consume a page budget and keep paging.
+        if operation == 'author' and more and (cursor == 0 or requested_cursor > 0 and cursor >= requested_cursor):
+            raise ReadError('schema_changed', {'reason': 'non_advancing_author_cursor'})
+        if operation != 'author' and not items and more:
+            raise ReadError('schema_changed', {'reason': 'empty_page_with_more'})
         rows, seen, skipped = [], set(), 0
         for item in items:
             row = video_row(item)
@@ -68,11 +93,14 @@ def parse_discovery(body, operation, *, video='', sec_uid=''):
                 seen.add(row['video_id'])
                 rows.append(row)
         if items and not rows:
-            raise ReadError('schema_changed')
+            raise ReadError('schema_changed', {'reason': 'invalid_discovery_records'})
     else:
         raise ValueError('发现入口无效')
-    return {'rows': rows, 'cursor': cursor, 'has_more': bool(more), 'skipped': skipped,
+    result = {'rows': rows, 'cursor': cursor, 'has_more': bool(more), 'skipped': skipped,
             'skipped_reasons': {'invalid_record': skipped}, 'reply_targets': [], 'search_id': ''}
+    if operation == 'author' and not rows and more:
+        result['page_visibility'] = {'state': 'empty_page_with_more', 'returned_rows': 0}
+    return result
 
 
 def discover(client, seeds, *, author_pages=1, page_size=10, include_related=True):

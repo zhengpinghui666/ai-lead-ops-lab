@@ -63,10 +63,10 @@ const result=(video,page=1)=>({rows:[{text:video,video_url:video}],counts:{obser
  run("monitorHistory=null;monitorHistoryKey='';monitorHistoryCache.clear();monitorHistoryCounts.clear()");
  html=run('monitorResultsPanel()');assert.match(html,/aria-busy="true"/);assert.doesNotMatch(html,/暂无/);
  run(`S={collector:{board:{rows:['reading','queued','monitoring','attention','paused','history'].map((state,i)=>({id:i+1,state,continuous_monitoring:state==='monitoring',title:state,external_id:String(i),url:String(i)}))}}};workFilter='all';`);
- html=run('workPool()');assert.match(html,/全部作品 6/);assert.match(html,/跟踪中 3/);assert.match(html,/未跟踪 3/);
- run("workFilter='untracked'");html=run('workPool()');
+ html=run('workPool()');assert.match(html,/全部作品 6/);assert.match(html,/跟踪中 3/);
  for(const state of ['监控待处理','监控已暂停','未纳入持续监控'])assert.ok(html.includes(state));
- assert.doesNotMatch(html,/work-item-title[^>]*>reading|work-item-title[^>]*>queued/);
+ run("workFilter='tracked'");html=run('workPool()');
+ assert.doesNotMatch(html,/work-item-title[^>]*>attention|work-item-title[^>]*>paused|work-item-title[^>]*>history/);
  const explained={text:'找陪练 <img src=x>',analysis_method:'model',analysis_state:'model',analysis_reason:'有明确需求 <script>alert(1)</script>',analysis_evidence:[{kind:'category',source:'comment',text:'找陪练 <img src=x>'},{kind:'game',source:'video',text:'仅标题依据'},{kind:'category',source:'comment',text:'不在原文'}]};
  context.explained=explained;
  html=run('analysisReason(explained)');

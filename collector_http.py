@@ -410,14 +410,17 @@ class Client:
                     if re.fullmatch(r'[a-zA-Z0-9_]{1,80}', reason):
                         evidence['search_nil_type'] = reason
             if operation in ('detail', 'author', 'related'):
-                from video_discovery import parse_discovery
-                result = parse_discovery(body, operation, video=video, sec_uid=sec_uid)
+                from video_discovery import parse_discovery, discovery_shape
+                evidence['response_shape'] = discovery_shape(body)
+                result = parse_discovery(body, operation, video=video, sec_uid=sec_uid, requested_cursor=cursor)
             else:
                 result = parse_page(body, operation, video, parent, title)
             evidence.update(status='valid_page', rows=len(result['rows']), skipped=result['skipped'],
                             skipped_reasons=result['skipped_reasons'],has_more=result['has_more'],next_cursor=result['cursor'])
             if result.get('reply_visibility'):
                 evidence['reply_visibility'] = result['reply_visibility']
+            if result.get('page_visibility'):
+                evidence['page_visibility'] = result['page_visibility']
             if self.real_transport:
                 sessions.record_endpoint_status(self.session, operation, 'valid_page')
             return result
