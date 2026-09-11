@@ -1,5 +1,6 @@
 """Read-only work-level view of actual plans, checkpoints and observed comments."""
 from datetime import datetime, timedelta
+import json
 
 import clubops as app
 import video_metadata
@@ -38,25 +39,42 @@ def build(tasks, plans, mode='live'):
         pending = {r['video_id']:r['n'] for r in c.execute("""SELECT x.video_id,COUNT(*) AS n
             FROM semantic_jobs j JOIN comments x ON x.id=j.record_id WHERE j.evidence_type='comment'
             AND j.status IN ('queued','running','cancelling') GROUP BY x.video_id""")}
+        # Fixed query count as the durable library grows; never one lookup per work.
+        metrics={r['video_id']:{**json.loads(r['payload_json']),'updated_at':r['updated_at']} for r in c.execute('SELECT * FROM video_metadata')}
+        latest_by_video={r['video_id']:r for r in c.execute('''WITH ranked AS (
+            SELECT k.*,t.status AS task_status,t.finished_at,t.transport,
+            ROW_NUMBER() OVER(PARTITION BY k.video_id ORDER BY k.task_id DESC) AS rank
+            FROM collection_checkpoints k JOIN collection_tasks t ON t.id=k.task_id)
+            SELECT * FROM ranked WHERE rank=1''')}
+        observed_by_batch={(r['task_id'],r['page_url']):r for r in c.execute('''SELECT task_id,page_url,COUNT(*) AS n,
+            SUM(ingest_disposition='inserted') AS inserted FROM collection_observations
+            WHERE kind='comment' GROUP BY task_id,page_url''')}
+        current_by_video={k['video_id']:(t,k) for t in active.values() for k in t.get('checkpoints',[]) if k['status']!='done'}
+        import discovery_tracking
+        cfg=discovery_tracking.config(c)
+        pipeline=cfg['enabled'] and any(p['continuous'] and p['status']=='running' for p in plans)
+        catalog={r['video_id']:dict(r) for r in c.execute('''SELECT w.*,a.nickname AS author_name,a.enabled AS author_enabled,
+            a.priority AS author_priority FROM discovery_works w LEFT JOIN discovery_authors a ON a.sec_uid=w.author_sec_uid''')}
         for row in rows:
-            row['metrics'] = video_metadata.project(c,row['id']) if row['id'] else None
+            row['metrics'] = metrics.get(row['id'])
             vid = row['external_id']
             bound = memberships.get(vid,[])
             enabled = [p for p in bound if p['status']=='running']
-            latest = c.execute("""SELECT k.*,t.status AS task_status,t.finished_at,t.transport
-                FROM collection_checkpoints k JOIN collection_tasks t ON t.id=k.task_id
-                WHERE k.video_id=? ORDER BY k.task_id DESC LIMIT 1""",(vid,)).fetchone()
-            current = next(((t,k) for t in active.values() for k in t.get('checkpoints',[])
-                if k['video_id']==vid and k['status']!='done'),None)
+            latest = latest_by_video.get(vid)
+            current = current_by_video.get(vid)
+            asset=catalog.get(vid,{})
+            auto=bool(pipeline and asset.get('relevant') and asset.get('enabled') and row['enabled'] and asset.get('author_enabled')!=0
+                and not bound)
             state = ('reading' if current and current[1]['status']=='reading' else 'queued' if current else
-                'monitoring' if enabled else 'attention' if any(p['status']=='attention' for p in bound) else
+                'monitoring' if enabled or auto and asset.get('last_checked_at') else 'pending_read' if auto else 'attention' if any(p['status']=='attention' for p in bound) else
                 'paused' if bound else 'history')
             checked = latest and latest['status'] != 'pending'
-            observed = c.execute("""SELECT COUNT(*) AS n,SUM(ingest_disposition='inserted') AS inserted
-                FROM collection_observations WHERE task_id=? AND page_url=? AND kind='comment'""",
-                (latest['task_id'],row['url'])).fetchone() if latest else None
+            observed = observed_by_batch.get((latest['task_id'],row['url'])) if latest else None
             next_dates = [p['next_run_at'] for p in enabled if p.get('next_run_at')]
-            row.update(state=state,continuous_monitoring=bool(enabled),
+            if auto and asset.get('next_check_at'):next_dates.append(asset['next_check_at'])
+            row.update(state=state,continuous_monitoring=bool(enabled or auto and asset.get('last_checked_at')),
+                author_name=asset.get('author_name'),author_sec_uid=asset.get('author_sec_uid'),
+                discovered_at=asset.get('first_seen_at'),published_at=asset.get('published_at'),discovery_source=asset.get('source_kind'),
                 plan_ids=[p['id'] for p in bound],active_task_id=current[0]['id'] if current else None,
                 latest_task_id=latest['task_id'] if latest else None,
                 last_checked_at=(latest['finished_at'] or latest['updated_at']) if checked else None,
@@ -65,7 +83,7 @@ def build(tasks, plans, mode='live'):
                 observed_in_last_batch=observed['n'] if observed else 0,
                 inserted_in_last_batch=(observed['inserted'] or 0) if observed else 0,
                 model_pending=pending.get(row['id'],0),transport=latest['transport'] if latest else None)
-    priority={'reading':0,'queued':1,'monitoring':2,'attention':3,'paused':4,'history':5}
+    priority={'reading':0,'queued':1,'pending_read':2,'monitoring':3,'attention':4,'paused':5,'history':6}
     rows.sort(key=lambda r:(priority[r['state']],-(r['id'] or 0)))
     return dict(updated_at=instant,rows=rows,scope='configured_and_archived_works',
         summary=dict(tracked=sum(r['continuous_monitoring'] for r in rows),

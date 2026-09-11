@@ -58,7 +58,11 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
             targets = video_targets(config['target'])
         if not targets and config['kind'] == 'author':
             seeds = [row['video_id'] for row in video_targets(config['target'])]
-            result = video_discovery.discover(client, seeds, author_pages=1, page_size=10, include_related=False)
+            discovery_job=config.get('discovery_job') or {}
+            result = video_discovery.discover(client, seeds, author_pages=discovery_job.get('author_pages',1), page_size=10, include_related=False)
+            for source,records in [('author_seed',result['seed_details']),('author',result['candidates'])]:
+                for at in range(0,len(records),10):
+                    emit({'type':'discovery_catalog','source':source,'records':[{**r,'video_title':r['video_title'][:500]} for r in records[at:at+10]]})
             targets, audit = video_discovery.select_author_targets(result, config['video_limit'])
             if config.get('candidate_policy') and not result['failures']:
                 candidates=video_discovery.author_candidates(result)
@@ -73,7 +77,7 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                 raise http.ReadError(result['failures'][0]['status'])
             if config.get('candidate_policy'):
                 if cancel.is_set():raise http.ReadError('cancelled')
-                if candidates:emit({'type':'candidates','records':[{'video_id':r['video_id'],'video_title':r['video_title'][:300]} for r in candidates]})
+                if candidates:emit({'type':'candidates','records':[{**r,'video_title':r['video_title'][:300]} for r in candidates]})
                 diagnostic({'operation':'candidate_selection','policy':candidate_pool.VERSION,'scope':'current_author_response',
                             'candidate_count':len(candidates),'selected':[r['video_id'] for r in targets]})
         if not targets and config['kind'] == 'search':
@@ -105,11 +109,12 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                 candidates=targets
                 targets=candidate_pool.select(candidates,config['video_limit'],config['candidate_policy'])
                 if cancel.is_set():raise http.ReadError('cancelled')
-                emit({'type':'candidates','records':[{'video_id':r['video_id'],'video_title':r['video_title'][:300]} for r in candidates]})
+                emit({'type':'candidates','records':[{**r,'video_title':r['video_title'][:300]} for r in candidates]})
                 diagnostic({'operation':'candidate_selection','policy':candidate_pool.VERSION,'scope':'current_search_response',
                             'candidate_count':len(candidates),'selected':[r['video_id'] for r in targets]})
         if not targets:
-            emit({'type': 'status', 'status': 'no_data', 'detail': '本次有限发现未找到可读取的相关视频；未扩大范围或切换入口'})
+            healthy_empty=config['kind']=='author' and bool(config.get('discovery_job')) and result['status']=='completed'
+            emit({'type': 'status', 'status': 'completed' if healthy_empty else 'no_data', 'detail': '作者作品检查完成，本次没有文案匹配的作品，等待下次检查' if healthy_empty else '本次有限发现未找到可读取的相关视频；未扩大范围或切换入口'})
             return
         emit({'type': 'targets', 'records': targets})
 

@@ -31,6 +31,7 @@ def video_row(item):
     comments = stats.get('comment_count')
     return {'video_id': vid, 'video_title': str(item.get('desc') or vid)[:5000],
             'video_url': ORIGIN + '/video/' + vid, 'author_sec_uid': sec_uid,
+            'author_nickname': str(author.get('nickname') or '')[:120],
             'published_at': published if type(published) is int and 0 < published < 32503680000 else None,
             'comment_count': comments if type(comments) is int and comments >= 0 else None,
             'metrics': video_metadata.extract(item)}

@@ -167,7 +167,7 @@ function createReader(page,shared){
       policy:'game-title-scope-v1',excluded_candidates:excludedSearch.size,eligible_candidates:candidates.length,
       reason:'no_game_evidence_in_title',all_douyin:false}],visible_text:`${excludedSearch.size} 个候选的文案未见所搜索游戏的明确标识，未进入评论读取；这不代表它们没有相关内容。`}});
     if(candidates.length&&config.candidate_policy){
-      check();await emit({type:'candidates',records:candidates.map(row=>({video_id:row.video_id,video_title:row.video_title.slice(0,300)}))});
+      check();await emit({type:'candidates',records:candidates.map(row=>({...row,video_title:row.video_title.slice(0,300)}))});
       await emit({type:'diagnostic',stage:'candidate_selection',snapshot:{title:'搜索候选轮换',
         visible_text:`本次搜索返回 ${candidates.length} 个候选，按读取历史轮换 ${selected.length} 个作品；保留探索位置，其余优先复查出现新近期评论的作品。`,
         responses:[{policy:config.candidate_policy.version,candidate_count:candidates.length,selected:selected.map(r=>r.video_id),scope:'current_search_response',all_douyin:false}]}});

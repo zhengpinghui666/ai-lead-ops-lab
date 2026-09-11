@@ -43,6 +43,8 @@ def collection_state(mode):
     result['live_monitor'] = live_monitor.state(mode)
     result['model_queue'] = semantic_queue.state(mode)
     result['login_recovery'] = login_recovery.state(mode)
+    import discovery_tracking
+    result['discovery'] = discovery_tracking.state(mode)
     return result
 
 
@@ -193,6 +195,9 @@ class Handler(BaseHTTPRequestHandler):
                         result = {**login_relay.phone_configuration(), 'account': login_recovery.config()['account']}
                 else:
                     raise ValueError('登录恢复操作不存在')
+            elif action in ('discovery-save','discovery-author'):
+                import discovery_tracking
+                result = discovery_tracking.save(body,mode) if action=='discovery-save' else discovery_tracking.author_command(body,mode)
             elif action == 'dm-test-check':
                 result = messaging_http.state(clubops.DATA_DIR, mode)
             elif action == 'dm-test-send':

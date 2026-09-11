@@ -305,7 +305,7 @@ def tick(instant=None):
             recent = c.execute('SELECT * FROM collection_tasks ORDER BY id DESC LIMIT 1').fetchone()
             if recent and recent['status'] in GATED:
                 if verification_retry_seconds(c,recent):
-                    c.execute("UPDATE collection_plans SET status='attention',next_run_at=NULL,detail=?,updated_at=? WHERE status='running' AND NOT (continuous=1 AND transport=? AND kind=? AND target=?)",(f'任务 #{recent["id"]} 遇到验证；其他计划暂停',instant,recent['transport'],recent['kind'],recent['target']))
+                    c.execute("UPDATE collection_plans SET status='attention',next_run_at=NULL,detail=?,updated_at=? WHERE status='running' AND NOT (continuous=1 AND (last_task_id=? OR (transport=? AND kind=? AND target=?)))",(f'任务 #{recent["id"]} 遇到验证；其他计划暂停',instant,recent['id'],recent['transport'],recent['kind'],recent['target']))
                 elif search_verification_only(c, recent):
                     c.execute("UPDATE collection_plans SET status='attention',next_run_at=NULL,detail=?,updated_at=? WHERE status='running' AND (kind='search' OR transport!='http')", (f'任务 #{recent["id"]} 的 HTTP 搜索待人工验证，搜索及浏览器计划已暂停；已启用的指定视频 HTTP 计划独立执行', instant))
                 else:
@@ -315,6 +315,8 @@ def tick(instant=None):
                 task = c.execute('SELECT * FROM collection_tasks WHERE id=?', (p['last_task_id'],)).fetchone()
                 if not task or not task['finished_at'] or task['id'] in collector.ACTIVE:
                     continue
+                import discovery_tracking
+                discovery_tracking.settle(c,task)
                 new_status, detail, due = p['status'], '上批已结束', None
                 if p['status'] == 'paused':
                     detail = p['detail']
@@ -322,7 +324,9 @@ def tick(instant=None):
                     due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=300)).astimezone(timezone.utc).isoformat(timespec='seconds')
                     detail='验证码未通过，样本已记录；暂停 5 分钟后在后台重新加载原监控目标。可随时关闭监控。'
                 elif task['status'] != 'completed':
-                    retry = transient_retry_seconds(c, p, task)
+                    bound=discovery_tracking.worker_config(c,task['id'])
+                    retry_plan={**dict(p),**{key:task[key] for key in ('kind','target','transport')}} if bound else p
+                    retry = transient_retry_seconds(c, retry_plan, task)
                     if retry:
                         due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=retry)).astimezone(timezone.utc).isoformat(timespec='seconds')
                         reason='部分评论未能继续加载，保留部分结果与断点' if task['status']=='partial' else '页面或接口暂不可用'
@@ -340,11 +344,15 @@ def tick(instant=None):
                 return None
             # Stored timestamps may use UTC or +08:00. Compare instants, never ISO strings.
             plan = c.execute("SELECT * FROM collection_plans WHERE status='running' AND (continuous=1 OR run_count<run_limit) AND julianday(next_run_at)<=julianday(?) AND (last_task_id IS NULL OR settled_task_id=last_task_id) ORDER BY priority DESC,julianday(next_run_at),id LIMIT 1", (instant,)).fetchone()
+            import discovery_tracking
+            discovery_enabled,discovery_job=discovery_tracking.choose(c,plan,instant) if plan else (False,None)
         if not plan:
             return None
+        if discovery_enabled and not discovery_job:return None
         try:
             # Scheduled reads never raise a window; explicit one-off tasks may.
-            result = collector.start({'kind': plan['kind'], 'target': plan['target'], 'transport': plan['transport'], 'video_limit': plan['video_limit'], 'comment_limit': plan['comment_limit'], 'page_concurrency': plan['page_concurrency'], 'interactive': False, 'request_id': f'plan-{plan["id"]}-run-{plan["run_count"]+1}'}, lookback_hours=plan['lookback_hours'], include_keywords=plan['include_keywords'], exclude_keywords=plan['exclude_keywords'])
+            selected=discovery_job or plan
+            result = collector.start({'kind': selected['kind'], 'target': selected['target'], 'transport': selected['transport'], 'video_limit': plan['video_limit'], 'comment_limit': plan['comment_limit'], 'page_concurrency': plan['page_concurrency'], 'interactive': False, 'request_id': f'plan-{plan["id"]}-run-{plan["run_count"]+1}'}, lookback_hours=plan['lookback_hours'], include_keywords=plan['include_keywords'], exclude_keywords=plan['exclude_keywords'],discovery_job=discovery_job)
             with app.LOCKS['live'], app.db() as c:
                 c.execute('UPDATE collection_plans SET run_count=run_count+1,last_task_id=?,next_run_at=NULL,detail=?,updated_at=? WHERE id=?', (result['id'], f'正在执行任务 #{result["id"]}', instant, plan['id']))
             return result['id']

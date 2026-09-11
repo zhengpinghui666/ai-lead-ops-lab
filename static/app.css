@@ -219,3 +219,5 @@ dialog.collection-modal .modal-actions{flex-wrap:wrap}
 .result-loading{display:inline-flex;align-items:center;gap:9px;color:var(--muted)}.result-loading-dot{width:7px;height:7px;border-radius:50%;background:var(--teal);animation:comment-loading-pulse 1.2s ease-in-out infinite}.result-tab b{font-variant-numeric:tabular-nums}
 @keyframes comment-loading-pulse{50%{opacity:.35}}
 @media(prefers-reduced-motion:reduce){.result-loading-dot{animation:none}}
+
+.work-search{margin:0 12px 10px;width:auto;max-width:none}.author-table-scroll{max-height:none;min-height:0}.author-table{min-width:760px}.author-table th:nth-child(1){width:23%}.author-table th:nth-child(2){width:18%}.author-table th:nth-child(3){width:14%}.author-table th:nth-child(4){width:27%}.author-table th:nth-child(5){width:18%}.author-check-time,.author-check-time small{white-space:nowrap}.author-table td:last-child .button{display:block;margin:0 0 5px}

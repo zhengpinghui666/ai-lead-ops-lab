@@ -158,7 +158,7 @@ def recover():
         c.execute("UPDATE collection_tasks SET status='interrupted',active_pages=0,detail='服务已重启；已入库记录保留，请手动新建一批采集',finished_at=?,updated_at=? WHERE finished_at IS NULL", (app.now(), app.now()))
 
 
-def start(body, mode='live', *, resume_from=None, lookback_hours=None, include_keywords='', exclude_keywords='', recovery_since=None, recovery_plan=None):
+def start(body, mode='live', *, resume_from=None, lookback_hours=None, include_keywords='', exclude_keywords='', recovery_since=None, recovery_plan=None, discovery_job=None):
     if mode != 'live':
         raise ValueError('演示区不访问抖音；请切换正式数据')
     kind, target, videos, comments, interactive, request_id = options(body)
@@ -214,6 +214,9 @@ def start(body, mode='live', *, resume_from=None, lookback_hours=None, include_k
         task_id = c.execute('INSERT INTO collection_tasks(request_id,kind,target,video_limit,comment_limit,interactive,status,detail,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)', (request_id, kind, target, videos, comments, interactive, 'queued', '等待后端 HTTP 读取' if transport == 'http' else '等待本机浏览器启动', t, t)).lastrowid
         c.execute('UPDATE collection_tasks SET transport=? WHERE id=?', (transport, task_id))
         c.execute('UPDATE collection_tasks SET page_concurrency=?,lookback_hours=?,comment_since=?,include_keywords=?,exclude_keywords=? WHERE id=?', (concurrency, lookback_hours, comment_since, include_keywords, exclude_keywords, task_id))
+        if discovery_job:
+            import discovery_tracking
+            discovery_tracking.attach(c,task_id,discovery_job)
         if pending:
             c.execute('INSERT INTO collection_resumes VALUES(?,?)', (task_id, resume_from))
             for row in pending:
@@ -341,6 +344,9 @@ def observe(task_id, source_id, message):
             import video_metadata
             video_pk = c.execute('SELECT id FROM videos WHERE source_id=? AND external_id=?',(source_id,row['video_id'])).fetchone()[0]
             video_metadata.save(c,video_pk,row.get('metrics'))
+            import discovery_tracking
+            if discovery_tracking.config(c)['enabled']:
+                discovery_tracking.record(c,[row],source='detail',target=task['target'],task=task)
             if previous_video and title != row['video_id'] and previous_video['title'] != title:
                 app.reset_video_rules(c, previous_video['id'])
             if title != row['video_id']:
@@ -458,6 +464,8 @@ def run(task_id, control):
             resume_targets = [dict(r) for r in c.execute('SELECT video_id,video_title,video_url FROM collection_checkpoints WHERE task_id=? ORDER BY rowid', (task_id,))] if resumed else []
             known_titles, known_metrics = cached_video_metadata(c, task, control['source_id'], resume_targets)
             candidate_policy = candidate_pool.configuration(c, task) if not resumed else None
+            import discovery_tracking
+            discovery_job = discovery_tracking.worker_config(c,task_id)
         node, package = dependencies()
         if task['transport'] == 'http':
             import collector_http
@@ -476,7 +484,7 @@ def run(task_id, control):
         with GUARD:
             control['process'] = process
         config = {**task, 'profile_dir': str(app.DATA_DIR / 'browser-profile'), 'resume_targets': resume_targets,
-                  'candidate_policy': candidate_policy,
+                  'candidate_policy': candidate_policy, 'discovery_job': discovery_job,
                   'resolve_video_titles': True, 'known_video_titles': known_titles,
                   'refresh_video_metrics': True, 'known_video_metrics': known_metrics,
                   'captcha': captcha_runtime.configuration()}
@@ -517,6 +525,17 @@ def run(task_id, control):
                     with app.LOCKS['live'], app.db() as c:
                         current = c.execute('SELECT * FROM collection_tasks WHERE id=?', (task_id,)).fetchone()
                         candidate_pool.record(c, current, message.get('records'))
+                        if discovery_tracking.config(c)['enabled']:
+                            discovery_tracking.record(c,message.get('records'),source=current['kind'],target=current['target'],task=current)
+            elif typ == 'discovery_catalog':
+                if not control['cancel']:
+                    with app.LOCKS['live'], app.db() as c:
+                        current=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task_id,)).fetchone()
+                        if current['kind']!='author' or current['transport']!='http':raise ValueError('作者目录与任务来源不一致')
+                        source=message.get('source')
+                        if source not in ('author','author_seed'):raise ValueError('作者目录来源无效')
+                        if discovery_tracking.config(c)['enabled']:
+                            discovery_tracking.record(c,message.get('records'),source=source,target=current['target'],task=current)
             elif typ in ('video', 'comment'):
                 if not control['cancel']:
                     observe(task_id, control['source_id'], message)

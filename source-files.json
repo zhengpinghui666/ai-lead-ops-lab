@@ -228,5 +228,8 @@
   "LIVE_RULES.md",
   "candidate_pool.py",
   "candidate_select.cjs",
-  "test_candidate_pool.py"
+  "test_candidate_pool.py",
+  "discovery_tracking.py",
+  "test_discovery_tracking.py",
+  "DISCOVERY_TRACKING.md"
 ]

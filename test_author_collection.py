@@ -20,7 +20,7 @@ OTHER='7678936399852233590'
 
 
 class AuthorWorkerTests(unittest.TestCase):
-    def run_worker(self, *, rows=None, failure=None, resume=False):
+    def run_worker(self, *, rows=None, failure=None, resume=False,discovery_job=None):
         calls=[]
         class Client:
             def page(self,operation,**kw):
@@ -34,6 +34,7 @@ class AuthorWorkerTests(unittest.TestCase):
                 return http.parse_page(body([record(cid=kw['video'],aweme_id=kw['video'])]),operation,kw['video'],title=kw['title'])
         config=dict(kind='author',target=VIDEO,video_limit=1,comment_limit=1,page_concurrency=1,
                     resolve_video_titles=True,refresh_video_metrics=True)
+        if discovery_job:config['discovery_job']=discovery_job
         if resume:
             config['resume_targets']=[dict(video_id=NEW,video_title='无畏契约',video_url='https://www.douyin.com/video/'+NEW,
                                           metrics=video_metadata.extract({}))]
@@ -63,6 +64,14 @@ class AuthorWorkerTests(unittest.TestCase):
             self.assertEqual([op for op,_ in calls],['detail','author'])
             self.assertEqual(events[-1]['status'],failure)
             self.assertFalse(any(e['type']=='targets' for e in events))
+
+    def test_verified_quiet_author_keeps_tracking_without_search_fallback(self):
+        calls,events=self.run_worker(rows=[item(desc='日常合成内容')],discovery_job={'author_pages':3})
+        self.assertEqual([op for op,_ in calls],['detail','author'])
+        self.assertEqual(events[-1]['status'],'completed')
+        catalogs=[e for e in events if e['type']=='discovery_catalog']
+        self.assertEqual([e['source'] for e in catalogs],['author_seed','author'])
+        self.assertEqual(catalogs[1]['records'][0]['video_title'],'日常合成内容')
 
     def test_resume_uses_selected_targets_without_author_rediscovery(self):
         calls,events=self.run_worker(resume=True)

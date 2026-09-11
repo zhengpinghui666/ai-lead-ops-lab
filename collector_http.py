@@ -163,14 +163,13 @@ def parse_page(body, operation, video='', parent='', title=''):
             skipped += 1
             continue
         if operation == 'search':
-            import video_metadata
+            import video_discovery
             item = item.get('aweme_info', item)
             if not isinstance(item, dict) or not numeric(item.get('aweme_id')):
                 skipped += 1
                 continue
             vid = numeric(item['aweme_id'])
-            row = {'video_id': vid, 'video_title': str(item.get('desc') or vid)[:5000],
-                   'video_url': sessions.ORIGIN + '/video/' + vid, 'metrics': video_metadata.extract(item)}
+            row = video_discovery.video_row(item)
             identity = vid
         else:
             cid = numeric(item.get('cid'))

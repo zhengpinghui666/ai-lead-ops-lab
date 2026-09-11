@@ -17,6 +17,8 @@ def main():
     parser.add_argument('seeds',nargs='+',help='1–3 original video IDs')
     parser.add_argument('--output',required=True,help='New private evidence JSON file; never overwritten')
     parser.add_argument('--authors-only',action='store_true',help='Read author works only; do not request related feed')
+    parser.add_argument('--author-pages',type=int,choices=range(1,4),default=1,help='Maximum pages per author (1–3)')
+    parser.add_argument('--page-size',type=int,choices=range(1,21),default=10,help='Maximum works per page (1–20)')
     args=parser.parse_args()
     if not 1<=len(args.seeds)<=3 or any(not http.numeric(v) for v in args.seeds):
         parser.error('Provide 1–3 numeric video IDs')
@@ -27,7 +29,8 @@ def main():
     result={'started_at':datetime.now(timezone.utc).isoformat(), 'browser_used':False}
     try:
         session=sessions.load()
-        client=http.Client(session,request_limit=9,diagnostic=diagnostics.append)
+        budget=len(set(args.seeds))*(1+args.author_pages+int(not args.authors_only))
+        client=http.Client(session,request_limit=budget,diagnostic=diagnostics.append)
         client.check_gate('detail')
         identity=uid_bootstrap.probe({'expected_account':session['account'],
             'cookie':sessions.cookie_header(session,'identity'),'user_agent':session['user_agent']})
@@ -37,7 +40,9 @@ def main():
             sessions.record_identity_status(session,'identity_failed')
             raise http.ReadError('identity_failed')
         sessions.record_identity_status(session,'identity_verified')
-        result.update(video_discovery.discover(client,args.seeds,include_related=not args.authors_only))
+        result.update(video_discovery.discover(client,args.seeds,author_pages=args.author_pages,
+            page_size=args.page_size,include_related=not args.authors_only))
+        result['budget']={'author_pages':args.author_pages,'page_size':args.page_size,'requests':budget}
     except http.ReadError as exc:
         result.update(status=exc.status)
     except (OSError, ValueError):

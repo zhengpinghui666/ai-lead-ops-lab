@@ -13,7 +13,8 @@ function video(value) {
   if(!value || typeof value!=='object') return null;
   const vid=id(value.aweme_id);
   if(!vid) return null;
-  return {video_id:vid,video_title:text(value.desc)||vid,video_url:`https://www.douyin.com/video/${vid}`};
+  const sec=value.author?.sec_uid,author=typeof sec==='string'&&/^[A-Za-z0-9_-]{10,200}$/.test(sec)?{author_sec_uid:sec,author_nickname:text(value.author?.nickname,120)}:{};
+  return {video_id:vid,video_title:text(value.desc)||vid,video_url:`https://www.douyin.com/video/${vid}`,...author,...(Number.isSafeInteger(value.create_time)&&value.create_time>0?{published_at:value.create_time}:{})};
 }
 function searchVideos(body) {
   const found=new Map();

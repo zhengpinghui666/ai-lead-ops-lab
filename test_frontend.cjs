@@ -41,6 +41,13 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   }
   run(`S={...fixtures.live,collector:{tasks:[],plans:[],board:{rows:[{id:1,external_id:'123456',title:'<script>unsafe</script>',url:'https://www.douyin.com/video/123456',state:'history',continuous_monitoring:false,archived_comments:12,fresh_comments:0,model_pending:0}],summary:{tracked:0,reading:0,works:1,fresh_comments:0,model_pending:0}},results:{rows:[{text:'A',video_url:'video-A'},{text:'B',video_url:'video-B'}]}}};workFilter='all';`);
   const poolHtml=run('workPool()');checkHtml(poolHtml);
+  run("discoverySettingsDialog()");checkHtml(element('#modal-content').innerHTML);
+  assert.match(element('#modal-content').innerHTML,/同一关键词再次发现间隔/);
+  run("discoveryAuthorsDialog()");checkHtml(element('#modal-content').innerHTML);
+  assert.match(element('#modal-content').innerHTML,/从相关作品中识别作者后/);
+  run("workQuery='not-found'");assert.match(run('workPool()'),/暂无对应作品/);
+  run("workQuery='123456'");assert.match(run('workPool()'),/unsafe/);run("workQuery=''");
+
   assert.ok(poolHtml.includes('未纳入持续监控'));
   assert.ok(poolHtml.includes('&lt;script&gt;unsafe&lt;/script&gt;'));
   assert.match(run('workMetrics({metrics:{likes:0,comments:123,shares:null,favorites:5}})'),/点赞<b>0<\/b>/);
