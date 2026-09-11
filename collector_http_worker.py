@@ -77,7 +77,7 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                 diagnostic({'operation':'candidate_selection','policy':candidate_pool.VERSION,'scope':'current_author_response',
                             'candidate_count':len(candidates),'selected':[r['video_id'] for r in targets]})
         if not targets and config['kind'] == 'search':
-            cursor, search_id, seen_cursors = 0, '', set()
+            cursor, search_id, seen_cursors, excluded = 0, '', set(), set()
             while len(targets) < config['video_limit']:
                 page = client.page('search', keyword=config['target'], cursor=cursor, search_id=search_id,
                                    count=10 if config.get('candidate_policy') else min(10, config['video_limit']))
@@ -86,6 +86,9 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                     counts['unsupported'] += page['skipped']
                 known = {r['video_id'] for r in targets}
                 for row in page['rows']:
+                    if not video_discovery.in_search_scope(row,config['target']):
+                        excluded.add(row['video_id'])
+                        continue
                     if row['video_id'] not in known and len(targets) < (50 if config.get('candidate_policy') else config['video_limit']):
                         targets.append(row)
                         known.add(row['video_id'])
@@ -95,6 +98,9 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                     raise http.ReadError('schema_changed')
                 seen_cursors.add(cursor)
                 cursor, search_id = page['cursor'], page['search_id']
+            if excluded:
+                diagnostic({'operation':'search_scope','policy':'game-title-scope-v1','excluded_candidates':len(excluded),
+                            'eligible_candidates':len(targets),'reason':'no_game_evidence_in_title','all_douyin':False})
             if targets and config.get('candidate_policy'):
                 candidates=targets
                 targets=candidate_pool.select(candidates,config['video_limit'],config['candidate_policy'])

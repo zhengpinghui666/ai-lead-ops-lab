@@ -4,8 +4,9 @@ const {EventEmitter}=require('node:events');
 const scenario=process.env.CLUBOPS_FIXTURE_SCENARIO||'success';
 const vid='7600000000000000001';
 let verified=false;
+let searchKeyword='';
 process.stdin.on('data',chunk=>{if(String(chunk).includes('"command":"resume"'))verified=true;});
-const response=(url,body)=>({url:()=>url,status:()=>200,headers:()=>({'content-type':'application/json'}),body:async()=>Buffer.from(JSON.stringify(body))});
+const response=(url,body)=>{if(url.includes('/search/')&&!url.includes('?'))url+='?keyword='+encodeURIComponent(searchKeyword);return {url:()=>url,status:()=>200,headers:()=>({'content-type':'application/json'}),body:async()=>Buffer.from(JSON.stringify(body))};};
 class Context extends EventEmitter {
   constructor(){super();this.closed=false;this.page=new Page(this);}
   pages(){return [this.page];}
@@ -19,6 +20,7 @@ class Page extends EventEmitter {
   async title(){return scenario==='gateway-title-only'?'502 Bad Gateway':scenario==='public-comments-login-to-post'?'合成夹具：无畏契约陪玩 - 抖音':scenario.includes('verification')&&!verified?'验证码中间页':'合成夹具页面';}
   async goto(url){
     this.address=url;
+    if(url.includes('/search/'))searchKeyword=decodeURIComponent(new URL(url).pathname.slice('/search/'.length));
     if(scenario.startsWith('note-')&&!url.includes('/search/')){
       this.address=`https://${scenario==='note-wrong-origin'?'other.example':'www.douyin.com'}/note/${scenario==='note-wrong-post'?'7600000000000000009':vid}`;
       return {status:()=>200};
@@ -30,13 +32,23 @@ class Page extends EventEmitter {
     if(scenario==='navigation-502')return {status:()=>502,headers:()=>({'retry-after':'90','set-cookie':'PRIVATE_RESPONSE_SENTINEL'})};
     if(scenario==='gateway-title-only')return {status:()=>200};
     if(scenario==='search-503'||scenario==='comment-503'&&!url.includes('/search/')){
-      const endpoint=scenario==='search-503'?'https://www.douyin.com/aweme/v1/web/general/search/single/':`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`;
+      const endpoint=scenario==='search-503'?'https://www.douyin.com/aweme/v1/web/general/search/single/?keyword='+encodeURIComponent(searchKeyword):`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`;
       this.emit('response',{url:()=>endpoint,status:()=>503,headers:()=>({'retry-after':'180','set-cookie':'PRIVATE_RESPONSE_SENTINEL'}),body:async()=>{throw Error('Must not parse 503 body');}});
       return {status:()=>200};
     }
     if(scenario==='verification-window-close')this.ctx.closeTimer=setTimeout(()=>this.ctx.close(),6000);
     if(scenario.startsWith('verification')||scenario==='device-challenge')return {status:()=>200};
     if(url.includes('/search/')){
+      if(scenario==='search-scope-dom')return {status:()=>200};
+      if(scenario.startsWith('search-scope-')){
+        if(scenario==='search-scope-foreign')this.address='https://www.douyin.com/search/another-query';
+        this.emit('response',response('https://www.douyin.com/aweme/v1/web/general/search/single/?keyword=another-query',
+          {data:[{aweme_info:{aweme_id:'7600000000000000010',desc:'无畏契约：其他搜索请求'}}]}));
+        const rows=[{aweme_info:{aweme_id:'7600000000000000009',desc:'合成不相关作品：装修瓷砖瓦片'}}];
+        if(scenario!=='search-scope-empty')rows.push({aweme_info:{aweme_id:vid,desc:'無畏契約 #瓦 找队友'}});
+        this.emit('response',response('https://www.douyin.com/aweme/v1/web/general/search/single/',{data:rows}));
+        return {status:()=>200};
+      }
       if(scenario==='candidate-rotation'||scenario==='unavailable-first'){
         this.emit('response',response('https://www.douyin.com/aweme/v1/web/general/search/single/',{data:[vid,'7600000000000000009','7600000000000000010'].map(aweme_id=>({aweme_info:{aweme_id,desc:'合成候选 '+aweme_id}}))}));
         return {status:()=>200};
@@ -82,7 +94,7 @@ class Page extends EventEmitter {
     }
     return {status:()=>200};
   }
-  locator(selector){return {innerText:async()=>scenario==='device-challenge'?'登录后即可搜索更多精彩视频\n使用原设备扫码\n为保障账号安全，请使用「抖音 APP」扫码验证':scenario==='public-comments-login-to-post'?'全部评论\n请先登录后发表评论\n已加载的合成评论\n登录后即可参与互动讨论':scenario==='success'?'合成夹具正文':'',count:async()=>selector==='[data-e2e="comment-list"]'&&scenario.startsWith('scroll-')?1:0,evaluateAll:async()=>scenario==='resume-search-dom'&&verified&&selector.startsWith('a[')?[{href:`https://www.douyin.com/video/${vid}`,label:'人工继续后的合成视频'}]:[],isVisible:async()=>scenario.startsWith('scroll-'),hover:async()=>{if(scenario==='scroll-late-budget')this.emit('response',response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`,{status_code:0,comments:[{cid:'7600000000000000005',aweme_id:vid,text:'迟到的合成评论',user:{uid:'123456789015'}}],has_more:1}));if(scenario.startsWith('scroll-')){const e=Error('synthetic hover obstruction');e.name='TimeoutError';throw e;}},first(){return this;},click:async()=>{},all:async()=>[]};}
+  locator(selector){return {innerText:async()=>scenario==='device-challenge'?'登录后即可搜索更多精彩视频\n使用原设备扫码\n为保障账号安全，请使用「抖音 APP」扫码验证':scenario==='public-comments-login-to-post'?'全部评论\n请先登录后发表评论\n已加载的合成评论\n登录后即可参与互动讨论':scenario==='success'?'合成夹具正文':'',count:async()=>selector==='[data-e2e="comment-list"]'&&scenario.startsWith('scroll-')?1:0,evaluateAll:async()=>scenario==='search-scope-dom'&&selector.startsWith('a[')?[{href:'https://www.douyin.com/video/7600000000000000009',label:'合成不相关装修作品'},{href:`https://www.douyin.com/video/${vid}`,label:'VALORANT 陪玩'}]:scenario==='resume-search-dom'&&verified&&selector.startsWith('a[')?[{href:`https://www.douyin.com/video/${vid}`,label:'人工继续后的合成视频'}]:[],isVisible:async()=>scenario.startsWith('scroll-'),hover:async()=>{if(scenario==='scroll-late-budget')this.emit('response',response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`,{status_code:0,comments:[{cid:'7600000000000000005',aweme_id:vid,text:'迟到的合成评论',user:{uid:'123456789015'}}],has_more:1}));if(scenario.startsWith('scroll-')){const e=Error('synthetic hover obstruction');e.name='TimeoutError';throw e;}},first(){return this;},click:async()=>{},all:async()=>[]};}
   getByRole(){return this.locator('button');}
   getByText(text){
     if(scenario.startsWith('note-')&&text instanceof RegExp&&text.test('评论(8)')){

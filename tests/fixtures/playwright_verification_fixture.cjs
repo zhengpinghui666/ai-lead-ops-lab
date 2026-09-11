@@ -9,7 +9,8 @@ const samples=path.join(__dirname,'captcha');
 const images=Object.fromEntries(['target','background'].map(name=>[name,fs.readFileSync(path.join(samples,`${name}.png`)).toString('base64')]));
 const vid='7600000000000000801';
 const trace=action=>process.stdout.write(JSON.stringify({type:'fixture',action})+'\n');
-const response=(url,body,request)=>({url:()=>url,request:()=>request,status:()=>200,headers:()=>({}),allHeaders:async()=>({'content-type':'application/json'}),body:async()=>Buffer.from(JSON.stringify(body))});
+let searchKeyword='';
+const response=(url,body,request)=>{if(url.includes('/search/')&&!url.includes('?'))url+='?keyword='+encodeURIComponent(searchKeyword);return {url:()=>url,request:()=>request,status:()=>200,headers:()=>({}),allHeaders:async()=>({'content-type':'application/json'}),body:async()=>Buffer.from(JSON.stringify(body))};};
 class Context extends EventEmitter{
   constructor(){super();this.closed=false;this.page=new Page(this);}
   pages(){return [this.page];}
@@ -40,6 +41,7 @@ class Page extends EventEmitter{
     else this.emit('response',response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`,{status_code:0,has_more:0,comments:[{cid:vid+'1',aweme_id:vid,text:'合成测试：找陪练预算100',user:{uid:vid+'2',nickname:'合成样例'}}]},request));
   }
   async goto(url){this.address=url;trace(url.includes('/search/')?'search':'video');
+    if(url.includes('/search/'))searchKeyword=decodeURIComponent(new URL(url).pathname.slice('/search/'.length));
     if(scenario.startsWith('note-'))this.address=`https://www.douyin.com/note/${scenario==='note-wrong-page'?'7600000000000000802':vid}`;
     if(url.includes('/search/')||scenario==='second-challenge'||scenario.startsWith('note-')){
       this.challenge=true;

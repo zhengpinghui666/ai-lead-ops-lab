@@ -10,7 +10,8 @@ process.stdin.on('data',data=>{
   if(String(data).includes('"command":"resume"')&&scenario!=='gate-persistent')verified=true;
   if(String(data).includes('"command":"close_window"'))ctx?.close();
 });
-const response=(url,body,status=200,lag=0)=>({url:()=>url,status:()=>status,headers:()=>({}),body:async()=>{await delay(lag);return Buffer.from(JSON.stringify(body));}});
+let searchKeyword='';
+const response=(url,body,status=200,lag=0)=>{if(url.includes('/search/')&&!url.includes('?'))url+='?keyword='+encodeURIComponent(searchKeyword);return {url:()=>url,status:()=>status,headers:()=>({}),body:async()=>{await delay(lag);return Buffer.from(JSON.stringify(body));}};};
 class Context extends EventEmitter{
   constructor(){super();this.closed=false;this.list=[new Page(this)];this.timers=[];}
   pages(){return this.list;}
@@ -25,6 +26,7 @@ class Page extends EventEmitter{
   challenge(){return scenario.startsWith('gate-')&&this.vid===ids[1]&&!verified;}
   async title(){return this.challenge()?'验证码中间页':`合成视频 ${this.vid||''} - 抖音`;}
   async goto(url){
+    if(url.includes('/search/'))searchKeyword=decodeURIComponent(new URL(url).pathname.slice('/search/'.length));
     this.address=url;
     if(url.includes('/search/')){
       this.emit('response',response('https://www.douyin.com/aweme/v1/web/general/search/single/',{data:ids.map(aweme_id=>({aweme_info:{aweme_id,desc:`合成视频 ${aweme_id}`}}))}));

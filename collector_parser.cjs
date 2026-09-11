@@ -2,6 +2,13 @@
 // Normalizes only responses produced by ordinary page navigation. No request signing/replay.
 const id = value => typeof value==='string' && /^\d{5,30}$/.test(value) ? value : Number.isSafeInteger(value)&&value>9999 ? String(value) : '';
 const text = (value, max=5000) => typeof value==='string' ? value.trim().slice(0,max) : '';
+const gamePattern=/无畏契约|无畏契約|無畏契約|瓦罗兰特|瓦羅蘭特|valorant|瓦陪|陪瓦|打瓦|瓦手游|手瓦|瓦友|(?:^|[\s#＃])瓦(?=$|[\s#＃])/i;
+function inSearchScope(row,keyword){
+  return !gamePattern.test(text(keyword))||gamePattern.test(text(row?.video_title));
+}
+function searchPageMatches(url,keyword){
+  try{const u=new URL(url);return u.origin==='https://www.douyin.com'&&decodeURIComponent(u.pathname)===`/search/${keyword}`;}catch{return false;}
+}
 function video(value) {
   if(!value || typeof value!=='object') return null;
   const vid=id(value.aweme_id);
@@ -61,10 +68,10 @@ function comments(body, expectedVideo, context={}) {
   }
   return {rows,recognized:true,skipped,nonText,invalid,truncated,hasMore:body.has_more===0?false:body.has_more===1?true:null};
 }
-function responseKind(url, expectedVideo='') {
+function responseKind(url, expectedVideo='', expectedKeyword='') {
   let u;try{u=new URL(url);}catch{return '';}
-  if(u.protocol!=='https:'||u.hostname!=='www.douyin.com')return '';
-  if(/^\/aweme\/v\d+\/web\/(?:general\/search|search\/item)\//.test(u.pathname))return 'search';
+  if(u.origin!=='https://www.douyin.com')return '';
+  if(/^\/aweme\/v\d+\/web\/(?:general\/search|search\/item)\//.test(u.pathname))return !expectedKeyword||u.searchParams.get('keyword')===expectedKeyword?'search':'';
   if(/^\/aweme\/v\d+\/web\/comment\/list\//.test(u.pathname)&&id(expectedVideo)&&u.searchParams.get('aweme_id')===expectedVideo)return 'comment';
   return '';
 }
@@ -95,4 +102,4 @@ function blockFromBody(body){
   const reason=body.search_nil_info?.search_nil_type;
   return typeof reason==='string'&&/verify|antispam|risk|captcha/i.test(reason)?'needs_verification':'';
 }
-module.exports={id,video,searchVideos,comments,responseKind,contentPageKind,pageVideoTitle,blockFromText,blockFromBody};
+module.exports={id,video,searchVideos,comments,responseKind,contentPageKind,pageVideoTitle,blockFromText,blockFromBody,inSearchScope,searchPageMatches};

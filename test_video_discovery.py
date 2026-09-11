@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import time
 import threading
+import subprocess
 import unittest
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
@@ -23,6 +24,39 @@ def item(vid=VIDEO, **kwargs):
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_browser_and_http_game_scope_agree(self):
+        titles=['無畏契約','无畏契約','VALORANT比赛','瓦羅蘭特','打瓦找队友','瓦陪','陪瓦','#瓦 #端游','手瓦陪玩',
+                '装修瓷砖瓦片','普通健康科普','陪玩聊天截图','','7600000000000000001']
+        cases=[{'video_title':t} for t in titles]
+        result=subprocess.run(['node','-e',"let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>console.log(JSON.stringify(JSON.parse(s).map(r=>require('./collector_parser.cjs').inSearchScope(r,'无畏契约陪玩')))));"],
+            input=json.dumps(cases),text=True,capture_output=True,check=True,timeout=10,cwd=Path(__file__).resolve().parent,
+            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        expected=[discovery.in_search_scope(r,'无畏契约陪玩') for r in cases]
+        self.assertEqual(expected,[True]*9+[False]*5)
+        self.assertEqual(json.loads(result.stdout),expected)
+        self.assertTrue(discovery.in_search_scope({'video_title':''},'SYNTHETIC FIXTURE'))
+
+    def test_http_search_skips_unrelated_work_before_comment_budget(self):
+        for relevant in (True,False):
+            calls=[]
+            class Client:
+                def page(self,operation,**kw):
+                    calls.append((operation,kw))
+                    if operation=='search':
+                        if kw['cursor']==0:
+                            rows=[{'video_id':'7600000000000000009','video_title':'合成不相关装修作品','video_url':'https://www.douyin.com/video/7600000000000000009'}]
+                        else:rows=[{'video_id':VIDEO,'video_title':'無畏契約找队友','video_url':'https://www.douyin.com/video/'+VIDEO}]
+                        return {'rows':rows,'skipped':0,'has_more':relevant and kw['cursor']==0,'cursor':kw['cursor']+1,'search_id':'synthetic'}
+                    return http.parse_page(body([record()]),operation,VIDEO)
+            events=[]
+            worker.collect({'kind':'search','target':'无畏契约陪玩','video_limit':1,'comment_limit':1,'page_concurrency':1},
+                           events.append,threading.Event(),client=Client())
+            self.assertEqual(events[-1]['status'],'completed' if relevant else 'no_data')
+            self.assertEqual([kw['video'] for op,kw in calls if op=='comments'],[VIDEO] if relevant else [])
+            diagnostic=next(e['snapshot']['responses'][0] for e in events if e['type']=='diagnostic' and e['snapshot']['responses'][0].get('operation')=='search_scope')
+            self.assertEqual(diagnostic['excluded_candidates'],1)
+            self.assertEqual(len([e for e in events if e['type']=='comment']),int(relevant))
+
     def test_optional_metrics_failure_keeps_comments_but_challenge_stops(self):
         for status in ('empty_response','needs_verification'):
             calls=[]

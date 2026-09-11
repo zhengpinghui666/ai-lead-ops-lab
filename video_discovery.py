@@ -10,6 +10,13 @@ import video_metadata
 from collector_http import ReadError, numeric
 from collector_http_session import ORIGIN
 
+GAME_PATTERN = re.compile(r'无畏契约|无畏契約|無畏契約|瓦罗兰特|瓦羅蘭特|valorant|瓦陪|陪瓦|打瓦|瓦手游|手瓦|瓦友|(?:^|[\s#＃])瓦(?=$|[\s#＃])', re.I)
+
+
+def in_search_scope(row, keyword):
+    """Game evidence for discovery only; never a paid-intent classification."""
+    return not GAME_PATTERN.search(keyword) or bool(GAME_PATTERN.search(str(row.get('video_title') or '')))
+
 
 def video_row(item):
     if not isinstance(item, dict) or not numeric(item.get('aweme_id')):
@@ -118,8 +125,7 @@ def discover(client, seeds, *, author_pages=1, page_size=10, include_related=Tru
 
 
 def author_candidates(result):
-    relevant = [row for row in result['candidates'] if re.search(
-        r'无畏契约|瓦罗兰特|valorant|瓦陪|打瓦', row['video_title'], re.I)]
+    relevant = [row for row in result['candidates'] if GAME_PATTERN.search(row['video_title'])]
     relevant.sort(key=lambda row: (row.get('published_at') or 0, row['video_id']), reverse=True)
     return relevant[:50]
 

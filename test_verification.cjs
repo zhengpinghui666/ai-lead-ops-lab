@@ -43,7 +43,10 @@ function run(scenario){return new Promise((resolve,reject)=>{
 (async()=>{
   await units();
   const scenarios=['accepted','rejected','no-response','old-response','unsupported','changed','second-challenge','cancel','missing-dependency','iframe-accepted','iframe-stays','note-accepted','note-wrong-page'];
-  const results=await Promise.all(scenarios.map(run));
+  // Each process loads the real OCR runtime. Bound local resource contention;
+  // this suite tests workflow branches, not simultaneous model capacity.
+  const results=[];
+  for(let i=0;i<scenarios.length;i+=2)results.push(...await Promise.all(scenarios.slice(i,i+2).map(run)));
   for(const {scenario,rows,skipped} of results){
     if(skipped){console.log('SKIP: '+scenario+': '+skipped);continue;}
     const phases=rows.filter(r=>r.type==='verification').map(r=>r.event);
@@ -60,7 +63,7 @@ function run(scenario){return new Promise((resolve,reject)=>{
       assert.equal(last,'needs_verification',scenario);
       assert.equal(rows.filter(r=>r.type==='comment').length,0);
       const expected={rejected:'acceptance_not_observed','no-response':'acceptance_not_observed','old-response':'acceptance_not_observed',unsupported:'background_missing',changed:'challenge_changed','second-challenge':'batch_attempt_limit','missing-dependency':'dependency_missing','iframe-stays':'acceptance_not_observed'};
-      assert.equal(phases.at(-1).reason,scenario==='note-wrong-page'?'acceptance_not_observed':expected[scenario]);
+      assert.equal(phases.at(-1).reason,scenario==='note-wrong-page'?'acceptance_not_observed':expected[scenario],scenario+': '+JSON.stringify(phases));
       if(scenario!=='second-challenge')assert.ok(!phases.some(e=>e.phase==='accepted'));
     }
   }

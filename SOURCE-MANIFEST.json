@@ -18,8 +18,8 @@
     },
     {
       "name": "AUTHOR_DISCOVERY.md",
-      "sha256": "f040bf05ff0e8910ff891bf6a6918662953e49982ed8c08653108e57d24b6dd3",
-      "bytes": 2852
+      "sha256": "41ce4e52e17edf20af32b6cb3f880c3717c1c7556540cdf44f9e2f8ff230ec0f",
+      "bytes": 3587
     },
     {
       "name": "CAPTCHA_PROJECT_RESEARCH.md",
@@ -33,18 +33,18 @@
     },
     {
       "name": "COLLECTION_FRESHNESS.md",
-      "sha256": "35d387b5c81e7d88be900abf67ef19d1c0e23dee2352be98d571925c9ada21f7",
-      "bytes": 12494
+      "sha256": "bba631987ba0537c31e55d50d1468ed01c10a588842719bcd436e3acd6ee28d0",
+      "bytes": 13535
     },
     {
       "name": "COLLECTION_HTTP.md",
-      "sha256": "3c62245e6dd44ec28326fb63bf4883d1c94bba2cdd9ab1c822652303ef34208d",
-      "bytes": 15786
+      "sha256": "db3f7ec6680749fc638de88ca953b9329449304c40e75f2c9bc51bf3bf51feef",
+      "bytes": 16612
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "ed3332f80c0a5d0d731047323764d185b65f135d452011cd67a6cd35ce064078",
-      "bytes": 51501
+      "sha256": "648f2f796c2141db772d9675b694dd00ab3cbab2ab7a4fe175fd3d3d7a0a16ae",
+      "bytes": 55611
     },
     {
       "name": "EXTERNAL_ACCESS.md",
@@ -58,8 +58,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "aa33d7fed8d31771f30bf3d5466d4a01dc962184405570f161de9a1da515190f",
-      "bytes": 92917
+      "sha256": "4eedbec1b81facc5c4cd8bf782d3fef0e2833cd2df156af229ab03a430e18330",
+      "bytes": 97027
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -253,13 +253,13 @@
     },
     {
       "name": "collector_http_worker.py",
-      "sha256": "ab213b1eaf89b616cfee938e6456fe04063183d25a2f7a59cfe50d8687b671ce",
-      "bytes": 14786
+      "sha256": "29feac574745167f3e4da52b4f3a58cb592bc7393b0927bf7abbba251bbf05f2",
+      "bytes": 15241
     },
     {
       "name": "collector_parser.cjs",
-      "sha256": "b3b97554c28add62beb9282bda479694711267f178658b729a7ebee7fa0a64e8",
-      "bytes": 5832
+      "sha256": "fc06c119d94c0ec68ffe94808e433b234970eed7d80deac44204074a46ffbc62",
+      "bytes": 6423
     },
     {
       "name": "collector_pool.cjs",
@@ -273,8 +273,8 @@
     },
     {
       "name": "collector_reader.cjs",
-      "sha256": "59f69d5e906bf4caaa6d34ffed5d1e2850a9b2e46df40e24d4cc658cacae81b1",
-      "bytes": 19412
+      "sha256": "b48d76951e97d40e6e7d696f578773de70094297a4d99892e12238f0e97f71dc",
+      "bytes": 20449
     },
     {
       "name": "collector_runner.cjs",
@@ -808,8 +808,8 @@
     },
     {
       "name": "test_collector.cjs",
-      "sha256": "5cfe72f31bd9b46730f47df9b53fbc807e98febc21c286f3259b4234bc81b821",
-      "bytes": 6666
+      "sha256": "344025dc6fdfd350f6705af2b6431bbf404945f96b73ad8b2cf757b26341da10",
+      "bytes": 7913
     },
     {
       "name": "test_collector.py",
@@ -1063,13 +1063,13 @@
     },
     {
       "name": "test_verification.cjs",
-      "sha256": "035f1187344b2bc23000bf15101829a51529a230cb80bcd5308d0ce82e5af8bd",
-      "bytes": 5872
+      "sha256": "5bbc34930606451cac5e2653a7518214165eec802ce524298f620c2ce1d3fd28",
+      "bytes": 6134
     },
     {
       "name": "test_video_discovery.py",
-      "sha256": "38c9bda0accddafdb75f42bfcbf5783b7e2b81ed195bae6c28707b434756b2eb",
-      "bytes": 13251
+      "sha256": "bd491436194486ead3b1c0292f52c50a09b25e143925b1d09deeb766c19f586b",
+      "bytes": 15991
     },
     {
       "name": "test_video_metadata.py",
@@ -1078,8 +1078,8 @@
     },
     {
       "name": "test_worker.cjs",
-      "sha256": "f80c0b2823e77fba9a2e767a164d3a37ddfe3d35423ca6204d9c6b4ab2028807",
-      "bytes": 12645
+      "sha256": "4b9ff24842611fd87140940aa65477df2f992dbe91c0fde9d4dcf828f447cc19",
+      "bytes": 13358
     },
     {
       "name": "tests/fixtures/captcha/background.png",
@@ -1098,18 +1098,18 @@
     },
     {
       "name": "tests/fixtures/playwright_fixture.cjs",
-      "sha256": "89047ee1ee0a380c745d7389db0609f2e14c0b82cc47bccd82c329ad176ce78b",
-      "bytes": 8830
+      "sha256": "dd9faa170454a02a92c42872cd6b91397965136995612b4cfec9bf42b80c029c",
+      "bytes": 10289
     },
     {
       "name": "tests/fixtures/playwright_parallel_fixture.cjs",
-      "sha256": "c77eaa5ac72f9695bef4a67b7d9357537000fd393b5c5525897a5eba59c0a0d8",
-      "bytes": 4010
+      "sha256": "fec39bf9710f460f6cc96d2e3f86374ef6330569e7772fd06fb001e1e0fc1b4d",
+      "bytes": 4253
     },
     {
       "name": "tests/fixtures/playwright_verification_fixture.cjs",
-      "sha256": "9987244bfd17333a453dba0ca0f911beb71af143fe7d789a471aa8b78f455c4c",
-      "bytes": 5665
+      "sha256": "70d153b32c5dd7700d2f792ccfa5800b992cf40f1326265503bcec13aa495f4b",
+      "bytes": 5908
     },
     {
       "name": "uid_bootstrap.py",
@@ -1143,8 +1143,8 @@
     },
     {
       "name": "video_discovery.py",
-      "sha256": "f6d795b35e9583a3361f610d94d590835c6289cc34b6d63c3de7ae312d0e9a25",
-      "bytes": 7429
+      "sha256": "e68ea28327b00695eae87382077de7669fda1c7da2a24427355cc92ca3f6f20a",
+      "bytes": 7784
     },
     {
       "name": "video_metadata.py",

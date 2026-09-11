@@ -3,7 +3,7 @@
 const {spawn}=require('node:child_process');
 const path=require('node:path');
 const assert=require('node:assert/strict');
-function run(scenario,{interactive=false,onStatus,kind='search',candidatePolicy=null,videoLimit=1}={}){
+function run(scenario,{interactive=false,onStatus,kind='search',candidatePolicy=null,videoLimit=1,keyword='SYNTHETIC FIXTURE ONLY'}={}){
   return new Promise((resolve,reject)=>{
     const child=spawn(process.execPath,[path.join(__dirname,process.env.CLUBOPS_TEST_RUNNER||'collector_worker.cjs')],{cwd:__dirname,windowsHide:true,env:{...process.env,CLUBOPS_PLAYWRIGHT:path.join(__dirname,'tests/fixtures/playwright_fixture.cjs'),CLUBOPS_FIXTURE_SCENARIO:scenario},stdio:['pipe','pipe','pipe']});
     const messages=[];let pending='',errors='';
@@ -13,11 +13,20 @@ function run(scenario,{interactive=false,onStatus,kind='search',candidatePolicy=
     child.stdout.on('data',s=>{pending+=s;const lines=pending.split('\n');pending=lines.pop();for(const line of lines){if(!line)continue;const m=JSON.parse(line);messages.push(m);if(m.type==='status')onStatus?.(m,child);}});
     child.on('error',reject);
     child.on('close',code=>{clearTimeout(timer);if(code!==0)reject(Error(`${scenario}: ${code}: ${errors}`));else resolve(messages);});
-    child.stdin.write(JSON.stringify({kind,target:kind==='video'?'https://www.douyin.com/video/7600000000000000001':'SYNTHETIC FIXTURE ONLY',video_limit:videoLimit,comment_limit:2,interactive,candidate_policy:candidatePolicy,profile_dir:path.join(__dirname,'tests/not-a-real-browser-profile')})+'\n');
+    child.stdin.write(JSON.stringify({kind,target:kind==='video'?'https://www.douyin.com/video/7600000000000000001':keyword,video_limit:videoLimit,comment_limit:2,interactive,candidate_policy:candidatePolicy,profile_dir:path.join(__dirname,'tests/not-a-real-browser-profile')})+'\n');
   });
 }
 const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
 (async()=>{
+  const scopes=await Promise.all(['search-scope-mixed','search-scope-dom','search-scope-foreign','search-scope-empty'].map(s=>run(s,{keyword:'无畏契约陪玩'})));
+  for(const messages of scopes.slice(0,2)){
+    assert.equal(terminal(messages),'completed');
+    assert.deepEqual(messages.find(m=>m.type==='targets').records.map(r=>r.video_id),['7600000000000000001']);
+    assert.equal(messages.find(m=>m.type==='diagnostic'&&m.stage==='search-scope').snapshot.responses[0].excluded_candidates,1);
+  }
+  for(const messages of scopes.slice(2)){
+    assert.equal(terminal(messages),'no_data');assert.ok(!messages.some(m=>m.type==='targets'||m.type==='comment'));
+  }
   const notes=await Promise.all(['note-redirect','note-hidden-duplicate','note-ambiguous','note-wrong-post','note-wrong-origin','note-no-response'].map(s=>run(s,{kind:'video'})));
   for(const messages of notes.slice(0,2)){
     assert.equal(terminal(messages),'completed');assert.equal(messages.filter(m=>m.type==='comment').length,1);
@@ -133,5 +142,5 @@ const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
   assert.equal(replyRecords.length,2,'Roots and replies share the same per-video budget');
   assert.equal(replyRecords[1].parent_comment_id,replyRecords[0].comment_id);
   for(const messages of [cancelled,closed,eof,schema,invalid,device])assert.equal(messages.filter(m=>m.type==='comment').length,0);
-  console.log('PASS: 38 child-process scenarios including same-work note tabs, ambiguous/foreign redirects, non-text/invalid separation, page quality, missing-work isolation, timeouts, gates and bounded responses. Synthetic only.');
+  console.log('PASS: 42 child-process scenarios including query/title discovery scope, same-work note tabs, ambiguous/foreign redirects, non-text/invalid separation, page quality, missing-work isolation, timeouts, gates and bounded responses. Synthetic only.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

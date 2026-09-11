@@ -17,7 +17,7 @@ function createReader(page,shared){
   let requestSerial=0,lastValidRequest=0;
   const requestNumbers=new WeakMap();
   let readErrors=0,schemaErrors=0,commentResponses=0,invalidComments=0,nonTextComments=0,processingLimit=false,navigationError='',navigationStatus=null,navigationRetryAfter=null;
-  const searchResults=new Map(),commentIds=new Set(),videoIds=new Set(),perVideo=new Map(),responseMeta=[];
+  const searchResults=new Map(),excludedSearch=new Set(),commentIds=new Set(),videoIds=new Set(),perVideo=new Map(),responseMeta=[];
   const queue=new OrderedResponseQueue({concurrency:2,capacity:8,onError:()=>{readErrors++;}});
   function check(){shared.check();if(page.isClosed())throw new Stop('interrupted','采集页面已关闭；本批停止，已入库数据保留。');if(processingLimit)throw new Stop('resource_limited','单页待处理响应超过 8 条，本批停止；已入库数据保留。');}
   async function ready(){await shared.ready(reader);check();}
@@ -47,8 +47,9 @@ function createReader(page,shared){
   async function observeVideo(){if(current&&!videoIds.has(current.video_id)){videoIds.add(current.video_id);await emit({type:'video',record:current});}}
   function onResponse(response){
     if(shared.stopping()||phase==='idle')return;
-    const kind=parser.responseKind(response.url(),current?.video_id||'');
+    const kind=parser.responseKind(response.url(),current?.video_id||'',phase==='search'?config.target:'');
     if(!kind||(phase==='search'&&kind!=='search')||(phase==='comment'&&kind!=='comment'))return;
+    if(kind==='search'&&!parser.searchPageMatches(page.url(),config.target))return;
     if(kind==='comment'&&!parser.contentPageKind(page.url(),current?.video_id))return;
     const requestNumber=response.request?requestNumbers.get(response.request())||0:0;
     if(kind==='comment')commentResponses++;
@@ -77,8 +78,12 @@ function createReader(page,shared){
       const verification=parser.blockFromBody(body);
       if(verification){networkBlock=verification;return;}
       if(kind==='search'){
+        if(!parser.searchPageMatches(page.url(),config.target))return;
         const rows=parser.searchVideos(body);
-        for(const row of rows)if(searchResults.size<50)searchResults.set(row.video_id,row);
+        for(const row of rows){
+          if(!parser.inSearchScope(row,config.target)){if(excludedSearch.size<250)excludedSearch.add(row.video_id);continue;}
+          if(searchResults.size<50)searchResults.set(row.video_id,row);
+        }
         if(body?.status_code===0&&rows.length){lastValidRequest=requestNumber;if(networkBlock==='needs_verification')networkBlock='';}
         return;
       }
@@ -130,10 +135,15 @@ function createReader(page,shared){
   async function discover(){
     phase='search';await goto('https://www.douyin.com/search/'+encodeURIComponent(config.target)+'?type=video');
     async function readAnchors(){
+      if(!parser.searchPageMatches(page.url(),config.target))return;
       const anchors=await page.locator('a[href*="/video/"]').evaluateAll(nodes=>nodes.slice(0,250).map(n=>({href:n.href,label:n.innerText?.slice(0,5000)}))).catch(()=>[]);
       for(const a of anchors){let u;try{u=new URL(a.href);}catch{continue;}
         const m=u.pathname.match(/^\/video\/(\d{5,30})\/?$/);if(searchResults.size>=50)break;
-        if(u.protocol==='https:'&&u.hostname==='www.douyin.com'&&m&&!searchResults.has(m[1]))searchResults.set(m[1],{video_id:m[1],video_title:a.label?.trim().slice(0,5000)||m[1],video_url:`https://www.douyin.com/video/${m[1]}`});
+        if(u.origin==='https://www.douyin.com'&&m&&!searchResults.has(m[1])){
+          const row={video_id:m[1],video_title:a.label?.trim().slice(0,5000)||m[1],video_url:`https://www.douyin.com/video/${m[1]}`};
+          if(parser.inSearchScope(row,config.target))searchResults.set(m[1],row);
+          else if(excludedSearch.size<250)excludedSearch.add(m[1]);
+        }
       }
     }
     for(let i=0;i<4&&searchResults.size<config.video_limit;i++){
@@ -153,6 +163,9 @@ function createReader(page,shared){
       }
     }
     const candidates=[...searchResults.values()],selected=require('./candidate_select.cjs').select(candidates,config.video_limit,config.candidate_policy);
+    if(excludedSearch.size)await emit({type:'diagnostic',stage:'search-scope',snapshot:{title:'搜索候选范围',responses:[{
+      policy:'game-title-scope-v1',excluded_candidates:excludedSearch.size,eligible_candidates:candidates.length,
+      reason:'no_game_evidence_in_title',all_douyin:false}],visible_text:`${excludedSearch.size} 个候选的文案未见所搜索游戏的明确标识，未进入评论读取；这不代表它们没有相关内容。`}});
     if(candidates.length&&config.candidate_policy){
       check();await emit({type:'candidates',records:candidates.map(row=>({video_id:row.video_id,video_title:row.video_title.slice(0,300)}))});
       await emit({type:'diagnostic',stage:'candidate_selection',snapshot:{title:'搜索候选轮换',
