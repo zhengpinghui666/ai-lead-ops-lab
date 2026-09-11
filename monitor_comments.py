@@ -33,28 +33,41 @@ def history(query, mode='live'):
     video = query.get('video', '')
     search = query.get('q', '')
     state = query.get('filter', 'all')
-    if not isinstance(video, str) or len(video)>300 or not isinstance(search, str) or len(search)>200 or state not in ('all','accepted','filtered'):
+    if not isinstance(video, str) or len(video)>300 or not isinstance(search, str) or len(search)>200 or state not in ('all','accepted','filtered','valuable'):
         raise ValueError('评论筛选参数无效')
     engine = semantic.state()['engine'] if mode=='live' else None
     with app.LOCKS[mode], app.db(mode) as c:
         source = c.execute("SELECT id FROM sources WHERE kind='browser' ORDER BY id LIMIT 1").fetchone()
         params = dict(source=source[0] if source else -1,video=video,query=search,state=state)
         counts = c.execute(HISTORY+"SELECT COUNT(*) AS observed,COALESCE(SUM(filter_reason=''),0) AS accepted,COALESCE(SUM(filter_reason!=''),0) AS filtered FROM scoped",params).fetchone()
-        where = " WHERE (:state='all' OR (:state='accepted' AND filter_reason='') OR (:state='filtered' AND filter_reason!='')) AND (:query='' OR instr(lower(text || ' ' || nickname || ' ' || COALESCE(user_identifier,'') || ' ' || external_id),lower(:query))>0)"
+        # Use the same current, input-bound projection as the visible judgment.
+        # Evaluate eligibility before pagination; manual corrections take priority.
+        current, valuable = {}, set()
+        for accepted in c.execute(HISTORY+"SELECT * FROM scoped WHERE filter_reason=''",params):
+            key = (accepted['video_url'],accepted['external_id'])
+            current[key] = monitoring.observation_analysis(c,accepted['comment_id'],accepted['text'],engine)
+            if current[key].get('category') == 'buyer' and current[key].get('analysis_method') in ('rules','model','human'):
+                valuable.add(key)
+        where = " WHERE (:state='all' OR (:state IN ('accepted','valuable') AND filter_reason='') OR (:state='filtered' AND filter_reason!='')) AND (:query='' OR instr(lower(text || ' ' || nickname || ' ' || COALESCE(user_identifier,'') || ' ' || external_id),lower(:query))>0)"
         total = c.execute(HISTORY+'SELECT COUNT(*) FROM scoped'+where,params).fetchone()[0]
+        ordered = HISTORY+'SELECT * FROM scoped'+where+' ORDER BY julianday(collected_at) DESC,video_url,external_id'
+        valuable_source = None
+        if state == 'valuable':
+            valuable_source = [r for r in c.execute(ordered,params) if (r['video_url'],r['external_id']) in valuable]
+            total = len(valuable_source)
         pages = max(1,(total+24)//25)
         page = min(page,pages)
         params['offset'] = (page-1)*25
-        source_rows = c.execute(HISTORY+'SELECT * FROM scoped'+where+' ORDER BY julianday(collected_at) DESC,video_url,external_id LIMIT 25 OFFSET :offset',params).fetchall()
+        source_rows = valuable_source[params['offset']:params['offset']+25] if valuable_source is not None else c.execute(ordered+' LIMIT 25 OFFSET :offset',params).fetchall()
         target = monitoring.freshness_target(c)
         rows = []
         for source_row in source_rows:
             row = dict(source_row)
             row.pop('rank')
-            row.update(monitoring.observation_analysis(c,row['comment_id'],row['text'],engine) if not row['filter_reason'] else dict(category=None,analysis_method=None,analysis_state=None))
+            row.update(current[(row['video_url'],row['external_id'])] if not row['filter_reason'] else dict(category=None,analysis_method=None,analysis_state=None))
             row['include_matches'] = comment_filters.matches(row['text'],row.pop('include_keywords'))
             row['exclude_matches'] = comment_filters.matches(row['text'],row.pop('exclude_keywords'))
             row['timing'] = monitoring.timing(row,target)
             rows.append(row)
-        return dict(rows=rows,counts=dict(counts),total=total,page=page,pages=pages,page_size=25,
+        return dict(rows=rows,counts=dict(counts),valuable_count=len(valuable),total=total,page=page,pages=pages,page_size=25,
                     video_url=video,scope='all_local_comment_history',sort='collected_at_desc',target_seconds=target)

@@ -8,11 +8,19 @@ let next={available:true,active:false,config:{account:'1267597446',auto_recover:
 const document={hidden:false,querySelector:node,addEventListener:(key,fn)=>events.set(key,fn),body:node('body')};
 const context=vm.createContext({document,window:{lucide:{createIcons(){}},addEventListener(){}},console,setTimeout:(fn,ms)=>{timers.set(++timer,{fn,ms});return timer;},clearTimeout:id=>timers.delete(id),fetch:async(url,options)=>{requests.push({url,options});return {ok:true,json:async()=>options?{result:url.endsWith('phone')?{origin:'https://fixture.example.test',authorization:'Bearer fixture-phone-secret',account:'1267597446'}:{}}:next};}});
 const run=code=>vm.runInContext(code,context);
+const dialog=node('#login-settings-dialog');dialog.handlers={};
+dialog.addEventListener=(type,handler)=>dialog.handlers[type]=handler;
+dialog.showModal=()=>{dialog.open=true;};
+dialog.close=()=>{dialog.open=false;dialog.handlers.close?.();};
 vm.runInContext(fs.readFileSync('static/login.js','utf8'),context);
 (async()=>{
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(requests.length,1);assert.equal(requests[0].url,'/api/login-recovery');
   assert.ok(requests.every(r=>!r.options),'Opening the page performs no writes');
+  events.get('click')({target:{closest:()=>({dataset:{command:'settings'}})}});
+  assert.equal(dialog.open,true);assert.equal(requests.length,1);
+  events.get('click')({target:{closest:()=>({dataset:{command:'close-settings'}})}});
+  assert.equal(dialog.open,false);assert.equal(requests.length,1);
   assert.equal(node('#start-login').disabled,true);assert.equal(node('#auto-recover').disabled,true);
   assert.equal(node('#setup-link').hidden,false,'Unpaired state offers the setup action');
   assert.equal(node('#resume-choice').hidden,true,'Cannot select a resume action before pairing');

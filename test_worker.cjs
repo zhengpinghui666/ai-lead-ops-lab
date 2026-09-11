@@ -3,7 +3,7 @@
 const {spawn}=require('node:child_process');
 const path=require('node:path');
 const assert=require('node:assert/strict');
-function run(scenario,{interactive=false,onStatus,kind='search',candidatePolicy=null}={}){
+function run(scenario,{interactive=false,onStatus,kind='search',candidatePolicy=null,videoLimit=1}={}){
   return new Promise((resolve,reject)=>{
     const child=spawn(process.execPath,[path.join(__dirname,process.env.CLUBOPS_TEST_RUNNER||'collector_worker.cjs')],{cwd:__dirname,windowsHide:true,env:{...process.env,CLUBOPS_PLAYWRIGHT:path.join(__dirname,'tests/fixtures/playwright_fixture.cjs'),CLUBOPS_FIXTURE_SCENARIO:scenario},stdio:['pipe','pipe','pipe']});
     const messages=[];let pending='',errors='';
@@ -13,7 +13,7 @@ function run(scenario,{interactive=false,onStatus,kind='search',candidatePolicy=
     child.stdout.on('data',s=>{pending+=s;const lines=pending.split('\n');pending=lines.pop();for(const line of lines){if(!line)continue;const m=JSON.parse(line);messages.push(m);if(m.type==='status')onStatus?.(m,child);}});
     child.on('error',reject);
     child.on('close',code=>{clearTimeout(timer);if(code!==0)reject(Error(`${scenario}: ${code}: ${errors}`));else resolve(messages);});
-    child.stdin.write(JSON.stringify({kind,target:kind==='video'?'https://www.douyin.com/video/7600000000000000001':'SYNTHETIC FIXTURE ONLY',video_limit:1,comment_limit:2,interactive,candidate_policy:candidatePolicy,profile_dir:path.join(__dirname,'tests/not-a-real-browser-profile')})+'\n');
+    child.stdin.write(JSON.stringify({kind,target:kind==='video'?'https://www.douyin.com/video/7600000000000000001':'SYNTHETIC FIXTURE ONLY',video_limit:videoLimit,comment_limit:2,interactive,candidate_policy:candidatePolicy,profile_dir:path.join(__dirname,'tests/not-a-real-browser-profile')})+'\n');
   });
 }
 const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
@@ -40,6 +40,21 @@ const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
   }
   assert.equal(terminal(upstream[3]),'no_data');
   assert.equal(upstream[3].find(m=>m.type==='diagnostic').snapshot.navigation_http_status,200);
+  const timed=await run('comment-navigation-timeout');
+  assert.equal(terminal(timed),'network_error');
+  assert.equal(timed.filter(m=>m.type==='comment').length,0);
+  const timeoutEvidence=timed.find(m=>m.type==='diagnostic'&&m.stage==='document-timeout').snapshot;
+  assert.equal(timeoutEvidence.navigation_error,'navigation_timeout');
+  assert.equal(timeoutEvidence.navigation_http_status,null);
+  assert.ok(!timed.some(m=>m.type==='status'&&m.status==='needs_interaction'));
+  const [missing,mixedMissing]=await Promise.all([run('unavailable-video'),run('unavailable-first',{videoLimit:2})]);
+  for(const messages of [missing,mixedMissing]){
+    assert.equal(terminal(messages),'completed');
+    assert.equal(messages.filter(m=>m.type==='checkpoint'&&m.status==='unavailable').length,1);
+    assert.match(messages.filter(m=>m.type==='status').at(-1).detail,/1 个作品明确不存在/);
+  }
+  assert.equal(missing.filter(m=>m.type==='comment').length,0);
+  assert.ok(mixedMissing.some(m=>m.type==='comment'&&m.record.video_id==='7600000000000000009'));
   const [success,cancelled,closed,eof,schema,invalid,overflow,mixed,resumed,replies,device,publicRead,scrollPartial,scrollDone,emptyNull,ambiguousNull,emptySearch,htmlSearch,unavailableSearch]=await Promise.all([
     run('success'),
     run('verification-cancel',{interactive:true,onStatus:(m,c)=>{if(m.status==='needs_verification')c.stdin.write('{"command":"cancel"}\n');}}),
@@ -90,5 +105,5 @@ const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
   assert.equal(replyRecords.length,2,'Roots and replies share the same per-video budget');
   assert.equal(replyRecords[1].parent_comment_id,replyRecords[0].comment_id);
   for(const messages of [cancelled,closed,eof,schema,invalid,device])assert.equal(messages.filter(m=>m.type==='comment').length,0);
-  console.log('PASS: 25 child-process scenarios including candidate rotation/gated discovery, numeric HTTP 502/503 failures, Retry-After evidence, title-only ambiguity, empty/unreadable responses, login/verification and bounded responses. Synthetic only.');
+  console.log('PASS: 28 child-process scenarios including missing-work isolation, document timeout, candidate rotation/gated discovery, HTTP failures, login/verification and bounded responses. Synthetic only.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

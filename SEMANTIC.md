@@ -67,6 +67,10 @@ python intent_eval.py --output artifacts/intent-development-v1-rules-v3.json
 
 评测器按完整原文与上下文去重，保留上下文不同的相同短句；重复标注冲突时整组排除并单独报告，不投票制造答案。未确认标签、缺失预测另行计数；没有分母时显示未知。
 
+2026-09-11 修正直播评测入口：内置规则按 `kind` 分流，评论使用 `rules-v3`，直播使用 `live-rules-v1`。既有混合开发集继续可运行，报告标为 `mixed-rules`，逐条保留实际引擎，并按评论／直播分别统计数量、矩阵和样本内指标。直播的 `parent`／`title` 必须为空，不从房间标题或其他用户补充需求，也不以不同房间为同文增加评测票数。报告记录实际规则文件及依赖摘要；外部预测保留其自己的引擎，不冒用当前本地源码摘要。此修复仅用于离线评测，不改变生产规则或历史分类。
+
+尚未标注的数据使用 `review_status=pending`、`labeler=unassigned`、空 `label`／`rationale`。此类记录不调用分类器、不产生预测或准确率；确认后必须注明实际标注者。零条可评测输入会明确显示无法计算，不再显示“未发现分类分歧”。本次 48 条真实弹幕待标注集只保存在本机 `artifacts/live-room-expansion-late-20260911/`，没有自动确认为人工标签。
+
 真实模型或其他引擎的预测可以通过 `--predictions 文件.json` 独立评测。文件是数组，每条包含 `id`、`input_hash`、`category`、`method`、`engine`，必须与标注原文版本一致。单次报告不能混合规则和模型。样本中的 `origin`、`labeler`、`review_status`、`source_ref`、`rationale` 必须保留；真实独立人工标注尚待补充。
 
 ## 验证边界

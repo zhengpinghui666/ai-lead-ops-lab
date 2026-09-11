@@ -26,7 +26,7 @@ class CommentHistoryTests(unittest.TestCase):
         self.clock.start();self.addCleanup(self.clock.stop)
         self.thread=patch('collector.threading.Thread.start')
         self.thread.start();self.addCleanup(self.thread.stop)
-        self.engine=patch('semantic.state',return_value={'engine':None})
+        self.engine=patch('semantic.state',return_value={'engine':None,'can_analyze':False})
         self.engine.start();self.addCleanup(self.engine.stop)
 
     def batch(self,video,records,excluded=''):
@@ -92,3 +92,24 @@ class CommentHistoryTests(unittest.TestCase):
         self.assertEqual([r['external_id'] for r in accepted['rows']],[new,old])
         selected=comments.history({'video':'https://www.douyin.com/video/'+VIDEO})
         self.assertEqual([r['collected_at'] for r in selected['rows']],[NOW,NOW])
+
+    def test_valuable_filter_uses_current_judgment_before_pagination(self):
+        records=[(str(7600000000000000200+i),'找陪练 '+str(i)) for i in range(28)]
+        records += [('7600000000000000291','我接单'),('7600000000000000292','普通讨论'),
+                    ('7600000000000000293','找陪练 屏蔽样本')]
+        self.batch(VIDEO,records,excluded='屏蔽样本')
+        with app.db() as c: ids=[r[0] for r in c.execute('SELECT id FROM comments')]
+        app.analyze(comment_ids=ids)
+        first=comments.history({'filter':'valuable'})
+        second=comments.history({'filter':'valuable','page':'2'})
+        self.assertEqual((first['total'],first['valuable_count'],len(first['rows']),len(second['rows'])),(28,28,25,3))
+        self.assertTrue(all(r['category']=='buyer' and not r['filter_reason'] for r in first['rows']+second['rows']))
+        self.assertFalse({r['external_id'] for r in first['rows']}&{r['external_id'] for r in second['rows']})
+        changed=first['rows'][0]
+        app.mutate('review',dict(id=changed['comment_id'],category='noise',reason='合成人工核对'))
+        self.assertEqual(comments.history({'filter':'valuable'})['total'],27)
+        self.assertEqual(comments.history({'filter':'valuable','q':'屏蔽样本'})['total'],0)
+        with app.db() as c:
+            c.execute("UPDATE comments SET raw_text='修改后的原文' WHERE id=?",(first['rows'][1]['comment_id'],))
+        self.assertEqual(comments.history({'filter':'valuable'})['total'],26,'Changed source text cannot keep an old buyer projection')
+        self.assertFalse(collector.ACTIVE)

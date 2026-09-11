@@ -269,5 +269,17 @@ class CollectorTests(unittest.TestCase):
         self.assertFalse(col.state()['tasks'][0]['resumable'])
         with self.assertRaises(ValueError): col.resume(task_id,'no-work')
 
+    def test_unavailable_checkpoint_is_preserved_and_not_retried_as_pending(self):
+        task_id=self.start()
+        rows=[{'video_id':'7600000000000000001'},{'video_id':'7600000000000000009'}]
+        col.checkpoint(task_id,{'type':'targets','records':rows})
+        col.checkpoint(task_id,{'type':'checkpoint','video_id':rows[0]['video_id'],'status':'unavailable','detail':'平台明确提示作品不存在'})
+        with self.assertRaises(ValueError):
+            col.checkpoint(task_id,{'type':'checkpoint','video_id':rows[0]['video_id'],'status':'reading'})
+        col.ACTIVE.clear();col.recover()
+        child=col.resume(task_id,'resume-without-unavailable')['id']
+        row=next(r for r in col.state()['tasks'] if r['id']==child)
+        self.assertEqual([r['video_id'] for r in row['checkpoints']],[rows[1]['video_id']])
+
 
 if __name__=='__main__': unittest.main()

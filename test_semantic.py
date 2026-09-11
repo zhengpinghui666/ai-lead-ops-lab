@@ -3,6 +3,7 @@ import copy
 from contextlib import closing
 import http.server
 import http.client
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
@@ -368,6 +369,87 @@ class EvaluationTests(unittest.TestCase):
         with self.assertRaises(ValueError): intent_eval.evaluate(data,p)
         data['rows'][1]['review_status']='draft'
         self.assertEqual(intent_eval.evaluate(data)['skipped']['unconfirmed'],1)
+
+    def test_live_uses_live_rules_and_records_actual_source_versions(self):
+        data=self.dataset(); row=data['rows'][0]
+        row.update(kind='live',text='@找陪玩 加油',label='noise')
+        # A mention is not this speaker's intent. Never enter comment routing.
+        with patch.object(app,'classify',side_effect=AssertionError('comment route')):
+            report=intent_eval.evaluate(data)
+        self.assertEqual(report['predictions'][0]['category'],'noise')
+        self.assertEqual(report['engine'],'live-rules-v1')
+        self.assertEqual(report['predictions'][0]['engine'],'live-rules-v1')
+        self.assertEqual(report['input_kinds'],['live'])
+        expected=hashlib.sha256((Path(__file__).parent/'live_rules.py').read_bytes()).hexdigest()
+        self.assertEqual(report['classifier_source_sha256'],expected)
+        self.assertEqual(set(report['classifier_sources_sha256']),{'live_rules.py','intent_rules.py','clubops.py'})
+        row.update(text='带我上分怎么收费',label='buyer')
+        self.assertEqual(intent_eval.evaluate(data)['predictions'][0]['category'],'buyer')
+
+    def test_comment_context_routing_is_preserved(self):
+        data=self.dataset(); row=data['rows'][0]
+        row.update(text='多少钱',parent='陪玩服务',title='无畏契约')
+        with patch.object(intent_eval.live_rules,'classify',side_effect=AssertionError('live route')), \
+                patch.object(app,'classify',wraps=app.classify) as classify:
+            report=intent_eval.evaluate(data)
+        classify.assert_called_once_with('多少钱','无畏契约',parent_context='陪玩服务')
+        self.assertEqual(report['engine'],intent_eval.RULESET_VERSION)
+        self.assertEqual(report['input_kinds'],['comment'])
+        self.assertNotIn('live_rules.py',report['classifier_sources_sha256'])
+
+    def test_live_context_cannot_supply_intent_or_extra_duplicate_votes(self):
+        data=self.dataset(); row=data['rows'][0]
+        row.update(kind='live',text='多少钱')
+        for key in ('parent','title'):
+            row[key]='陪玩服务'
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError,'须留空'):
+                intent_eval.evaluate(data)
+            row[key]=''
+        data['rows'].append({**row,'id':'b','source_ref':'synthetic://different-room'})
+        report=intent_eval.evaluate(data)
+        self.assertEqual(report['evaluated'],1)
+        self.assertEqual(report['skipped']['duplicates'],1)
+
+    def test_mixed_dataset_records_each_actual_rule_engine(self):
+        data=self.dataset(); row=data['rows'][0]
+        data['rows'].append({**row,'id':'b','kind':'live'})
+        report=intent_eval.evaluate(data)
+        self.assertEqual(report['engine'],'mixed-rules')
+        self.assertIsNone(report['classifier_source_sha256'])
+        self.assertEqual({r['id']:r['engine'] for r in report['predictions']},
+                         {'a':intent_eval.RULESET_VERSION,'b':'live-rules-v1'})
+        self.assertEqual(report['per_kind']['comment']['evaluated'],1)
+        self.assertEqual(report['per_kind']['live']['evaluated'],1)
+
+    def test_pending_live_labels_produce_no_predictions_or_accuracy(self):
+        data=self.dataset(); row=data['rows'][0]
+        row.update(kind='live',review_status='pending',labeler='unassigned',label='',rationale='')
+        with patch.object(intent_eval.live_rules,'classify',side_effect=AssertionError('unconfirmed input')):
+            report=intent_eval.evaluate(data)
+        self.assertEqual(report['engine'],'live-rules-v1')
+        self.assertEqual(report['evaluated'],0)
+        self.assertEqual(report['predictions'],[])
+        self.assertEqual(report['skipped'],{'unconfirmed':1})
+        self.assertIsNone(report['sample_accuracy'])
+        self.assertIn('不能计算准确率',intent_eval.markdown(report))
+        self.assertNotIn('未发现分类分歧',intent_eval.markdown(report))
+        row.update(review_status='confirmed',label='buyer',rationale='没有标注者的假确认')
+        with self.assertRaisesRegex(ValueError,'实际标注者'):
+            intent_eval.evaluate(data)
+
+    def test_external_live_predictions_keep_external_engine_and_input_guard(self):
+        data=self.dataset(); row=data['rows'][0]
+        row.update(kind='live')
+        predictions=[dict(id='a',input_hash=store.digest(intent_eval.source(row)),
+                          category='buyer',method='rules',engine='external-test')]
+        with patch.object(intent_eval.live_rules,'classify',side_effect=AssertionError('external prediction')):
+            report=intent_eval.evaluate(data,predictions)
+        self.assertEqual(report['engine'],'external-test')
+        self.assertIsNone(report['classifier_source_sha256'])
+        self.assertEqual(report['classifier_sources_sha256'],{})
+        row['text']='已经修改原文'
+        with self.assertRaisesRegex(ValueError,'版本不一致'):
+            intent_eval.evaluate(data,predictions)
 
 
 if __name__=='__main__': unittest.main()

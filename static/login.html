@@ -35,7 +35,7 @@
           <div id="job-context" class="login-meta" hidden></div>
           <div class="login-actions"><button class="button primary" id="setup-link" data-command="setup" hidden>连接手机转发</button><button class="button primary" id="start-login" data-command="start" disabled>检查并恢复登录</button><button class="button" id="manual-complete" data-command="complete" hidden>已手动完成登录，核对身份</button><button class="button" id="cancel-login" data-command="cancel" hidden>取消本次任务</button></div>
           <p id="action-hint" class="login-hint"></p>
-          <div id="resume-choice" hidden><label class="field"><span>登录成功后</span><select id="resume-task"><option value="">只恢复登录，不启动采集</option></select></label></div>
+
           <div id="phone-test-message" class="login-test" hidden><strong>手机连接测试</strong><p>在 iPhone 上手动运行已配置的转发快捷指令，输入下方测试文字：</p><output id="test-message"></output><small>这是连接测试，不会向抖音请求验证码。</small></div>
         </div>
       </section>
@@ -44,6 +44,12 @@
         <li><i data-lucide="smartphone"></i><div><strong>2. 手机转发</strong><span id="phone-step">等待检查</span></div></li>
         <li><i data-lucide="shield-check"></i><div><strong>3. 登录状态</strong><span id="session-step">等待检查</span></div></li>
       </ol>
+      <section class="card section-gap"><div class="card-body row spread"><div><h2>登录与手机连接设置</h2><p class="muted">账号、自动恢复与手机转发配置</p></div><button class="button small" data-command="settings">打开设置</button></div></section>
+      <section class="card section-gap" aria-labelledby="history-title"><div class="card-head"><h2 id="history-title">最近恢复记录</h2><small>保留状态，不保存验证码</small></div><div id="login-history" class="card-body"><p class="muted">正在读取…</p></div></section>
+      <p class="login-footnote">短信登录用于恢复账号会话。关键词搜索要求的滑块、点选等验证会单独提示；登录成功后仍需确认相应读取恢复。</p>
+    </main>
+  </div>
+<dialog id="login-settings-dialog" class="settings-modal" aria-labelledby="login-settings-title"><div class="modal-head"><h2 id="login-settings-title">登录与手机连接设置</h2><button type="button" class="icon-button" data-command="close-settings" aria-label="关闭设置"><i data-lucide="x"></i></button></div><div class="modal-body">          <div id="resume-choice" hidden><label class="field"><span>登录成功后</span><select id="resume-task"><option value="">只恢复登录，不启动采集</option></select></label></div>
       <div class="login-grid">
         <section class="card" aria-labelledby="login-config-title">
           <div class="card-head"><h2 id="login-config-title">恢复设置</h2></div>
@@ -74,9 +80,6 @@
           </div>
         </section>
       </div>
-      <section class="card section-gap" aria-labelledby="history-title"><div class="card-head"><h2 id="history-title">最近恢复记录</h2><small>保留状态，不保存验证码</small></div><div id="login-history" class="card-body"><p class="muted">正在读取…</p></div></section>
-      <p class="login-footnote">短信登录用于恢复账号会话。关键词搜索要求的滑块、点选等验证会单独提示；登录成功后仍需确认相应读取恢复。</p>
-    </main>
-  </div>
+</div></dialog>
 </body>
 </html>

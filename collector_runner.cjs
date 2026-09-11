@@ -78,7 +78,8 @@ async function main(){
     check();await Promise.all(readers.map(r=>r.settle()));
     const counts=readers.map(r=>r.counts()),videos=counts.reduce((n,r)=>n+r.videos,0),comments=counts.reduce((n,r)=>n+r.comments,0),errors=readers.reduce((n,r)=>n+r.errors(),0);
     const complete=result.outcomes.every(Boolean)&&!errors;
-    await status(complete?'completed':comments?'partial':errors?'schema_changed':'no_data',`本批观察到 ${videos} 个视频、${comments} 条评论；视频读取并发峰值 ${peak}。只覆盖已加载内容，不代表全部评论。`+(errors?` ${errors} 次响应未能解析。`:''));
+    const unavailable=result.outcomes.filter(r=>r?.unavailable).length;
+    await status(complete?'completed':comments?'partial':errors?'schema_changed':'no_data',`本批观察到 ${videos} 个视频、${comments} 条评论；视频读取并发峰值 ${peak}。只覆盖已加载内容，不代表全部评论。`+(unavailable?` ${unavailable} 个作品明确不存在，已跳过，未读取其评论。`:'')+(errors?` ${errors} 次响应未能解析。`:''));
   }catch(error){
     fail(error);
     if(!cancelled)await Promise.all(readers.map(r=>r.diagnose('finished-error').catch(()=>{})));

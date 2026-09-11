@@ -37,6 +37,23 @@ class LiveMonitorTests(unittest.TestCase):
     def event(self, mid=MID, **changes):
         return {'type': 'message', 'record': dict(room_id=ROOM, uid=UID, message_id=mid, nickname='离线样例', text='无畏契约找陪练，预算100元', published_at='2026-09-10T00:00:00Z', **changes)}
 
+    def test_valuable_archive_paginates_current_human_judgments(self):
+        import live_workflow as flow
+        sid=self.session()
+        for i in range(4):
+            live.receive(sid,self.event(str(int(MID)+i)))
+        first=live.history({'filter':'valuable','limit':2})
+        self.assertEqual((first['total'],len(first['rows']),first['has_more']),(4,2,True))
+        row=first['rows'][0]
+        flow.review(dict(id=row['id'],review_token=row['review_token'],category='noise',reason='合成人工更正'))
+        updated=live.history({'filter':'valuable','limit':2})
+        self.assertEqual(updated['total'],3)
+        self.assertNotIn(row['id'],[r['id'] for r in updated['rows']])
+        second=live.history({'filter':'valuable','limit':2,'offset':2,'anchor_id':first['anchor_id']})
+        self.assertEqual(len(second['rows']),1)
+        self.assertFalse({r['id'] for r in updated['rows']}&{r['id'] for r in second['rows']})
+        self.assertEqual(live.history({'filter':'all'})['total'],4)
+
     def test_config_is_inert_and_strict(self):
         with patch('subprocess.Popen') as process:
             live.save(self.config)

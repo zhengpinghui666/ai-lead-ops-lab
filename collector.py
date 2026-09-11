@@ -115,7 +115,7 @@ def state(mode='live'):
             task['checkpoints'] = [dict(r) for r in c.execute('SELECT * FROM collection_checkpoints WHERE task_id=? ORDER BY rowid', (task['id'],))]
             parent = c.execute('SELECT parent_task_id FROM collection_resumes WHERE task_id=?', (task['id'],)).fetchone()
             task['parent_task_id'] = parent[0] if parent else None
-            task['resumable'] = bool(task['finished_at'] and any(r['status'] != 'done' for r in task['checkpoints']))
+            task['resumable'] = bool(task['finished_at'] and any(r['status'] not in ('done','unavailable') for r in task['checkpoints']))
             analysis = c.execute("SELECT COUNT(*) AS total,COALESCE(SUM(x.analysis_method='pending'),0) AS pending FROM comments x JOIN collection_observations o ON o.external_id=x.external_id WHERE o.task_id=? AND o.kind='comment' AND o.filter_reason='' AND x.source_id=?", (task['id'], source['id'] if source else -1)).fetchone()
             task['analysis'] = {'status': 'no_comments' if not analysis['total'] else 'pending' if analysis['pending'] else 'completed',
                 'total': analysis['total'], 'pending': analysis['pending'], 'analyzed': analysis['total'] - analysis['pending']}
@@ -177,7 +177,7 @@ def start(body, mode='live', *, resume_from=None, lookback_hours=None, include_k
             parent = c.execute('SELECT * FROM collection_tasks WHERE id=?', (int(resume_from),)).fetchone()
             if not parent or not parent['finished_at'] or int(resume_from) in ACTIVE:
                 raise ValueError('原会话仍在运行，或任务不存在')
-            pending = c.execute("SELECT * FROM collection_checkpoints WHERE task_id=? AND status!='done' ORDER BY rowid", (parent['id'],)).fetchall()
+            pending = c.execute("SELECT * FROM collection_checkpoints WHERE task_id=? AND status NOT IN ('done','unavailable') ORDER BY rowid", (parent['id'],)).fetchall()
             if not pending:
                 raise ValueError('没有可继续的视频断点；可新建一批关键词搜索')
             kind, target, videos, comments, interactive = parent['kind'], parent['target'], len(pending), parent['comment_limit'], parent['interactive']
@@ -270,13 +270,13 @@ def checkpoint(task_id, message):
             candidate_pool.mark_selected(c, task, records)
     elif message.get('type') == 'checkpoint':
         status = message.get('status')
-        if status not in ('reading', 'done', 'partial'):
+        if status not in ('reading', 'done', 'partial', 'unavailable'):
             raise ValueError('断点状态无效')
         with app.LOCKS['live'], app.db() as c:
             row = c.execute('SELECT status FROM collection_checkpoints WHERE task_id=? AND video_id=?', (task_id, message.get('video_id'))).fetchone()
             if not row:
                 raise ValueError('断点不存在')
-            if row['status'] == 'done' and status != 'done':
+            if row['status'] in ('done', 'unavailable') and status != row['status']:
                 raise ValueError('已完成断点不能退回读取状态')
             c.execute('UPDATE collection_checkpoints SET status=?,detail=?,updated_at=? WHERE task_id=? AND video_id=?', (status, app.clean(message.get('detail'), 500), app.now(), task_id, message['video_id']))
 

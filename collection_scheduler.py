@@ -12,7 +12,7 @@ GATED = {'needs_login', 'needs_verification', 'rate_limited', 'access_denied', '
 
 
 def transient_http_wait(connection, task):
-    """Require numeric HTTP evidence; a 502-looking title is insufficient."""
+    """Require numeric HTTP evidence or an explicit comment document timeout."""
     if (not task or task['transport'] != 'local_browser' or task['status'] != 'network_error'
             or not task['finished_at']):
         return None
@@ -25,6 +25,11 @@ def transient_http_wait(connection, task):
             responses = snapshot.get('responses', [])
             if not isinstance(responses, list):
                 return None
+            if (row['stage'] == 'document-timeout' and snapshot.get('navigation_error') == 'navigation_timeout'
+                    and snapshot.get('navigation_http_status') is None
+                    and re.fullmatch(r'https://www\.douyin\.com/video/\d{5,30}/?', snapshot.get('page_url', ''))
+                    and not any(item.get('kind') == 'comment' for item in responses)):
+                found = True
             evidence = [(snapshot.get('navigation_http_status'), snapshot.get('navigation_retry_after_seconds'))]
             evidence += [(item.get('status'), item.get('retry_after_seconds')) for item in responses]
             for status, retry_after in evidence:

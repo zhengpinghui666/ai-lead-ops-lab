@@ -109,6 +109,35 @@ class MonitorTests(unittest.TestCase):
         finished=app.now();self.upstream_failure(task);sch.tick()
         self.assertEqual(mon.state()['next_run_at'],(datetime.fromisoformat(finished)+timedelta(seconds=60)).isoformat())
 
+    def test_explicit_comment_document_timeout_uses_bounded_recovery(self):
+        self.baseline();mon.command('start');task=sch.tick(NOW)
+        snapshot={'navigation_error':'navigation_timeout','navigation_http_status':None,
+                  'page_url':'https://www.douyin.com/video/'+VIDEO,'responses':[{'kind':'search','status':200}]}
+        self.upstream_failure(task,snapshot,stage='document-timeout');sch.tick()
+        self.assertEqual(mon.state()['next_run_at'],'2026-09-09T10:01:00+00:00')
+        self.assertTrue(mon.state()['enabled'])
+        self.assertIsNone(self.at('2026-09-09T10:00:59+00:00'))
+        self.assertIsNotNone(self.at('2026-09-09T10:01:00+00:00'))
+
+    def test_timeout_recovery_rejects_ambiguous_or_gated_evidence(self):
+        task=self.task();self.finish(task,'network_error')
+        base={'navigation_error':'navigation_timeout','navigation_http_status':None,
+              'page_url':'https://www.douyin.com/video/'+VIDEO,'responses':[]}
+        cases=[('finished-error',base),('document-timeout',{**base,'navigation_error':'navigation_failed'}),
+               ('document-timeout',{**base,'page_url':'https://www.douyin.com/search/test'}),
+               ('document-timeout',{**base,'navigation_http_status':200}),
+               ('document-timeout',{**base,'responses':[{'kind':'comment','status':200}]}),
+               ('document-timeout',{**base,'responses':[{'status':403}]}),
+               ('document-timeout',{**base,'responses':[{'status':'needs_verification'}]})]
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            for stage,snapshot in cases:
+                with self.subTest(stage=stage,snapshot=snapshot):
+                    c.execute('DELETE FROM collection_diagnostics WHERE task_id=?',(task,))
+                    c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                              (task,stage,json.dumps(snapshot),NOW))
+                    self.assertIsNone(sch.transient_http_wait(c,row))
+
     def test_gateway_wait_respects_retry_after_and_configured_interval(self):
         self.baseline();mon.save({'interval_seconds':300});mon.command('start');task=sch.tick(NOW)
         self.upstream_failure(task,{'responses':[{'status':503,'retry_after_seconds':900}]});sch.tick()

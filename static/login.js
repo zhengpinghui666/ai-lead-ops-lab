@@ -77,14 +77,16 @@ async function perform(action){if(busy)return;busy=true;render();feedback('');tr
 document.addEventListener('input',event=>{if(event.target.closest('#recovery-form')){dirty=true;$('#config-status').textContent='有未保存修改；不会被后台刷新覆盖。';$('#start-login').disabled=true;}if(event.target.id==='relay-origin')originDirty=true;});
 document.addEventListener('submit',event=>{
   event.preventDefault();
-  if(event.target.id==='recovery-form')void perform(async()=>{await post('login-recovery-save',{account:$('#login-account').value.trim(),auto_recover:$('#auto-recover').checked});dirty=false;feedback('设置已保存；未启动登录或采集。');});
+  if(event.target.id==='recovery-form')void perform(async()=>{await post('login-recovery-save',{account:$('#login-account').value.trim(),auto_recover:$('#auto-recover').checked});dirty=false;$('#login-settings-dialog').close();feedback('设置已保存；未启动登录或采集。');});
   if(event.target.id==='relay-form')void perform(async()=>{await post('login-relay-bind',{origin:$('#relay-origin').value.trim()});originDirty=false;feedback('中转地址已绑定，可以检查连接。');});
 });
 document.addEventListener('click',event=>{
   const command=event.target.closest('[data-command]')?.dataset.command;if(!command)return;
   if(command==='menu'||command==='close-menu'){const open=command==='menu';setMobileNavigation(open);return;}
   if(command==='hide-phone'){hidePhone();return;}
-  if(command==='setup'){$('#deployment-details').open=true;$('#deployment-details').scrollIntoView({block:'center',behavior:'smooth'});$('#deployment-details summary').focus();return;}
+  if(command==='settings'){$('#login-settings-dialog').showModal();return;}
+  if(command==='close-settings'){$('#login-settings-dialog').close();return;}
+  if(command==='setup'){$('#login-settings-dialog').showModal();$('#deployment-details').open=true;$('#deployment-details').scrollIntoView({block:'center',behavior:'smooth'});$('#deployment-details summary').focus();return;}
   if(command==='reset'){dirty=false;render();return;}
   void perform(async()=>{
     if(command==='start'){const task=$('#resume-task').value;await post('login-recovery-start',{kind:'login',...(task?{task_id:Number(task)}:{})});feedback('登录任务已开始，请保留项目专用窗口。');}
@@ -116,3 +118,5 @@ document.addEventListener('keydown',event=>{
 });
 window.matchMedia?.('(max-width:700px)').addEventListener('change',event=>{if(!event.matches)setMobileNavigation(false,false);});
 
+
+$('#login-settings-dialog').addEventListener('close',()=>{hidePhone();dirty=false;originDirty=false;render();});

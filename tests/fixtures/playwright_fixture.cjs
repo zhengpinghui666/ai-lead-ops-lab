@@ -19,6 +19,10 @@ class Page extends EventEmitter {
   async title(){return scenario==='gateway-title-only'?'502 Bad Gateway':scenario==='public-comments-login-to-post'?'合成夹具：无畏契约陪玩 - 抖音':scenario.includes('verification')&&!verified?'验证码中间页':'合成夹具页面';}
   async goto(url){
     this.address=url;
+    if((scenario==='unavailable-video'||scenario==='unavailable-first'&&url.endsWith(vid))&&!url.includes('/search/'))return {status:()=>200};
+    if(scenario==='comment-navigation-timeout'&&!url.includes('/search/')){
+      const error=Error('synthetic navigation timeout');error.name='TimeoutError';throw error;
+    }
     if(scenario==='navigation-502')return {status:()=>502,headers:()=>({'retry-after':'90','set-cookie':'PRIVATE_RESPONSE_SENTINEL'})};
     if(scenario==='gateway-title-only')return {status:()=>200};
     if(scenario==='search-503'||scenario==='comment-503'&&!url.includes('/search/')){
@@ -29,7 +33,7 @@ class Page extends EventEmitter {
     if(scenario==='verification-window-close')this.ctx.closeTimer=setTimeout(()=>this.ctx.close(),6000);
     if(scenario.startsWith('verification')||scenario==='device-challenge')return {status:()=>200};
     if(url.includes('/search/')){
-      if(scenario==='candidate-rotation'){
+      if(scenario==='candidate-rotation'||scenario==='unavailable-first'){
         this.emit('response',response('https://www.douyin.com/aweme/v1/web/general/search/single/',{data:[vid,'7600000000000000009','7600000000000000010'].map(aweme_id=>({aweme_info:{aweme_id,desc:'合成候选 '+aweme_id}}))}));
         return {status:()=>200};
       }
@@ -46,7 +50,7 @@ class Page extends EventEmitter {
       }
       this.emit('response',response('https://www.douyin.com/aweme/v1/web/general/search/single/',{data:[{aweme_info:{aweme_id:vid,desc:'合成夹具：无畏契约陪练'}}]}));
     }else {
-      if(scenario==='candidate-rotation'){
+      if(scenario==='candidate-rotation'||scenario==='unavailable-first'){
         const actual=url.split('/').pop();
         this.emit('response',response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${actual}`,{status_code:0,has_more:0,comments:[{cid:'7600000000000000999',aweme_id:actual,text:'合成轮换评论',user:{uid:'123456789012'}}]}));
         return {status:()=>200};
@@ -67,5 +71,6 @@ class Page extends EventEmitter {
   }
   locator(selector){return {innerText:async()=>scenario==='device-challenge'?'登录后即可搜索更多精彩视频\n使用原设备扫码\n为保障账号安全，请使用「抖音 APP」扫码验证':scenario==='public-comments-login-to-post'?'全部评论\n请先登录后发表评论\n已加载的合成评论\n登录后即可参与互动讨论':scenario==='success'?'合成夹具正文':'',count:async()=>selector==='[data-e2e="comment-list"]'&&scenario.startsWith('scroll-')?1:0,evaluateAll:async()=>scenario==='resume-search-dom'&&verified&&selector.startsWith('a[')?[{href:`https://www.douyin.com/video/${vid}`,label:'人工继续后的合成视频'}]:[],isVisible:async()=>scenario.startsWith('scroll-'),hover:async()=>{if(scenario==='scroll-late-budget')this.emit('response',response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`,{status_code:0,comments:[{cid:'7600000000000000005',aweme_id:vid,text:'迟到的合成评论',user:{uid:'123456789015'}}],has_more:1}));if(scenario.startsWith('scroll-')){const e=Error('synthetic hover obstruction');e.name='TimeoutError';throw e;}},first(){return this;},click:async()=>{},all:async()=>[]};}
   getByRole(){return this.locator('button');}
+  getByText(text){const missing=scenario==='unavailable-video'||scenario==='unavailable-first'&&this.address.endsWith(vid);return {count:async()=>missing&&text==='你要观看的视频不存在'?1:0,isVisible:async()=>missing};}
 }
 module.exports={devices:{'Desktop Chrome':{userAgent:'fixture Desktop Chrome'}},chromium:{launchPersistentContext:async(profile,options)=>{if(options.userAgent!=='fixture Desktop Chrome')throw Error('Desktop client configuration missing');return new Context();}}};

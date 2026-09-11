@@ -123,7 +123,7 @@ def history(query, mode='live'):
     limit = integer(query.get('limit', 25), '每页条数', 1, 100)
     search = query.get('q', '')
     status = query.get('filter', 'all')
-    if not isinstance(search, str) or len(search) > 200 or status not in ('all', 'accepted', 'filtered'):
+    if not isinstance(search, str) or len(search) > 200 or status not in ('all', 'accepted', 'filtered', 'valuable'):
         raise ValueError('弹幕筛选条件无效')
     clauses, args = ['1=1'], []
     sid = query.get('session_id', '')
@@ -132,7 +132,7 @@ def history(query, mode='live'):
         clauses.append('m.session_id=?')
         args.append(sid)
     if status != 'all':
-        clauses.append("m.filter_reason=''" if status == 'accepted' else "m.filter_reason<>''")
+        clauses.append("m.filter_reason=''" if status in ('accepted','valuable') else "m.filter_reason<>''")
     if search.strip():
         clauses.append('(instr(lower(m.raw_text),lower(?))>0 OR instr(lower(m.nickname),lower(?))>0 OR instr(m.uid,?)>0 OR instr(m.message_id,?)>0)')
         args.extend([search.strip()] * 4)
@@ -143,8 +143,17 @@ def history(query, mode='live'):
         where += ' AND m.id<=?'
         args.append(anchor)
         total = c.execute('SELECT COUNT(*) FROM live_messages m' + where, args).fetchone()[0]
-        rows = [live_workflow.project(c, r, history=False) for r in c.execute(
-            live_workflow.SELECT + where + ' ORDER BY m.id DESC LIMIT ? OFFSET ?', (*args, limit, offset))]
+        if status == 'valuable':
+            selected = []
+            for raw in c.execute(live_workflow.SELECT + where + ' ORDER BY m.id DESC', args):
+                row = live_workflow.project(c, raw, history=False)
+                if row['category'] == 'buyer' and row['analysis_method'] in ('rules','model','human'):
+                    selected.append(row)
+            total = len(selected)
+            rows = selected[offset:offset+limit]
+        else:
+            rows = [live_workflow.project(c, r, history=False) for r in c.execute(
+                live_workflow.SELECT + where + ' ORDER BY m.id DESC LIMIT ? OFFSET ?', (*args, limit, offset))]
     return dict(rows=rows, total=total, offset=offset, limit=limit, has_more=offset + len(rows) < total,
                 scope='local_archive', platform_history_available=False, anchor_id=anchor)
 

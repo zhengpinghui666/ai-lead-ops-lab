@@ -170,6 +170,22 @@ function createReader(page,shared){
       if(await buttons.count()===1&&await buttons.first().isVisible()){await buttons.first().click({timeout:3000}).catch(()=>{});await wait(2500);await drain();}
     }
     if(!recognized&&commentResponses){await diagnose('comment-schema');throw new Stop('schema_changed','收到了评论响应，但结构未能识别；不能将其当作零评论或完成采集。');}
+    if(!recognized&&!commentResponses){
+      await guard();
+      const unavailable=page.getByText('你要观看的视频不存在',{exact:true});
+      if(page.url()===row.video_url&&await unavailable.count()===1&&await unavailable.isVisible()){
+        await diagnose('video-unavailable');
+        await emit({type:'checkpoint',video_id:row.video_id,status:'unavailable',detail:'平台明确提示作品不存在，未读取其评论；已跳过本作品'});
+        phase='idle';return {unavailable:true};
+      }
+    }
+    if(!recognized&&navigationError==='navigation_timeout'){
+      await guard();await drain();
+      if(!recognized&&!commentResponses){
+        await diagnose('document-timeout');
+        throw new Stop('network_error','作品页面加载超时，尚未收到评论响应；已结束本批并保留断点。');
+      }
+    }
     if(!recognized){await pause('needs_interaction');await drain();await guard();}
     if(invalidComments&&!(perVideo.get(row.video_id)||0)){await diagnose('comment-invalid');throw new Stop('schema_changed','评论缺少有效原始 ID 或内容，未入库；请检查适配器。');}
     if(!recognized){await emit({type:'checkpoint',video_id:row.video_id,status:'partial',detail:'没有可识别的评论响应'});return false;}

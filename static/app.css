@@ -181,3 +181,37 @@ dialog.collection-modal .modal-actions{flex-wrap:wrap}
   .result-tabs{width:100%}
   .result-tabs .result-tab{flex:1;padding:7px;font-size:12px}
 }
+
+/* Results stay on primary screens; configuration uses the existing dialog. */
+.settings-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.settings-options .card-body{display:flex;flex-direction:column;align-items:flex-start;gap:10px}
+.settings-options p{margin:0 0 8px}
+.settings-modal{width:min(820px,calc(100vw - 32px));padding:0}
+.settings-modal .modal-head{position:sticky;top:0;z-index:2;background:var(--white,#fff);border-bottom:1px solid var(--line)}
+.settings-modal>.modal-body,.settings-modal #modal-content>.modal-body{padding:16px 20px;max-height:calc(86dvh - 85px);overflow:auto}
+.settings-modal .card{box-shadow:none;border:0;margin:0}
+.settings-modal .monitor-settings{max-height:none;position:static;width:100%;overflow:visible}
+.settings-modal .monitor-fields{padding:16px 0}
+.settings-modal .card-head{padding:8px 0 16px}
+.settings-modal .card-body{padding:12px 0}
+.settings-modal .login-grid{grid-template-columns:1fr;gap:18px;margin:0}
+.settings-modal .fields-2{align-items:start}
+.channel-settings-entry{margin-bottom:16px}
+.live-workspace{display:block;max-width:none}
+.result-table .result-time{width:145px;min-width:130px;white-space:normal;font-variant-numeric:tabular-nums;line-height:1.65;color:var(--text)}
+.result-table th:nth-child(3),.result-table th:nth-child(4){min-width:130px;white-space:normal}
+.result-tabs{flex-wrap:wrap}
+.result-toolbar{flex-wrap:wrap}
+@media(max-width:640px){
+  .settings-options{grid-template-columns:1fr}
+  .settings-modal{width:calc(100vw - 24px)}
+  .settings-modal>.modal-body,.settings-modal #modal-content>.modal-body{padding:12px 16px}
+  .result-table .result-time{width:100%;min-width:0}
+  .result-table td:nth-child(3)::before{content:'评论发布时间 · ';font-size:12px;color:var(--muted)}
+  .result-table td:nth-child(4)::before{content:'首次采集时间 · ';font-size:12px;color:var(--muted)}
+  #live-results td:nth-child(1)::before{content:'发布时间 · '}
+  #live-results td:nth-child(2)::before{content:'首次采集时间 · ';color:var(--muted);font-size:12px}
+  #live-results td:nth-child(3){padding:0;background:none;font-size:13px}
+  #live-results td:nth-child(4){font-size:15px;padding:10px 12px;background:var(--bg);border-radius:6px}
+}
+.filter-explanation{margin:0;padding:10px 18px;color:var(--muted);font-size:12px;line-height:1.7;border-bottom:1px solid var(--line)}

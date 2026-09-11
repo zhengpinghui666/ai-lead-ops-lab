@@ -25,12 +25,17 @@ vm.runInContext(fs.readFileSync(path.join(__dirname,'static/app.js'),'utf8'),con
 function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('undefined'),'Undefined appears in UI');assert.ok(!html.includes('NaN'),'NaN appears in UI');for(const [,name] of html.matchAll(/data-lucide="([^"]+)"/g)){const key=name.replace(/(^|-)([a-z])/g,(_,sep,c)=>c.toUpperCase());assert.ok(lucide[key],`Missing icon ${name}`);}}
 (async()=>{
   await new Promise(resolve=>setImmediate(resolve));
+  run("history={replaceState(){}};");
+  assert.equal(run('monitorResultFilter'),'valuable');
+  assert.equal(run('liveFilter'),'valuable');
+  for(const value of elements.values())value.classList.add=()=>{};
   for(const mode of ['live','demo']){
     for(const page of ['overview','monitor','monitor-settings','live','leads','recruit','roster','inbox','analytics','settings']){
       run(`S=fixtures.${mode}; mode='${mode}';page='${page}';selected=null;conversation=null;render();`);
       checkHtml(element('#main').innerHTML);
       assert.ok(!/data-action=["'](?:import|export|add-source)["']/.test(element('#main').innerHTML),'No manual file-transfer actions in product pages');
       assert.ok(!element('#main').innerHTML.includes('可在导出中查看'));
+      if(['monitor','live','settings','monitor-settings'].includes(page))assert.ok(!/<form id="(?:settings|semantic|monitor|live)-form"/.test(element('#main').innerHTML),'Configuration belongs in dialogs');
       assert.equal(element('#demo-banner').hidden,mode!=='demo');
     }
   }
@@ -42,7 +47,7 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.match(run('workMetrics({metrics:{likes:0,comments:123,shares:null,favorites:5}})'),/平台评论<b>123<\/b>/);
   assert.match(run('workMetrics({})'),/未获取/);
   run("workFilter='tracked'");assert.ok(run('workPool()').includes('当前没有持续跟踪'));
-  run("monitorResultVideo='video-A'");assert.equal(run('monitorResultRows().length'),1);
+  run("monitorResultFilter='all';monitorResultVideo='video-A'");assert.equal(run('monitorResultRows().length'),1);
   assert.equal(run('monitorResultRows()[0].text'),'A');
   run("workFilter='all';monitorResultVideo='';S=fixtures.demo;mode='demo';unlinkedCommentsDialog()");checkHtml(element('#modal-content').innerHTML);
   assert.equal(run('typeof importDialog'), 'undefined');
@@ -74,6 +79,7 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.equal(run('draftText'),'');run('restoreDraft(1)');assert.equal(run('draftText'),'用户甲的草稿');
   run(`S=fixtures.live;S.collector={tasks:[],results:{task:{id:3,status:'completed'},counts:{observed:2,accepted:1,filtered:1},rows:[{external_id:'1',text:'找陪练<script>',text_origin:'observation',nickname:'test',user_identifier:'123',video_url:'https://www.douyin.com/video/7600000000000000001',include_matches:['陪练'],exclude_matches:[],filter_reason:''},{external_id:'2',text:'',text_origin:'unavailable',nickname:'',filter_reason:'filtered_blocked'}]}};monitorResultFilter='all';monitorResultQuery='';`);
   const resultHtml=run('monitorResultsPanel()');checkHtml(resultHtml);
+  assert.match(resultHtml,/评论发布时间/);assert.match(resultHtml,/首次采集时间 ↓/);
   assert.match(resultHtml,/<mark>陪练<\/mark>&lt;script&gt;/);
   assert.ok(!resultHtml.includes('<script>'));
   assert.ok(!resultHtml.includes('旧任务未保存原文'));
@@ -293,8 +299,9 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   run(`S=JSON.parse(JSON.stringify(fixtures.demo));mode='live';conversation=S.leads[0].id;S.leads[0].source_kind='uid_test';S.leads[0].contact_basis='opt_in';S.leads[0].contact_note='synthetic consent';S.leads[0].do_not_contact=false;S.messages=[];S.jobs=[{id:98,lead_id:conversation,content:'offline only',status:'draft'}];S.uid_messaging={can_attempt:false,issues:['<script>not configured']};`);
   run("page='inbox';S.messaging_test={status:'not_configured',issues:['legacy OpenID config'],sender:'test',recipient:'test'}");
   let httpHtml=run('inbox()');checkHtml(httpHtml);
-  assert.match(httpHtml,/个人号 HTTP · 数字 UID/);assert.match(httpHtml,/data-action="uid-http-send"[^>]*disabled/);
-  assert.match(httpHtml,/data-action="uid-http-probe"[^>]*disabled/);
+  assert.match(httpHtml,/data-action="uid-settings"/);assert.match(httpHtml,/data-action="uid-http-send"[^>]*disabled/);
+  run('uidSettingsDialog()');assert.match(element('#modal-content').innerHTML,/个人号 HTTP · 数字 UID/);
+  assert.match(element('#modal-content').innerHTML,/data-action="uid-http-probe"[^>]*disabled/);
   assert.ok(!httpHtml.includes('<script>'));assert.ok(!httpHtml.includes('HTTP 单条测试'));
   run('uidTargetDialog()');
   assert.match(element('#modal-content').innerHTML,/name="uid" type="text"[^>]*inputmode="numeric"[^>]*required/);
@@ -360,7 +367,7 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
     httpHtml=run('inbox()');assert.ok(!httpHtml.includes('data-action="uid-http-send"'));assert.match(httpHtml,/10000000000000001/);
   }
   run("S.jobs[0].status='draft';S.leads[0].do_not_contact=true");assert.match(run('inbox()'),/data-action="uid-http-send"[^>]*disabled/);
-  run(`S=fixtures.live;mode='live';page='live';S.collector={tasks:[],live_monitor:{config:{room_url:'https://live.douyin.com/12345',duration_seconds:60,max_messages:100,include_keywords:'陪练',exclude_keywords:''},sessions:[],current:null,rows:[{id:1,raw_text:'找陪练<script>',nickname:'<img>',uid:'10000000000000002',message_id:null,published_at:null,filter_reason:'',category:'uncertain',analysis_method:'rules',reason:'synthetic',facts:{},include_matches:[],exclude_matches:[]}],events:[],active_id:null}};render();`);
+  run(`S=fixtures.live;mode='live';page='live';liveFilter='all';S.collector={tasks:[],live_monitor:{config:{room_url:'https://live.douyin.com/12345',duration_seconds:60,max_messages:100,include_keywords:'陪练',exclude_keywords:''},sessions:[],current:null,rows:[{id:1,raw_text:'找陪练<script>',nickname:'<img>',uid:'10000000000000002',message_id:null,published_at:null,filter_reason:'',category:'uncertain',analysis_method:'rules',reason:'synthetic',facts:{},include_matches:[],exclude_matches:[]}],events:[],active_id:null}};render();`);
   checkHtml(element('#main').innerHTML);assert.ok(!element('#main').innerHTML.includes('<script>'));assert.ok(!element('#main').innerHTML.includes('<img>'));
   assert.match(element('#main').innerHTML,/不能回看未采集的历史弹幕/);assert.match(element('#main').innerHTML,/10000000000000002/);
   run("markMonitorDraft({closest:s=>s==='#live-form'})");assert.equal(run('liveDraftDirty'),true);
