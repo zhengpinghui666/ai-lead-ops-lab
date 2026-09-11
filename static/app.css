@@ -215,3 +215,7 @@ dialog.collection-modal .modal-actions{flex-wrap:wrap}
   #live-results td:nth-child(4){font-size:15px;padding:10px 12px;background:var(--bg);border-radius:6px}
 }
 .filter-explanation{margin:0;padding:10px 18px;color:var(--muted);font-size:12px;line-height:1.7;border-bottom:1px solid var(--line)}
+
+.result-loading{display:inline-flex;align-items:center;gap:9px;color:var(--muted)}.result-loading-dot{width:7px;height:7px;border-radius:50%;background:var(--teal);animation:comment-loading-pulse 1.2s ease-in-out infinite}.result-tab b{font-variant-numeric:tabular-nums}
+@keyframes comment-loading-pulse{50%{opacity:.35}}
+@media(prefers-reduced-motion:reduce){.result-loading-dot{animation:none}}

@@ -43,8 +43,8 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "648f2f796c2141db772d9675b694dd00ab3cbab2ab7a4fe175fd3d3d7a0a16ae",
-      "bytes": 55611
+      "sha256": "a0b921a4ef7a4f82b88d496e3aefe223648544e52002dddc737715ddf4708bb5",
+      "bytes": 58463
     },
     {
       "name": "EXTERNAL_ACCESS.md",
@@ -58,8 +58,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "4eedbec1b81facc5c4cd8bf782d3fef0e2833cd2df156af229ab03a430e18330",
-      "bytes": 97027
+      "sha256": "a98bd777f88d5455b7bb019cf9a006dfcf405726ce4beb23302c4929e20709ef",
+      "bytes": 99879
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -693,8 +693,8 @@
     },
     {
       "name": "static/app.css",
-      "sha256": "fd1e63c6e26b6f1f0e84597e0142ce8e0b1d01783dc001026571db6157b77667",
-      "bytes": 54081
+      "sha256": "473c3286494d04f7b1685522839edf493a531ee91dd3706c8d02104113fd7a8f",
+      "bytes": 54640
     },
     {
       "name": "static/app.html",
@@ -703,8 +703,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "f5a4027cc939a0f0c30137651636662534d92828c98b19f5bb97f4c93125cedf",
-      "bytes": 137593
+      "sha256": "b10b3bac662abb4113f27211a4f050c0162822507069ff9a231fb6a182cfa26b",
+      "bytes": 139041
     },
     {
       "name": "static/clubops-iphone.js",
@@ -833,8 +833,8 @@
     },
     {
       "name": "test_frontend_monitor_history.cjs",
-      "sha256": "a04df12344852abb369c5ea0011f9c1787f5fed9fe13a186cf54a7843799dbd8",
-      "bytes": 2488
+      "sha256": "bb1ebf99b6054218849e01cfa3ed8cf331d2a7a437d374158c11b6d808600eb5",
+      "bytes": 6253
     },
     {
       "name": "test_frontend_poll.cjs",
