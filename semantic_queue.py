@@ -1,17 +1,19 @@
 """Bounded, durable model work after rule analysis. No platform traffic."""
 import json
 import threading
+import time
 
 import clubops as app
 import analysis_store as store
 import semantic
 
 CAPACITY = 200
-RUN_GUARD = threading.Lock()
 STOP = threading.Event()
 WAKE = threading.Event()
 ACTIVE = {}
 THREAD = None
+THREADS = []
+MAX_WORKERS = 4
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS semantic_jobs (
  id INTEGER PRIMARY KEY, evidence_type TEXT NOT NULL, record_id INTEGER NOT NULL,
@@ -74,9 +76,10 @@ def state(mode='live'):
         counts = {r['status']: r['n'] for r in c.execute('SELECT status,COUNT(*) n FROM semantic_jobs GROUP BY status')}
         rows = [dict(r) for r in c.execute('''SELECT id,evidence_type,record_id,status,detail,result_id,created_at,started_at,finished_at
             FROM semantic_jobs ORDER BY id DESC LIMIT 20''')]
-    return dict(capacity=CAPACITY, counts=counts, rows=rows,
+    settings, _ = semantic.config()
+    return dict(capacity=CAPACITY, counts=counts, rows=rows, concurrency_limit=semantic.concurrency(settings),
                 active=counts.get('queued', 0)+counts.get('running', 0)+counts.get('cancelling', 0),
-                worker_running=bool(THREAD and THREAD.is_alive()))
+                worker_running=any(t.is_alive() for t in THREADS))
 
 
 def finish(c, job_id, result):
@@ -103,25 +106,31 @@ def cancel_all(mode='live', *, detail='用户停止自动分析；保留规则�
 
 
 def run_one(*, adapter_factory=None):
-    if not RUN_GUARD.acquire(blocking=False):
-        return False
     job_id = None
     try:
-        if STOP.is_set() or semantic.GUARD.locked():
+        if STOP.is_set():
             return False
         with app.LOCKS['live'], app.db() as c:
-            # Recent published comments take precedence over historical backlog.
-            # Keep FIFO within each group; unknown/future dates cannot claim urgency.
+            settings, issues = semantic.config()
+            limit = semantic.concurrency(settings)
+            if STOP.is_set() or len(ACTIVE) >= limit or semantic.GUARD.full(limit):
+                return False
+            # New comments and newly observed live messages precede historical work.
+            # Observation time prioritizes work; it is not a claimed publication time.
             row = c.execute("""SELECT j.* FROM semantic_jobs j
                 LEFT JOIN comments x ON j.evidence_type='comment' AND x.id=j.record_id
+                LEFT JOIN live_messages m ON j.evidence_type='live' AND m.id=j.record_id
                 WHERE j.status='queued'
+                AND NOT EXISTS (SELECT 1 FROM semantic_jobs running
+                    WHERE running.status IN ('running','cancelling')
+                    AND running.evidence_type=j.evidence_type AND running.record_id=j.record_id)
                 ORDER BY CASE WHEN julianday(x.published_at) BETWEEN julianday(?)-1.0/24
-                    AND julianday(?) THEN 0 ELSE 1 END,j.id LIMIT 1""", (app.now(), app.now())).fetchone()
+                    AND julianday(?) OR julianday(m.observed_at) BETWEEN julianday(?)-1.0/24
+                    AND julianday(?) THEN 0 ELSE 1 END,j.id LIMIT 1""", (app.now(),)*4).fetchone()
             if not row:
                 return False
             job = dict(row)
             job_id = job['id']
-            settings, issues = semantic.config()
             source, evidence = store.inputs(c, job['evidence_type'], job['record_id'])
             if (issues or settings != json.loads(job['config_json']) or not settings['enabled'] or not settings['auto_analyze']
                     or semantic.state()['engine'] != job['engine'] or store.digest(source) != job['input_hash']):
@@ -129,6 +138,10 @@ def run_one(*, adapter_factory=None):
                 return True
             if evidence['analysis_method'] != 'rules' or human_reviewed(c, job['evidence_type'], evidence):
                 finish(c, job_id, dict(status='skipped', detail='该记录已人工处理或不再需要自动分析'))
+                return True
+            existing = store.latest(c, job['evidence_type'], job['record_id'], 'model', job['input_hash'])
+            if existing and existing['engine'] == job['engine']:
+                finish(c, job_id, dict(status='skipped', detail='此版本原文已有模型分析记录，未重复调用', id=existing['id']))
                 return True
             event = threading.Event()
             ACTIVE[job_id] = event
@@ -159,7 +172,6 @@ def run_one(*, adapter_factory=None):
         if job_id is not None:
             with app.LOCKS['live']:
                 ACTIVE.pop(job_id, None)
-        RUN_GUARD.release()
 
 
 def recover():
@@ -168,8 +180,8 @@ def recover():
 
 
 def start_service():
-    global THREAD
-    if THREAD and THREAD.is_alive():
+    global THREAD, THREADS
+    if any(t.is_alive() for t in THREADS):
         return
     STOP.clear()
     def work():
@@ -181,13 +193,17 @@ def start_service():
                 advanced = False
             if not advanced:
                 WAKE.wait(.5)
-    THREAD = threading.Thread(target=work, name='local-model-queue', daemon=True)
-    THREAD.start()
+    THREADS = [threading.Thread(target=work, name=f'model-queue-{i+1}', daemon=True) for i in range(MAX_WORKERS)]
+    THREAD = THREADS[0]
+    for worker in THREADS:
+        worker.start()
 
 
 def shutdown():
     STOP.set()
     cancel_all(detail='服务正常关闭；停止等待和在途模型分析')
     WAKE.set()
-    if THREAD and THREAD.is_alive():
-        THREAD.join(timeout=5)
+    deadline = time.monotonic() + 5
+    for worker in THREADS:
+        if worker.is_alive():
+            worker.join(timeout=max(0, deadline-time.monotonic()))

@@ -16,9 +16,47 @@ PROMPT_VERSION = 'intent-prompt-v5'
 MODEL_FORMAT_VERSION = 'ollama-fields-v1'
 API_FORMAT_VERSION = 'chat-fields-v1'
 CONFIG_FILE = 'semantic.json'
-GUARD = threading.Lock()
+class AnalysisGate:
+    """Shared capacity for manual/queued work, with one request per source record."""
+    def __init__(self):
+        self.condition = threading.Condition()
+        self.owners = {}
+
+    def acquire(self, blocking=True, *, limit=1, key=None):
+        with self.condition:
+            while threading.get_ident() in self.owners or len(self.owners) >= limit or key is not None and key in self.owners.values():
+                if not blocking:
+                    return False
+                self.condition.wait()
+            self.owners[threading.get_ident()] = key
+            return True
+
+    def release(self):
+        with self.condition:
+            del self.owners[threading.get_ident()]
+            self.condition.notify_all()
+
+    def count(self):
+        with self.condition:
+            return len(self.owners)
+
+    def locked(self):
+        return self.count() > 0
+
+    def full(self, limit):
+        return self.count() >= limit
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, *args):
+        self.release()
+
+
+GUARD = AnalysisGate()
 FIELDS = ('service_type', 'region', 'rank_label', 'time', 'budget', 'party_size')
-DEFAULTS = dict(enabled=False, backend='ollama', host='127.0.0.1', port=11434, model='', timeout_seconds=30, auto_analyze=False, api_base_url='')
+DEFAULTS = dict(enabled=False, backend='ollama', host='127.0.0.1', port=11434, model='', timeout_seconds=30, auto_analyze=False, api_base_url='', max_concurrency=1)
 DETAILS = {
     'unavailable': '模型服务无法连接或响应异常；请核对地址和模型名称。保留规则结果，没有自动重试',
     'timeout': '模型分析超过本次时限；保留规则结果，没有自动重试',
@@ -43,6 +81,8 @@ def validate_config(data):
             raise ValueError()
         if type(value['timeout_seconds']) is not int or not 5 <= value['timeout_seconds'] <= 60:
             raise ValueError()
+        if type(value['max_concurrency']) is not int or not 1 <= value['max_concurrency'] <= 4:
+            raise ValueError()
         if not isinstance(value['model'], str) or value['model'] and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:/-]{0,119}', value['model']):
             raise ValueError()
         if value['backend'] == 'ollama' and 'cloud' in value['model'].lower():
@@ -51,7 +91,11 @@ def validate_config(data):
             value['api_base_url'] = model_credentials.normalize_url(value['api_base_url'])
         return value
     except (ValueError, TypeError):
-        raise ValueError('模型配置无效；Ollama 使用本机地址，API 使用 HTTPS 地址，时限为 5–60 秒') from None
+        raise ValueError('模型配置无效；Ollama 使用本机地址，API 使用 HTTPS 地址，时限为 5–60 秒，并发为 1–4 条') from None
+
+
+def concurrency(settings):
+    return settings['max_concurrency'] if settings['backend'] == 'openai_compatible' else 1
 
 
 def config():
@@ -113,7 +157,8 @@ def state():
     format_version = API_FORMAT_VERSION if remote else MODEL_FORMAT_VERSION
     engine = f"{endpoint}:{value['model']}:{VERSION}:{PROMPT_VERSION}:{format_version}" if enabled else None
     return dict(mode=('remote_api_configured' if remote else 'local_model_configured') if enabled else 'rules', can_analyze=bool(enabled), engine=engine,
-                model=value['model'], config=value, issues=issues, running=GUARD.locked(), accuracy_verified=False,
+                model=value['model'], config=value, issues=issues, running=GUARD.locked(), active_count=GUARD.count(),
+                concurrency_limit=concurrency(value), at_capacity=GUARD.full(concurrency(value)), accuracy_verified=False,
                 api_key_configured=model_credentials.ready(value['api_base_url']) if remote else False,
                 detail=(('新内容完成规则初筛后自动调用所选模型' if value['auto_analyze'] else '手动分析单条')+('；原文和必要上下文将发送到配置的 API' if remote else '；使用本机 Ollama')+'；准确率尚未独立验证') if enabled else '规则模式 · 尚未启用语义模型')
 
@@ -379,16 +424,20 @@ def analyze_one(body, mode='live', *, adapter_factory=None, cancel_event=None, e
     kind, record_id, request_id = body['evidence_type'], body['id'], body['request_id']
     if not isinstance(request_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{8,80}', request_id):
         raise ValueError('分析请求编号无效')
-    if not GUARD.acquire(blocking=False):
-        raise ModelBusy('已有一条模型分析正在处理，请等待完成')
+    if kind not in ('comment', 'live') or type(record_id) is not int or record_id <= 0:
+        raise ValueError('模型分析原文类型或 ID 无效')
+    settings, issues = config()
+    if not GUARD.acquire(blocking=False, limit=concurrency(settings), key=(mode, kind, record_id)):
+        raise ModelBusy('模型分析已达到并发上限，或本条原文正在分析，请等待完成')
     try:
-        settings, issues = config()
         if expected_config is not None and expected_config != settings:
             raise ValueError('入队后的模型配置已改变')
         channel = state()
         if issues or not channel['can_analyze']:
             raise ValueError('；'.join(issues) or '尚未启用语义模型，继续使用规则模式')
         with app.LOCKS[mode], app.db(mode) as c:
+            if config() != (settings, issues):
+                raise ValueError('模型配置已改变，请重新开始本条分析')
             source, row = store.inputs(c, kind, record_id)
             fingerprint = store.digest(source)
             old = c.execute("SELECT * FROM intent_results WHERE evidence_type=? AND record_id=? AND method='model' AND request_id=?", (kind, record_id, request_id)).fetchone()

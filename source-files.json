@@ -217,5 +217,6 @@
   "research/LIVE_PROJECTS_20260911.md",
   "github_backup.py",
   "test_github_backup.py",
-  "GITHUB_BACKUP.md"
+  "GITHUB_BACKUP.md",
+  "test_semantic_concurrency.py"
 ]

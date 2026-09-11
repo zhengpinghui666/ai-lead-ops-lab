@@ -98,8 +98,8 @@
     },
     {
       "name": "MODEL_QUEUE.md",
-      "sha256": "79bddebee624295b4a28854c281b647dc68c276fa98a05ad834bc347a3497f54",
-      "bytes": 3552
+      "sha256": "8678ad701c89fe1bf69879109cb56e6381ba1e1bfc13374a1ada8d9e4d5271c5",
+      "bytes": 3725
     },
     {
       "name": "MONITOR_CENTER.md",
@@ -123,8 +123,8 @@
     },
     {
       "name": "SEMANTIC.md",
-      "sha256": "35c7c794ae8ecc49268df1faba9d647e90667eebda52cc004610699680ce6db8",
-      "bytes": 9376
+      "sha256": "502a4ab125ed6b651144facd5dd64033f93d4c1768d67bacb76905b0cce0253e",
+      "bytes": 9502
     },
     {
       "name": "SERVICE_LIFECYCLE.md",
@@ -283,8 +283,8 @@
     },
     {
       "name": "config/semantic.example.json",
-      "sha256": "45b94a96bc9fd4a1851a5f508804642c1ddc0bb8ec6b888b5e2d2b4e7c3bf8ee",
-      "bytes": 126
+      "sha256": "69210ddd4b29c06c0d7c4ef30633874670a780d5d8691eb156bda1c74fd233ec",
+      "bytes": 159
     },
     {
       "name": "config/team-access-requirements.txt",
@@ -638,8 +638,8 @@
     },
     {
       "name": "semantic.py",
-      "sha256": "3e92d410ec3119406eac119f885e8937073f6b77e6943ae6902fe9d76e70198b",
-      "bytes": 26861
+      "sha256": "8761182bf107ff4381945c6bbbced3408f9eae6fc0fcce145932491fcadffdd4",
+      "bytes": 28730
     },
     {
       "name": "semantic_api.py",
@@ -648,8 +648,8 @@
     },
     {
       "name": "semantic_queue.py",
-      "sha256": "75097617d58f778f810d5ce0a8cb64d2009827dfb3538ad4a84f48815619b67e",
-      "bytes": 9430
+      "sha256": "4995014f8dba7a4c3fc65fb4ea08ad2e72e9db0b09b19232ab7d4dc4bcb0c8e7",
+      "bytes": 10522
     },
     {
       "name": "server.py",
@@ -658,8 +658,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "bad9af6b58fe5b4b882f085162db8244f30af285be954e8200ec59c16e3eb0db",
-      "bytes": 6539
+      "sha256": "24194a0d9f2dbd77a2ff25d4c2194a1418b76c2d74ef3d78502b3fbfc7d5115e",
+      "bytes": 6578
     },
     {
       "name": "start.ps1",
@@ -678,8 +678,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "35181aba0d19161007a22b5ef35cfd29fa1eb715136b6777267cc08e60d12bbc",
-      "bytes": 132946
+      "sha256": "07329a52ae0304403830e48685f005d02bb16fb4ef70f1fb06949507750cf2d9",
+      "bytes": 132756
     },
     {
       "name": "static/clubops-iphone.js",
@@ -788,8 +788,8 @@
     },
     {
       "name": "test_frontend.cjs",
-      "sha256": "87abbdad361cdffa839dc3149f9f4f9aae467a87da631e9e3af69c6e73ef6ebb",
-      "bytes": 37642
+      "sha256": "bc02e4348a96cdbd687a5b595486f5ee1a57a81b10cf48d3ef43e31230159e4a",
+      "bytes": 38185
     },
     {
       "name": "test_frontend_live_history.cjs",
@@ -955,6 +955,11 @@
       "name": "test_semantic_api.py",
       "sha256": "38f7502c1d4cafb6a436adbdb981d032f7dd93034d6010a7d3d5e6208e4fb0e9",
       "bytes": 8756
+    },
+    {
+      "name": "test_semantic_concurrency.py",
+      "sha256": "c44c9a6c678a4f9e2669c60879224b9fc483969fe574d1483036f76cd5c22767",
+      "bytes": 7029
     },
     {
       "name": "test_semantic_queue.py",

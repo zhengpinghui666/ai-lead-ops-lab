@@ -316,23 +316,32 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   run('reviewDialog(semRow.id,semRow)');assert.ok(!element('#modal-content').innerHTML.includes('data-action="semantic-analyze"'),'Do not start a model call from an unsaved human review form');
   assert.match(run('semanticPanel()'),/保存不启动分析或下载模型/);
   assert.match(run('semanticPanel()'),/name="auto_analyze"/);
+  assert.match(run('semanticPanel()'),/name="max_concurrency"/);
+  run('S.semantic.running=true;S.semantic.at_capacity=false');
+  assert.ok(!run('modelEvidence(semRow)').includes('disabled'));
+  run('S.semantic.at_capacity=true');
+  assert.match(run('modelEvidence(semRow)'),/disabled/);
+  run('S.semantic.running=false;S.semantic.at_capacity=false');
   run("S.semantic.config.backend='openai_compatible';S.semantic.config.api_base_url='https://api.example.test/v1';S.semantic.api_key_configured=true");
   assert.match(run('semanticPanel()'),/value="openai_compatible" selected/);
   assert.match(run('semanticPanel()'),/name="api_key" type="password" value=""/);
   assert.match(run('connectionRows()'),/远程 API 已配置/);
   run('const beforeApiFormState=S');
   for(const key of ['', 'synthetic-ui-key']){
-    const form={getAttribute:()=> 'semantic-form',values:Object.entries({backend:'openai_compatible',api_base_url:'https://api.example.test/v1',api_key:key,model:'test-model',host:'127.0.0.1',port:'11434',enabled:'true',auto_analyze:'true',timeout_seconds:'60'}),querySelector:()=>null};
+    const form={getAttribute:()=> 'semantic-form',values:Object.entries({backend:'openai_compatible',api_base_url:'https://api.example.test/v1',api_key:key,model:'test-model',host:'127.0.0.1',port:'11434',enabled:'true',auto_analyze:'true',timeout_seconds:'60',max_concurrency:'3'}),querySelector:()=>null};
     await listeners.get('submit')({target:form,preventDefault(){}});
     assert.match(posts.at(-1).url,/\/api\/semantic-save\?/);
     assert.equal(posts.at(-1).body.backend,'openai_compatible');
     assert.equal(posts.at(-1).body.auto_analyze,true);
+    assert.equal(posts.at(-1).body.max_concurrency,3);
     assert.equal(posts.at(-1).body.api_key,key||undefined);
     assert.equal(run('semanticDraftDirty'),false);
   }
   run('S=beforeApiFormState');
   run("S.semantic.queue={counts:{queued:1},rows:[{id:1,evidence_type:'comment',record_id:12,status:'queued',detail:'<script>bad'}],active:1,capacity:200}");
   const queueHtml=run('modelQueuePanel()');assert.ok(!queueHtml.includes('<script>'));assert.match(queueHtml,/停止当前队列/);assert.match(queueHtml,/等待 1/);
+  run('S.semantic.queue.concurrency_limit=3');
+  assert.match(run('modelQueuePanel()'),/同时最多分析 3 条/);
   run("markMonitorDraft({closest:s=>s==='#semantic-form'})");assert.equal(run('semanticDraftDirty'),true);run('semanticDraftDirty=false');
   run("const semOldApi=api,semOldLoad=load;let semCalls=[];api=async(a,b)=>{semCalls.push({a,b});return {status:'completed',detail:'synthetic'};};load=async()=>{};");
   await run("handleAction({dataset:{action:'semantic-analyze',kind:'comment',id:'12',hash:'saved-hash'}})");
