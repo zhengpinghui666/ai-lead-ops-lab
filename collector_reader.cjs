@@ -149,7 +149,14 @@ function createReader(page,shared){
           code==='network_error'?'未能完整读取搜索响应，本批暂停；不自动重试。':'搜索响应无法按预期格式解析，本批暂停；不将其当作零结果。');
       }
     }
-    return [...searchResults.values()].slice(0,config.video_limit);
+    const candidates=[...searchResults.values()],selected=require('./candidate_select.cjs').select(candidates,config.video_limit,config.candidate_policy);
+    if(candidates.length&&config.candidate_policy){
+      check();await emit({type:'candidates',records:candidates.map(row=>({video_id:row.video_id,video_title:row.video_title.slice(0,300)}))});
+      await emit({type:'diagnostic',stage:'candidate_selection',snapshot:{title:'搜索候选轮换',
+        visible_text:`本次搜索返回 ${candidates.length} 个候选，按读取历史轮换 ${selected.length} 个作品；保留探索位置，其余优先复查出现新近期评论的作品。`,
+        responses:[{policy:config.candidate_policy.version,candidate_count:candidates.length,selected:selected.map(r=>r.video_id),scope:'current_search_response',all_douyin:false}]}});
+    }
+    return selected;
   }
   async function collect(row){
     phase='idle';await drain();await ready();current=row;recognized=false;hasMore=null;commentResponses=0;invalidComments=0;

@@ -17,6 +17,7 @@ import clubops as app
 import comment_filters
 import captcha_runtime
 import runtime
+import candidate_pool
 
 BASE = Path(__file__).resolve().parent
 GUARD = threading.RLock()
@@ -99,6 +100,7 @@ def state(mode='live'):
     import collector_http
     node, package = dependencies()
     with app.db(mode) as c:
+        candidates = candidate_pool.state(c)
         tasks = [dict(r) for r in c.execute('SELECT * FROM collection_tasks ORDER BY id DESC LIMIT 30')]
         source = c.execute("SELECT * FROM sources WHERE kind='browser' ORDER BY id LIMIT 1").fetchone()
         for task in tasks:
@@ -125,7 +127,7 @@ def state(mode='live'):
     return {'available': bool(shutil.which(node) or Path(node).is_file()) and package.is_dir(), 'tasks': tasks,
             'source_id': source['id'] if source else None, 'last_received': source['last_received'] if source else None,
             'transport': 'selectable', 'http': http_state, 'verification': captcha_runtime.status(),
-            'mode': 'bounded_batch', 'external_sender': False}
+            'mode': 'bounded_batch', 'external_sender': False, 'candidate_pool': candidates}
 
 
 def record_verification(task_id, value):
@@ -265,6 +267,7 @@ def checkpoint(task_id, message):
             if len(existing) > task['video_limit']:
                 raise ValueError('断点超出本批视频上限')
             c.executemany('INSERT OR IGNORE INTO collection_checkpoints(task_id,video_id,video_title,video_url,updated_at) VALUES(?,?,?,?,?)', prepared)
+            candidate_pool.mark_selected(c, task, records)
     elif message.get('type') == 'checkpoint':
         status = message.get('status')
         if status not in ('reading', 'done', 'partial'):
@@ -454,6 +457,7 @@ def run(task_id, control):
             resumed = c.execute('SELECT 1 FROM collection_resumes WHERE task_id=?', (task_id,)).fetchone()
             resume_targets = [dict(r) for r in c.execute('SELECT video_id,video_title,video_url FROM collection_checkpoints WHERE task_id=? ORDER BY rowid', (task_id,))] if resumed else []
             known_titles, known_metrics = cached_video_metadata(c, task, control['source_id'], resume_targets)
+            candidate_policy = candidate_pool.configuration(c, task) if not resumed else None
         node, package = dependencies()
         if task['transport'] == 'http':
             import collector_http
@@ -472,6 +476,7 @@ def run(task_id, control):
         with GUARD:
             control['process'] = process
         config = {**task, 'profile_dir': str(app.DATA_DIR / 'browser-profile'), 'resume_targets': resume_targets,
+                  'candidate_policy': candidate_policy,
                   'resolve_video_titles': True, 'known_video_titles': known_titles,
                   'refresh_video_metrics': True, 'known_video_metrics': known_metrics,
                   'captcha': captcha_runtime.configuration()}
@@ -507,6 +512,11 @@ def run(task_id, control):
             elif typ in ('targets', 'checkpoint'):
                 if not control['cancel']:
                     checkpoint(task_id, message)
+            elif typ == 'candidates':
+                if not control['cancel']:
+                    with app.LOCKS['live'], app.db() as c:
+                        current = c.execute('SELECT * FROM collection_tasks WHERE id=?', (task_id,)).fetchone()
+                        candidate_pool.record(c, current, message.get('records'))
             elif typ in ('video', 'comment'):
                 if not control['cancel']:
                     observe(task_id, control['source_id'], message)
@@ -558,6 +568,13 @@ def run(task_id, control):
             process.stdin.close()
             process.stdout.close()
         analyze_observed(task_id, control['source_id'])
+        try:
+            with app.LOCKS['live'], app.db() as c:
+                current = c.execute('SELECT * FROM collection_tasks WHERE id=?', (task_id,)).fetchone()
+                candidate_pool.settle(c, current)
+        except Exception as error:
+            with app.db() as c:
+                app.event(c, 'candidate-pool', f'任务 #{task_id} 候选反馈未完成：{type(error).__name__}；已有采集结果保留')
         with GUARD:
             ACTIVE.pop(task_id, None)
         with app.db() as c:

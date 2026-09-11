@@ -29,6 +29,10 @@ class Page extends EventEmitter {
     if(scenario==='verification-window-close')this.ctx.closeTimer=setTimeout(()=>this.ctx.close(),6000);
     if(scenario.startsWith('verification')||scenario==='device-challenge')return {status:()=>200};
     if(url.includes('/search/')){
+      if(scenario==='candidate-rotation'){
+        this.emit('response',response('https://www.douyin.com/aweme/v1/web/general/search/single/',{data:[vid,'7600000000000000009','7600000000000000010'].map(aweme_id=>({aweme_info:{aweme_id,desc:'合成候选 '+aweme_id}}))}));
+        return {status:()=>200};
+      }
       if(scenario==='resume-search-dom')return {status:()=>200};
       if(['search-empty-body','search-html-body','search-body-unavailable'].includes(scenario)){
         const reply=response('https://www.douyin.com/aweme/v1/web/general/search/single/',{});
@@ -42,6 +46,11 @@ class Page extends EventEmitter {
       }
       this.emit('response',response('https://www.douyin.com/aweme/v1/web/general/search/single/',{data:[{aweme_info:{aweme_id:vid,desc:'合成夹具：无畏契约陪练'}}]}));
     }else {
+      if(scenario==='candidate-rotation'){
+        const actual=url.split('/').pop();
+        this.emit('response',response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${actual}`,{status_code:0,has_more:0,comments:[{cid:'7600000000000000999',aweme_id:actual,text:'合成轮换评论',user:{uid:'123456789012'}}]}));
+        return {status:()=>200};
+      }
       const body=scenario==='schema-error'?{status_code:99,comments:[]}:{status_code:0,comments:[{cid:scenario==='invalid-id'?7600000000000000002:'7600000000000000002',aweme_id:vid,text:'合成夹具评论：找个陪练',user:{uid:'123456789012',nickname:'测试夹具'},create_time:1750000000}],has_more:0};
       if(scenario.startsWith('scroll-'))body.has_more=1;
       if(scenario==='empty-null'||scenario==='ambiguous-null'){

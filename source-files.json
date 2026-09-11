@@ -225,5 +225,8 @@
   "live_rules.py",
   "test_live_rules.py",
   "test_semantic_live_policy.py",
-  "LIVE_RULES.md"
+  "LIVE_RULES.md",
+  "candidate_pool.py",
+  "candidate_select.cjs",
+  "test_candidate_pool.py"
 ]

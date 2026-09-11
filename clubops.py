@@ -113,12 +113,12 @@ def init(mode='live'):
             collection_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_tasks)')}
             plan_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_plans)')}
             observation_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_observations)')}
-            if not {'uid_message_attempts', 'live_sessions', 'live_links', 'live_judgments', 'live_reviews', 'intent_results', 'semantic_jobs', 'video_metadata', 'live_tracks'} <= known_tables or not {'outer_message_id', 'game'} <= live_columns or 'transport' not in collection_columns or 'intent_version' not in plan_columns or 'ingest_disposition' not in observation_columns:
+            if not {'uid_message_attempts', 'live_sessions', 'live_links', 'live_judgments', 'live_reviews', 'intent_results', 'semantic_jobs', 'video_metadata', 'live_tracks', 'collection_candidates', 'collection_candidate_reads'} <= known_tables or not {'outer_message_id', 'game'} <= live_columns or 'transport' not in collection_columns or 'intent_version' not in plan_columns or 'ingest_disposition' not in observation_columns:
                 backup_dir = DATA_DIR / 'backups'
                 backup_dir.mkdir(parents=True, exist_ok=True)
                 label = ('before-uid-http-' if 'uid_message_attempts' not in known_tables else
                          'before-live-stream-' if 'outer_message_id' not in live_columns else
-                         'before-live-workflow-' if 'live_links' not in known_tables else 'before-http-collection-' if 'transport' not in collection_columns else 'before-intent-results-' if 'intent_results' not in known_tables else 'before-semantic-queue-' if 'semantic_jobs' not in known_tables else 'before-monitor-recovery-' if 'intent_version' not in plan_columns else 'before-collection-timing-' if 'ingest_disposition' not in observation_columns else 'before-video-metadata-' if 'video_metadata' not in known_tables else 'before-live-tracking-')
+                         'before-live-workflow-' if 'live_links' not in known_tables else 'before-http-collection-' if 'transport' not in collection_columns else 'before-intent-results-' if 'intent_results' not in known_tables else 'before-semantic-queue-' if 'semantic_jobs' not in known_tables else 'before-monitor-recovery-' if 'intent_version' not in plan_columns else 'before-collection-timing-' if 'ingest_disposition' not in observation_columns else 'before-video-metadata-' if 'video_metadata' not in known_tables else 'before-live-tracking-' if 'live_tracks' not in known_tables else 'before-candidate-pool-')
                 backup = sqlite3.connect(backup_dir / (filename + '.' + label + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f') + '.bak'))
                 try:
                     source.backup(backup)
@@ -127,6 +127,8 @@ def init(mode='live'):
     with LOCKS[mode], db(mode) as c:
         c.execute('PRAGMA journal_mode=WAL')
         c.executescript(SCHEMA)
+        import candidate_pool
+        c.executescript(candidate_pool.SCHEMA)
         import uid_messaging
         c.executescript(uid_messaging.SCHEMA)
         import live_monitor

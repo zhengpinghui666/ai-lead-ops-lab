@@ -3,7 +3,7 @@
 const {spawn}=require('node:child_process');
 const path=require('node:path');
 const assert=require('node:assert/strict');
-function run(scenario,{interactive=false,onStatus,kind='search'}={}){
+function run(scenario,{interactive=false,onStatus,kind='search',candidatePolicy=null}={}){
   return new Promise((resolve,reject)=>{
     const child=spawn(process.execPath,[path.join(__dirname,process.env.CLUBOPS_TEST_RUNNER||'collector_worker.cjs')],{cwd:__dirname,windowsHide:true,env:{...process.env,CLUBOPS_PLAYWRIGHT:path.join(__dirname,'tests/fixtures/playwright_fixture.cjs'),CLUBOPS_FIXTURE_SCENARIO:scenario},stdio:['pipe','pipe','pipe']});
     const messages=[];let pending='',errors='';
@@ -13,11 +13,19 @@ function run(scenario,{interactive=false,onStatus,kind='search'}={}){
     child.stdout.on('data',s=>{pending+=s;const lines=pending.split('\n');pending=lines.pop();for(const line of lines){if(!line)continue;const m=JSON.parse(line);messages.push(m);if(m.type==='status')onStatus?.(m,child);}});
     child.on('error',reject);
     child.on('close',code=>{clearTimeout(timer);if(code!==0)reject(Error(`${scenario}: ${code}: ${errors}`));else resolve(messages);});
-    child.stdin.write(JSON.stringify({kind,target:kind==='video'?'https://www.douyin.com/video/7600000000000000001':'SYNTHETIC FIXTURE ONLY',video_limit:1,comment_limit:2,interactive,profile_dir:path.join(__dirname,'tests/not-a-real-browser-profile')})+'\n');
+    child.stdin.write(JSON.stringify({kind,target:kind==='video'?'https://www.douyin.com/video/7600000000000000001':'SYNTHETIC FIXTURE ONLY',video_limit:1,comment_limit:2,interactive,candidate_policy:candidatePolicy,profile_dir:path.join(__dirname,'tests/not-a-real-browser-profile')})+'\n');
   });
 }
 const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
 (async()=>{
+  const candidatePolicy={version:'candidate-rotation-v1',as_of_ms:100000,round:1,history:[{video_id:'7600000000000000001',last_selected_ms:90000,priority_ms:200000}]};
+  const [rotated,gatedPool]=await Promise.all([run('candidate-rotation',{candidatePolicy}),run('search-503',{candidatePolicy})]);
+  assert.equal(terminal(rotated),'completed');
+  assert.equal(rotated.find(m=>m.type==='candidates').records.length,3);
+  assert.equal(rotated.find(m=>m.type==='targets').records[0].video_id,'7600000000000000009');
+  assert.equal(rotated.find(m=>m.type==='comment').record.video_id,'7600000000000000009');
+  assert.ok(rotated.some(m=>m.type==='diagnostic'&&m.stage==='candidate_selection'));
+  assert.equal(terminal(gatedPool),'network_error');assert.ok(!gatedPool.some(m=>m.type==='targets'||m.type==='candidates'));
   const upstream=await Promise.all(['navigation-502','search-503','comment-503','gateway-title-only'].map(s=>run(s)));
   for(const messages of upstream.slice(0,3)){
     assert.equal(terminal(messages),'network_error');
@@ -82,5 +90,5 @@ const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
   assert.equal(replyRecords.length,2,'Roots and replies share the same per-video budget');
   assert.equal(replyRecords[1].parent_comment_id,replyRecords[0].comment_id);
   for(const messages of [cancelled,closed,eof,schema,invalid,device])assert.equal(messages.filter(m=>m.type==='comment').length,0);
-  console.log('PASS: 23 child-process scenarios including numeric HTTP 502/503 navigation/search/comment failures, Retry-After evidence, title-only ambiguity, empty/unreadable responses, login/verification and bounded responses. Synthetic only.');
+  console.log('PASS: 25 child-process scenarios including candidate rotation/gated discovery, numeric HTTP 502/503 failures, Retry-After evidence, title-only ambiguity, empty/unreadable responses, login/verification and bounded responses. Synthetic only.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -7,6 +7,7 @@ import threading
 import traceback
 import video_metadata
 import video_discovery
+import candidate_pool
 from pathlib import Path
 
 import collector_http as http
@@ -59,22 +60,33 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
             seeds = [row['video_id'] for row in video_targets(config['target'])]
             result = video_discovery.discover(client, seeds, author_pages=1, page_size=10, include_related=False)
             targets, audit = video_discovery.select_author_targets(result, config['video_limit'])
+            if config.get('candidate_policy') and not result['failures']:
+                candidates=video_discovery.author_candidates(result)
+                targets=candidate_pool.select(candidates,config['video_limit'],config['candidate_policy'])
+                audit['selection']=candidate_pool.VERSION
+                selected_ids={r['video_id'] for r in targets}
+                for item in audit['candidates']:item['selected']=item['video_id'] in selected_ids
             emit({'type': 'diagnostic', 'stage': 'author_discovery', 'snapshot': {
                 'title': '作者作品发现', 'responses': [audit],
-                'visible_text': f"限定作者候选 {audit['candidate_count']} 个，文案匹配无畏契约 {audit['relevant_count']} 个，选择 {len(targets)} 个。仅在返回候选中按作品发布时间优先；不代表全站或作者全部作品。"}})
+                'visible_text': f"限定作者候选 {audit['candidate_count']} 个，文案匹配无畏契约 {audit['relevant_count']} 个，选择 {len(targets)} 个。仅在本次返回候选中选择；不代表全站或作者全部作品。"}})
             if result['failures']:
                 raise http.ReadError(result['failures'][0]['status'])
+            if config.get('candidate_policy'):
+                if cancel.is_set():raise http.ReadError('cancelled')
+                if candidates:emit({'type':'candidates','records':[{'video_id':r['video_id'],'video_title':r['video_title'][:300]} for r in candidates]})
+                diagnostic({'operation':'candidate_selection','policy':candidate_pool.VERSION,'scope':'current_author_response',
+                            'candidate_count':len(candidates),'selected':[r['video_id'] for r in targets]})
         if not targets and config['kind'] == 'search':
             cursor, search_id, seen_cursors = 0, '', set()
             while len(targets) < config['video_limit']:
                 page = client.page('search', keyword=config['target'], cursor=cursor, search_id=search_id,
-                                   count=min(10, config['video_limit']))
+                                   count=10 if config.get('candidate_policy') else min(10, config['video_limit']))
                 with lock:
                     counts['skipped'] += page['skipped']
                     counts['unsupported'] += page['skipped']
                 known = {r['video_id'] for r in targets}
                 for row in page['rows']:
-                    if row['video_id'] not in known and len(targets) < config['video_limit']:
+                    if row['video_id'] not in known and len(targets) < (50 if config.get('candidate_policy') else config['video_limit']):
                         targets.append(row)
                         known.add(row['video_id'])
                 if not page['has_more'] or len(targets) >= config['video_limit']:
@@ -83,6 +95,13 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                     raise http.ReadError('schema_changed')
                 seen_cursors.add(cursor)
                 cursor, search_id = page['cursor'], page['search_id']
+            if targets and config.get('candidate_policy'):
+                candidates=targets
+                targets=candidate_pool.select(candidates,config['video_limit'],config['candidate_policy'])
+                if cancel.is_set():raise http.ReadError('cancelled')
+                emit({'type':'candidates','records':[{'video_id':r['video_id'],'video_title':r['video_title'][:300]} for r in candidates]})
+                diagnostic({'operation':'candidate_selection','policy':candidate_pool.VERSION,'scope':'current_search_response',
+                            'candidate_count':len(candidates),'selected':[r['video_id'] for r in targets]})
         if not targets:
             emit({'type': 'status', 'status': 'no_data', 'detail': '本次有限发现未找到可读取的相关视频；未扩大范围或切换入口'})
             return

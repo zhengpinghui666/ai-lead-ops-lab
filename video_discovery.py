@@ -117,6 +117,13 @@ def discover(client, seeds, *, author_pages=1, page_size=10, include_related=Tru
             'comment_freshness_verified': False}
 
 
+def author_candidates(result):
+    relevant = [row for row in result['candidates'] if re.search(
+        r'无畏契约|瓦罗兰特|valorant|瓦陪|打瓦', row['video_title'], re.I)]
+    relevant.sort(key=lambda row: (row.get('published_at') or 0, row['video_id']), reverse=True)
+    return relevant[:50]
+
+
 def select_author_targets(result, limit):
     """Select this product's game scope, newest first within the bounded response.
 
@@ -125,9 +132,7 @@ def select_author_targets(result, limit):
     """
     if type(limit) is not int or not 1 <= limit <= 5:
         raise ValueError('作者发现每批最多读取 1–5 个作品')
-    relevant = [row for row in result['candidates'] if re.search(
-        r'无畏契约|瓦罗兰特|valorant|瓦陪|打瓦', row['video_title'], re.I)]
-    relevant.sort(key=lambda row: (row.get('published_at') or 0, row['video_id']), reverse=True)
+    relevant = author_candidates(result)
     targets = relevant[:limit]
     # Persist only public, bounded provenance. Do not include the author sec_uid
     # or raw upstream data in the user-visible diagnostic.
