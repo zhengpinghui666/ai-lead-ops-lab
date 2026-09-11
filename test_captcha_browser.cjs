@@ -11,7 +11,7 @@ const top='https://www.douyin.com/search/local-fixture';
 let options={},cases=0,requests=0;
 function childHTML(){
   const bg=options.cors?'https://images.fixture.invalid/background.png':'https://captcha.fixture.invalid/background.png';
-  return `<meta charset="utf-8">${options.outer?'<div id="captcha_container">':''}${options.click?'<img id="captcha_click_image" class="vc-captcha-verify-img-picture" src="https://captcha.fixture.invalid/background.png">':''}<style>body{margin:0}#wrap{position:relative;width:180px;height:125px}#captcha_verify_image{width:180px;height:95px}#captcha-verify_img_slide{position:absolute;left:0;top:23.5px;width:18px;height:18px}.captcha-slider-btn{position:absolute;left:0;top:100px;width:25px;height:20px}</style>
+  return `<meta charset="utf-8">${options.outer?'<div id="captcha_container">':''}${options.click?'<img id="captcha_click_image" class="vc-captcha-verify-img-picture" src="https://captcha.fixture.invalid/background.png">':''}<style>body{margin:0}#wrap{position:relative;width:180px;height:${options.alpha?155:125}px}#captcha_verify_image{width:180px;height:${options.alpha?120:95}px}#captcha-verify_img_slide{position:absolute;left:0;top:${options.alpha?35.5:23.5}px;width:${options.alpha?55:18}px;height:${options.alpha?55:18}px}.captcha-slider-btn{position:absolute;left:0;top:${options.alpha?130:100}px;width:25px;height:20px}</style>
     <p>${options.type||'拖动滑块完成拼图'}</p><div id="wrap"><img id="captcha_verify_image" src="${bg}">
     ${options.missing?'':'<img id="captcha-verify_img_slide" src="https://captcha.fixture.invalid/target.png">'}
     <div class="captcha-slider-btn">拖动</div></div><script>window.down=0;window.up=0;document.querySelector('.captcha-slider-btn').onpointerdown=()=>window.down++;
@@ -71,6 +71,18 @@ function passed(name){cases++;console.log('PASS '+name);}
     await page.locator('iframe').evaluate(el=>el.hidden=true);
     assert.equal(await promptVisible(page),false,'Hidden outer frame must not block recovered reads');
     passed('outer iframe slider and hidden outer-frame recovery');
+    const alpha=JSON.parse(require('node:child_process').execFileSync(python,[path.join(__dirname,'test_captcha_slider.py'),'--fixture'],{windowsHide:true,encoding:'utf8'}));
+    bytes.target=Buffer.from(alpha.target,'base64');bytes.background=Buffer.from(alpha.background,'base64');
+    await load({alpha:true});
+    const alphaChallenge=await capture(page),alphaPrediction=await solve(alphaChallenge.payload,{python});
+    assert.equal(alphaPrediction.status,'predicted');assert.equal(alphaPrediction.matching_route,'alpha_masked_ncc');
+    assert.deepEqual(alphaPrediction.result.target,alpha.expected);
+    await page.frameLocator('#captcha_container > iframe').locator('body').evaluate(()=>document.addEventListener('pointerup',event=>window.releaseX=event.clientX));
+    assert.equal((await submit(page,alphaChallenge,alphaPrediction,()=>{})).submitted,true);
+    const pointer=await page.frameLocator('#captcha_container > iframe').locator('body').evaluate(()=>[window.down,window.up,window.releaseX]);
+    assert.deepEqual(pointer.slice(0,2),[1,1]);assert.ok(Math.abs(pointer[2]-(12.5+183/2))<=1);
+    assert.equal(await promptVisible(page),true,'Image prediction and pointer movement are not platform acceptance');
+    passed('transparent ring texture, full canvas coordinates and scaled iframe movement');
     console.log(JSON.stringify({passed:cases,browser:'real Chromium',images:'synthetic fixture',ocr:'local ddddocr',network:'all requests locally fulfilled; zero live platform traffic',requests}));
   }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

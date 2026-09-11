@@ -11,7 +11,7 @@ let passed=0;const pass=name=>{passed++;console.log('PASS '+name);};
   const [target,background,point]=await Promise.all(['target.png','background.png','point-pair.png'].map(readImage));
   const size=raw=>[raw.readUInt32BE(16),raw.readUInt32BE(20)];
   const slider={adapter:'legacy_slider_dom',payload:{method:'slide_match',target_image:target.toString('base64'),background_image:background.toString('base64')},cookie:'DO_NOT_STORE',url:'https://secret.invalid'};
-  const prediction={status:'predicted',coordinate_type:'center_xy_in_image_pixels',background_size:size(background),target_size:size(target),result:{target:[180,70]},cookie:'DO_NOT_STORE'};
+  const prediction={status:'predicted',coordinate_type:'center_xy_in_image_pixels',background_size:size(background),target_size:size(target),result:{target:[180,70]},matching_route:'alpha_masked_ncc',solver_version:'alpha-slider-v1',cookie:'DO_NOT_STORE'};
   const record=async receipt=>JSON.parse(await fs.readFile(path.join(archive,'attempts',receipt.attemptId+'.json'),'utf8'));
   try{
     assert.equal(await learning.begin(slider,config,randomUUID(),options),null);
@@ -23,6 +23,9 @@ let passed=0;const pass=name=>{passed++;console.log('PASS '+name);};
     assert.equal((await learning.status(options)).cases,1);
     assert.equal((await fs.readdir(path.join(archive,'cases'))).length,3);
     assert.equal(await learning.finish(first,{outcome:'needs_review',reason:'acceptance_not_observed',submissions:1,prediction,elapsed_ms:80}),true);
+    assert.equal((await record(first)).prediction.solver_version,'alpha-slider-v1');
+    assert.equal((await record(first)).prediction.matching_route,'alpha_masked_ncc');
+    assert.ok((await record(first)).source_version.files['captcha_slider.py']);
     assert.equal(await learning.recalled(slider,config,options),null);pass('both slider images saved; unconfirmed result is not a successful label');
     const second=await learning.begin(slider,config,randomUUID(),options);
     await learning.finish(second,{...confirmed,outcome:'read_recovered',submissions:1,prediction,elapsed_ms:90});

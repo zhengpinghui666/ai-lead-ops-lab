@@ -1,7 +1,7 @@
-"""Quality-gated ddddocr image worker. JSON over stdin/stdout; no platform traffic.
+"""Quality-gated local image worker. JSON over stdin/stdout; no platform traffic.
 
-Promoted from the independently evaluated 1.6.1 adapter. Scores are engineering
-thresholds, not probabilities. A prediction is never a platform acceptance.
+Opaque slides retain the evaluated ddddocr 1.6.1 adapter; transparent slides use
+alpha-masked texture matching. A prediction is never a platform acceptance.
 """
 import base64
 import hashlib
@@ -43,11 +43,11 @@ def solve(payload):
                 raise ValueError('invalid_image')
             rgba = np.asarray(original.convert('RGBA'))
         gray = cv2.cvtColor(rgba[:, :, :3], cv2.COLOR_RGB2GRAY)
-        return raw, (width, height), gray, bool(np.any(rgba[:, :, 3] != 255))
+        return raw, (width, height), gray, bool(np.any(rgba[:, :, 3] != 255)), rgba
 
     try:
         if method == 'same_shape_pair':
-            raw, _, _, transparent = decode(payload['image'])
+            raw, _, _, transparent, _ = decode(payload['image'])
             if transparent:
                 return review('point_background_unsupported')
             from captcha_point import predict
@@ -56,16 +56,20 @@ def solve(payload):
                 result['image_sha256'] = hashlib.sha256(raw).hexdigest()
             return result
         if method == 'ocr':
-            raw, _, gray, _ = decode(payload['image'])
+            raw, _, gray, _, _ = decode(payload['image'])
             if float(np.std(gray)) < 2.0:
                 return review('insufficient_image_information')
             result = ddddocr.DdddOcr(ocr=True, det=False, show_ad=False).classification(raw)
             return ({'status': 'predicted', 'result': result, 'output_case_transform': 'none'}
                     if result.strip() else review('empty_recognition'))
-        target, size, target_gray, transparent = decode(payload['target_image'])
-        background, background_size, background_gray, _ = decode(payload['background_image'])
+        target, size, target_gray, transparent, target_rgba = decode(payload['target_image'])
+        background, background_size, background_gray, _, background_rgba = decode(payload['background_image'])
         if transparent:
-            return review('transparent_template_requires_mask_aware_model')
+            from captcha_slider import predict
+            result = predict(target_rgba, background_rgba)
+            if result['status'] == 'predicted':
+                result['image_sha256'] = hashlib.sha256(target + background).hexdigest()
+            return result
         if any(a > b for a, b in zip(size, background_size)):
             return review('invalid_dimensions')
         if min(float(np.std(target_gray)), float(np.std(background_gray))) < 2.0:

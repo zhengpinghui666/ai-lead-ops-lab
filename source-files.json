@@ -102,6 +102,8 @@
   "uid_transport.py",
   "captcha_runtime.py",
   "captcha_engine.py",
+  "captcha_slider.py",
+  "test_captcha_slider.py",
   "captcha_solver.cjs",
   "captcha_browser.cjs",
   "collector_verification.cjs",

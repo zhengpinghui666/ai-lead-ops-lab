@@ -76,7 +76,7 @@ const atom=value=>typeof value==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(value)?
 let sourceVersion;
 async function version(){
   if(!sourceVersion){
-    const names=['captcha_engine.py','captcha_point.py','captcha_browser.cjs','captcha_point_browser.cjs','collector_verification.cjs','captcha_verdict.cjs','captcha_learning.cjs','requirements-captcha.txt'];
+    const names=['captcha_engine.py','captcha_point.py','captcha_slider.py','captcha_browser.cjs','captcha_point_browser.cjs','collector_verification.cjs','captcha_verdict.cjs','captcha_learning.cjs','requirements-captcha.txt'];
     const files={};for(const name of names)files[name]=hash(await fs.readFile(path.join(__dirname,name)));
     sourceVersion={files,digest:hash(JSON.stringify(files))};
   }
@@ -117,6 +117,7 @@ async function begin(challenge,config,attemptId,options={}){
 function predictionFields(value){
   if(!value||!['predicted','needs_review'].includes(value.status))return undefined;
   const result={status:value.status,reason:atom(value.reason),coordinate_type:atom(value.coordinate_type),prediction_basis:atom(value.prediction_basis),image_sha256:SHA.test(value.image_sha256||'')?value.image_sha256:undefined};
+  for(const key of ['matching_route','solver_version'])result[key]=atom(value[key]);
   for(const key of ['elapsed_ms','match_score','peak_margin','pair_score','pair_margin'])if(Number.isFinite(value[key]))result[key]=value[key];
   for(const key of ['background_size','target_size','image_size']){
     const size=value[key];if(Array.isArray(size)&&size.length===2&&size.every(n=>Number.isInteger(n)&&n>0&&n<=4096))result[key]=size;

@@ -63,7 +63,7 @@ def evaluate(root):
         'label_basis':'earlier explicit platform pass plus read recovery; not independent ground truth','cases':len(rows),'invalid_attempt_records':invalid_attempts,
         'locally_predicted':sum(r['status']=='predicted' for r in rows),'reference_disagreements':disagreements,
         'promotion_gate':'review_required' if disagreements or invalid_attempts or not references or any(r['assessment']=='invalid_evidence' for r in rows) else 'references_preserved',
-        'platform_pass_rate':None,'source_sha256':{n:hashlib.sha256((BASE/n).read_bytes()).hexdigest() for n in ('captcha_engine.py','captcha_point.py')},'rows':rows}
+        'platform_pass_rate':None,'source_sha256':{n:hashlib.sha256((BASE/n).read_bytes()).hexdigest() for n in ('captcha_engine.py','captcha_point.py','captcha_slider.py')},'rows':rows}
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser();parser.add_argument('--data-dir',type=Path,default=BASE/'data');parser.add_argument('--report',type=Path)

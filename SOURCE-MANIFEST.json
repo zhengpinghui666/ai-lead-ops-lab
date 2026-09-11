@@ -23,13 +23,13 @@
     },
     {
       "name": "CAPTCHA_PROJECT_RESEARCH.md",
-      "sha256": "447bde931ff3da0c7bae56f4d2e526387a5f5ad1dcfe54a35a6e04dc27785141",
-      "bytes": 10603
+      "sha256": "e7a0a4d2cb36f067c952d922b0e16e3db3b5d2079383944071d21da50c827262",
+      "bytes": 13250
     },
     {
       "name": "CAPTCHA_WORKFLOW.md",
-      "sha256": "093b45c489cec8f29688f5ffe554ce4ba832c028216e7a54373a3f3366a4e5e9",
-      "bytes": 15699
+      "sha256": "b5fed6e975ba546b129d15aba42379429900338e21484b3d09c48f94073e25d1",
+      "bytes": 17978
     },
     {
       "name": "COLLECTION_FRESHNESS.md",
@@ -43,8 +43,8 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "6990edf3db389172420368a69221a3776006fbad193a759a234cb92add2c165d",
-      "bytes": 32274
+      "sha256": "a3294cc67a8e8b4815eed7da0430da6403e93c13a9b6a351c046d90f345076ec",
+      "bytes": 33670
     },
     {
       "name": "EXTERNAL_ACCESS.md",
@@ -58,8 +58,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "5f2e4bbfa6befb9e5e3fde61fb7691b345a388ff5f97c927a3861e628ae30979",
-      "bytes": 75872
+      "sha256": "c9c396d225b3e325b2eafe77499c22f92546bd0fa05c3a9f2a9e20456fad8f31",
+      "bytes": 77269
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -173,13 +173,13 @@
     },
     {
       "name": "captcha_engine.py",
-      "sha256": "814177d7c78e54f777b8d1f6e6dd65d16df09a1f6689a830c126f5c13607f040",
-      "bytes": 5829
+      "sha256": "d32fc1cc4441021f346bd8e5373cf2f956959ce24d99486eb151fc5cd6d86207",
+      "bytes": 6063
     },
     {
       "name": "captcha_learning.cjs",
-      "sha256": "e04c59c816262dba9afb5847d211a3024d159d2be1a46d3a7d69cb3814876d58",
-      "bytes": 13712
+      "sha256": "5e2e195f670d18a2ef5929cf8e20f95526bb41e826f115268893d99f994472c3",
+      "bytes": 13817
     },
     {
       "name": "captcha_point.py",
@@ -200,6 +200,11 @@
       "name": "captcha_samples.cjs",
       "sha256": "62fdd8c5b197b596afcd35efab3391c90a84cdf8411321d689d1bd0aa3499c19",
       "bytes": 1826
+    },
+    {
+      "name": "captcha_slider.py",
+      "sha256": "25325547ae89d2be3b9eeae525368cb0416b5ec8130ade08b879ce86831185f8",
+      "bytes": 4548
     },
     {
       "name": "captcha_solver.cjs",
@@ -578,8 +583,8 @@
     },
     {
       "name": "scripts/evaluate-captcha-learning.py",
-      "sha256": "021b1fc96d42f751a6cfd904668af325cc3512cfaf534bb55896495173c1aa38",
-      "bytes": 5657
+      "sha256": "662e1a342ba6e8758fd5bb2b503cda1aefe602be6e6b491704c09b10631fa581",
+      "bytes": 5677
     },
     {
       "name": "scripts/login-recovery.cjs",
@@ -668,8 +673,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "d592d4dc6daa04cb9461224851b4c5e470dce0c3a9490dad809c2f6112df19f5",
-      "bytes": 6713
+      "sha256": "6c9d8de09865977885cbba32fa689afba68bf778bb34782d0c5a7ec65934bc50",
+      "bytes": 6763
     },
     {
       "name": "start.ps1",
@@ -738,13 +743,13 @@
     },
     {
       "name": "test_captcha_browser.cjs",
-      "sha256": "7a38c758a322a4d60a84c147397fe1682aff7fd6d16f1a98b4117ea32a679a13",
-      "bytes": 7064
+      "sha256": "85d74dd4dfb55f681aaee9a2609b679bde6eed1c4d60e19a10b194901e68ad9d",
+      "bytes": 8505
     },
     {
       "name": "test_captcha_learning.cjs",
-      "sha256": "f3bac95104fb214551c209936140f784ad2f68ca205e8e5557a0c3cbd6a203bd",
-      "bytes": 13078
+      "sha256": "d7e6e3f47f3993ffa5cb36b11cd22f32d54a95b8da99373965470747a947e90d",
+      "bytes": 13396
     },
     {
       "name": "test_captcha_point.py",
@@ -760,6 +765,11 @@
       "name": "test_captcha_samples.cjs",
       "sha256": "d5f9ee3df7498f06a44ef89860cc874c849b1452de5d310f56710159f16ac1c5",
       "bytes": 2229
+    },
+    {
+      "name": "test_captcha_slider.py",
+      "sha256": "f9c40c887825a2c4a5b82ef554788161f3a8f1f1709be8616d4573a9adf5b3fb",
+      "bytes": 6982
     },
     {
       "name": "test_captcha_verdict.cjs",
