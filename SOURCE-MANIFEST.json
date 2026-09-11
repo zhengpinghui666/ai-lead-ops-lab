@@ -43,8 +43,8 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "ac1dea9c48d09ee0decc3664e6cd9377232ee67ed2901b409a45ebafb309c538",
-      "bytes": 25563
+      "sha256": "6c0bebead9efa0ae841c169fa908c49423b507f83f0d64b0e412fc3f88a6724d",
+      "bytes": 26957
     },
     {
       "name": "EXTERNAL_ACCESS.md",
@@ -53,13 +53,13 @@
     },
     {
       "name": "GITHUB_BACKUP.md",
-      "sha256": "d0aee4ecd09e5519bfadcd6ac5cc609c8eea5228e425b4cb26d2e5d7b3727def",
-      "bytes": 2486
+      "sha256": "82c2da5a1314b6e3edadddeb6cf817fb83c91896d985ea92169455b5254791fc",
+      "bytes": 3802
     },
     {
       "name": "GOAL.md",
-      "sha256": "256b1f1ef945ab83f758a1e93c7979053ef2dd41373cb41f92d30561b899a0cf",
-      "bytes": 69161
+      "sha256": "7ebdf5f5d04cbd5f78de905c5dbb4f6f7a68823f988096ea9a76294f6aa2250c",
+      "bytes": 70555
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -298,8 +298,8 @@
     },
     {
       "name": "design-qa.md",
-      "sha256": "a97aaa0203dc1fb32dcd60c52ea5cb81080ba483d928aba0415cf8839d189d46",
-      "bytes": 17736
+      "sha256": "9847368c2bd20fc7d1e71c261638f18e9f17d4f5c748b94cc9d0afd2582f9ee7",
+      "bytes": 17946
     },
     {
       "name": "evaluation/intent-development-v1.json",
@@ -313,8 +313,8 @@
     },
     {
       "name": "github_backup.py",
-      "sha256": "c8aef0ea4e1146ff49965fa266f473386af3ca1de2737d8f902653b01e415fe9",
-      "bytes": 12917
+      "sha256": "3440bad4d4ccb8d16539bc55875e159f41a243b455bcc25a46b7ef53760d30f5",
+      "bytes": 17592
     },
     {
       "name": "integrations/iphone/forwarder-core.cjs",
@@ -808,8 +808,8 @@
     },
     {
       "name": "test_github_backup.py",
-      "sha256": "d87d719ef12905c035f804ae4dc70304fce33c3efe26650f8d193b659e6a0136",
-      "bytes": 7250
+      "sha256": "8d7b7c02e16f9f5ff62cdb667fc32377339bc8e050165eef3f65000ee2c28220",
+      "bytes": 11475
     },
     {
       "name": "test_http_probe.cjs",

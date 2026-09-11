@@ -1,11 +1,12 @@
 """Back up the explicit source manifest to a private, personal GitHub repository."""
 import argparse
+import base64
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
@@ -34,18 +35,19 @@ class BackupError(Exception):
 
 def safe_content(name, raw):
     """Report only filenames, never matched values."""
-    parts = Path(name).parts
+    parts = PurePosixPath(name).parts
     if (not parts or any(c in name for c in '\r\n\t\0\\:') or name.startswith('/')
-            or any(p in PRIVATE_PARTS or p in ('..', '.') for p in parts)
+            or name != PurePosixPath(name).as_posix()
+            or any(p.lower() in PRIVATE_PARTS or p in ('..', '.') for p in parts)
             or any(p.startswith('.') and p != '.gitignore' for p in parts)
             or Path(name).suffix.lower() in {'.db', '.sqlite', '.sqlite3', '.bak', '.pem', '.key'}):
         raise BackupError(f'禁止备份此路径：{name}')
     if len(raw) > 8 * 1024 * 1024:
         raise BackupError(f'源码文件超过 8 MiB：{name}')
     for pattern in SECRET_PATTERNS:
-        match = pattern.search(raw)
-        if match and (not match.lastindex or len(set(match.group(1))) > 8):
-            raise BackupError(f'疑似凭据，停止上传；请在本机检查：{name}')
+        for match in pattern.finditer(raw):
+            if not match.lastindex or len(set(match.group(1))) > 8:
+                raise BackupError(f'疑似凭据，停止上传；请在本机检查：{name}')
 
 
 def snapshot(base=BASE):
@@ -92,10 +94,10 @@ def github_environment(owner):
     return env
 
 
-def api(endpoint, env, payload=None, *, check=True):
+def api(endpoint, env, payload=None, *, check=True, method='POST'):
     args = ['gh', 'api', '--hostname', 'github.com', endpoint]
     if payload is not None:
-        args += ['--method', 'POST', '--input', '-']
+        args += ['--method', method, '--input', '-']
     result = command(args, env=env, data=json.dumps(payload).encode() if payload is not None else None,
                      check=check)
     if result.returncode:
@@ -144,7 +146,7 @@ def write_receipt(folder, value):
     temporary.replace(target)
 
 
-def backup_git(files, folder, url, repository_id, env, *, branch=BRANCH):
+def backup_git(files, folder, url, repository_id, env, *, branch=BRANCH, github_repo=None, transport='auto'):
     """A dedicated bare repo and temporary index never touch the user's checkout."""
     gitdir = folder / 'repository.git'
     marker = folder / 'repository.json'
@@ -165,12 +167,19 @@ def backup_git(files, folder, url, repository_id, env, *, branch=BRANCH):
     ref = 'refs/heads/' + branch
     local = run('rev-parse', '--verify', ref, check=False)
     head = local.stdout.decode().strip() if local.returncode == 0 else None
-    remote_line = run('ls-remote', 'origin', ref).stdout.decode().strip()
-    remote = remote_line.split()[0] if remote_line else None
+    def remote_head():
+        if github_repo:
+            return api_head(github_repo, branch, env)
+        line = run('ls-remote', 'origin', ref).stdout.decode().strip()
+        return line.split()[0] if line else None
+    remote = remote_head()
     if remote and (not head or run('merge-base', '--is-ancestor', remote, head, check=False).returncode):
         raise BackupError('远端存在本机未包含的提交；保留双方历史，需先处理分叉')
-    if not head and run('ls-remote', 'origin').stdout.strip():
-        raise BackupError('首次备份要求空仓库，不自动覆盖已有仓库')
+    if not head:
+        existing = (api('repos/' + github_repo + '/git/matching-refs/heads/', env)
+                    or api('repos/' + github_repo + '/git/matching-refs/tags/', env)) if github_repo else run('ls-remote', 'origin').stdout.strip()
+        if existing:
+            raise BackupError('首次备份要求空仓库，不自动覆盖已有仓库')
 
     with tempfile.TemporaryDirectory(prefix='index-', dir=folder) as temp:
         index_env = {**env, 'GIT_INDEX_FILE': str(Path(temp) / 'index')}
@@ -189,7 +198,8 @@ def backup_git(files, folder, url, repository_id, env, *, branch=BRANCH):
                   'commit-tree', tree, '-m', 'Source backup ' + stamp]
         if head:
             commit += ['-p', head]
-        new_head = command(commit, env=env).stdout.decode().strip()
+        commit_date = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+        new_head = command(commit, env={**env, 'GIT_AUTHOR_DATE': commit_date, 'GIT_COMMITTER_DATE': commit_date}).stdout.decode().strip()
         run('update-ref', ref, new_head, head or '0' * 40)
         head = new_head
 
@@ -199,11 +209,87 @@ def backup_git(files, folder, url, repository_id, env, *, branch=BRANCH):
     pending = run('rev-list', head, *(['^' + remote] if remote else [])).stdout.decode().splitlines()
     for commit_id in pending:
         verify_commit(git, commit_id, env)
-    run('push', 'origin', ref + ':' + ref, timeout=120)
-    confirmed = run('ls-remote', 'origin', ref).stdout.decode().split()
-    if not confirmed or confirmed[0] != head:
+    used_transport = 'git'
+    try:
+        if transport == 'api':
+            raise BackupError('使用指定的 GitHub API 通道')
+        run('push', 'origin', ref + ':' + ref, timeout=45)
+    except BackupError:
+        if not github_repo:
+            raise
+        publish_api(git, head, remote, github_repo, branch, env)
+        used_transport = 'github_api'
+    if remote_head() != head:
         raise BackupError('推送结果未确认；保留本地提交，下次核对后重试')
-    return {'status': 'pushed', 'commit': head, 'tree': tree, 'files': len(files) - 1}
+    return {'status': 'pushed', 'commit': head, 'tree': tree, 'files': len(files) - 1, 'transport': used_transport}
+
+
+def api_head(repo, branch, env):
+    ref = 'refs/heads/' + branch
+    rows = api('repos/' + repo + '/git/matching-refs/heads/' + branch, env)
+    exact = [row for row in rows if row['ref'] == ref]
+    return exact[0]['object']['sha'] if exact else None
+
+
+def commit_payload(raw):
+    headers, message = raw.decode('utf-8').split('\n\n', 1)
+    result = {'message': message, 'parents': []}
+    for line in headers.splitlines():
+        key, value = line.split(' ', 1)
+        if key == 'parent':
+            result['parents'].append(value)
+        elif key == 'tree':
+            result['tree'] = value
+        elif key in ('author', 'committer'):
+            match = re.fullmatch(r'(.*) <([^<>]+)> (\d+) ([+-])(\d{2})(\d{2})', value)
+            if not match:
+                raise BackupError('提交作者格式无法保真转换，停止 API 上传')
+            name, email, seconds, sign, hours, minutes = match.groups()
+            offset = (int(hours) * 60 + int(minutes)) * (1 if sign == '+' else -1)
+            result[key] = {'name': name, 'email': email,
+                           'date': datetime.fromtimestamp(int(seconds), timezone(timedelta(minutes=offset))).isoformat()}
+        else:
+            raise BackupError('API 备用通道不转换带扩展头的提交')
+    return result
+
+
+def publish_api(git, head, previous, repo, branch, env):
+    """Upload identical Git objects; update the branch only after every SHA matches."""
+    current = api_head(repo, branch, env)
+    if current == head:
+        return
+    if current != previous or not previous:
+        raise BackupError('API 通道要求已有备份分支且远端没有变化')
+    prefix = 'repos/' + repo + '/git/'
+    known_tree = api(prefix + 'trees/' + previous + '?recursive=1', env)
+    if known_tree.get('truncated'):
+        raise BackupError('远端树清单被截断，停止 API 上传')
+    known = {row['sha'] for row in known_tree['tree'] if row['type'] == 'blob'}
+    pending = command([*git, 'rev-list', '--reverse', head, '^' + previous], env=env).stdout.decode().splitlines()
+    for commit_id in pending:
+        verify_commit(git, commit_id, env)
+        rows = command([*git, 'ls-tree', '-rz', commit_id], env=env).stdout.split(b'\0')
+        entries = []
+        for row in filter(None, rows):
+            metadata, path = row.split(b'\t', 1)
+            mode, kind, oid = metadata.decode().split()
+            if oid not in known:
+                raw = command([*git, 'cat-file', 'blob', oid], env=env).stdout
+                saved = api(prefix + 'blobs', env, {'content': base64.b64encode(raw).decode(), 'encoding': 'base64'})
+                if saved['sha'] != oid:
+                    raise BackupError('API 上传文件哈希不符，未更新分支')
+                known.add(oid)
+            entries.append({'path': path.decode(), 'mode': mode, 'type': kind, 'sha': oid})
+        payload = commit_payload(command([*git, 'cat-file', 'commit', commit_id], env=env).stdout)
+        tree = api(prefix + 'trees', env, {'tree': entries})
+        if tree['sha'] != payload['tree']:
+            raise BackupError('API 上传目录树哈希不符，未更新分支')
+        saved_commit = api(prefix + 'commits', env, payload)
+        if saved_commit['sha'] != commit_id:
+            raise BackupError('API 提交哈希不符，未更新分支')
+    if api_head(repo, branch, env) != previous:
+        raise BackupError('API 上传期间远端发生变化，未更新分支')
+    api(prefix + 'refs/heads/' + branch, env, {'sha': head, 'force': False}, method='PATCH')
 
 
 def verify_commit(git, commit_id, env):
@@ -235,6 +321,7 @@ def main():
     parser.add_argument('--repo', required=True, help='Personal GitHub owner/repository')
     parser.add_argument('--create-private', action='store_true', help='Create the authorized private repository if absent')
     parser.add_argument('--dry-run', action='store_true', help='Check source only; no authentication or network')
+    parser.add_argument('--transport', choices=['auto', 'api'], default='auto', help='Git push with API fallback, or API only for an initialized backup')
     args = parser.parse_args()
     folder = BASE / 'data' / 'github-backup'
     try:
@@ -247,7 +334,7 @@ def main():
             env = github_environment(args.repo.split('/')[0])
             info = private_repository(args.repo, env, args.create_private)
             url = 'https://github.com/' + info['full_name'] + '.git'
-            result = backup_git(files, folder, url, info['id'], env)
+            result = backup_git(files, folder, url, info['id'], env, github_repo=info['full_name'], transport=args.transport)
             result.update(repository=info['html_url'], private=True, branch=BRANCH,
                           checked_at=datetime.now(timezone.utc).isoformat())
             write_receipt(folder, result)

@@ -10,6 +10,18 @@
 
 本轮真实证据在 artifacts/live-desktop-client-20260911/，其中 final-live-validation.json 记录逐条模型时延。完整目标继续：突发队列时延、长时直播与评论新鲜度、自然登录恢复、独立分析评测及 UID 私信／回复／导流仍待验证。
 
+
+
+Git 连接故障增量：github.com:443 两次连接失败，官方 API 仍可达。已加入已初始化仓库的 API 备用上传，保持 blob／tree／commit SHA 一致，最后仅 fast-forward 更新分支，失败保留旧分支。10 项本地 Git／API 契约检查通过，覆盖网络失败、哈希不符、并发远端修改和重复提交；真实备用通道结果继续以最后回执为准。
+
+### 本轮收尾验证
+
+私有仓库首次提交 6adebeddfde40db03c20b7d867a45b3abebd5755 已真实推送；GitHub 远端 219 个源码文件及 1 个清单的 Git blob 哈希全部与本机字节一致。紧接着再次运行返回 unchanged，未生成空提交。定时任务 clubops-github 已保存并启用；首次自然定时触发尚未到期，不将手动运行冒充定时验收。
+
+全量回归 479 项 Python（102.944 秒）和 21 个 Node 入口通过；最后凭据扫描多处匹配与 Windows 路径大小写补强后，7 项 Git 备份专项再次通过。源码清单及最新提交以 data/github-backup/last-run.json、artifacts/github-backup-20260911/remote-validation.json 为准。
+
+公网工作台重新加载后，“全部本地存档”实际显示 13 条正式弹幕和 13 个“已保存模型结果”。这是终态显示复核；模型自动刷新期间的竞态由本地状态测试覆盖，没有为界面验收重复运行模型。
+
 以下为此前交付历史。
 
 # 最新交付：2026-09-11 外网响应优化与直播项目调研

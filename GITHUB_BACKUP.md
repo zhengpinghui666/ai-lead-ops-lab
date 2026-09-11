@@ -21,3 +21,15 @@ python github_backup.py --repo zhengpinghui666/ai-lead-ops-lab
 定时任务附在当前 Codex 任务，每天 23:00（Asia/Shanghai）执行以上命令。无变化保持安静；失败或需要操作时报告原因，不输出凭据。电脑须开机、联网且 Codex 应用运行，才能备份本机文件。[官方定时任务说明](https://learn.chatgpt.com/docs/automations?surface=app)
 
 恢复时将仓库克隆到新目录，按 README 安装依赖并核对源码清单。该仓库是代码备份；业务数据库和登录态须使用原本的本机备份、配置和登录流程恢复。
+
+## 首次验收 · 2026-09-11
+
+私有仓库已创建，219 个源码文件和 SOURCE-MANIFEST.json 已推送并逐文件核对远端哈希。再次运行返回 unchanged，未创建空提交。每日任务 clubops-github 已启用；首次自然到点执行仍待观察。最终版本提交保存在本机 last-run.json，不在文档内维护容易过期的当前提交号。
+
+## GitHub API 备用通道
+
+2026-09-11 首次备份成功后，增量推送遇到 github.com:443 连接失败，而 api.github.com 仍正常。脚本读取远端分支时使用官方 API，默认先 Git push，失败后把同一批 Git blob、tree、commit 对象通过 GitHub Git Database API 上传，所有返回 SHA 必须与本地一致，最后只允许 fast-forward 更新分支。原仓库与历史保持一致，不另开备份仓库，不强制推送。
+
+可用 `--transport api` 验证已初始化备份仓库的备用通道；全新空仓库仍需首次 Git push。失败不会把分支指向部分上传结果；并发远端修改会停止更新。回执中的 transport 区分 git 与 github_api。
+
+来源：[GitHub Git commits](https://docs.github.com/en/rest/git/commits)、[trees](https://docs.github.com/en/rest/git/trees)、[references](https://docs.github.com/en/rest/git/refs)。

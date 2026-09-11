@@ -1,5 +1,7 @@
 """Local Git transport and synthetic credentials only; never contact GitHub."""
 import json
+import base64
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -89,9 +91,11 @@ class SourceBackupTests(unittest.TestCase):
         with self.assertRaises(backup.BackupError) as error:
             backup.safe_content('app.py', synthetic)
         self.assertNotIn(synthetic.decode(), str(error.exception))
-        for name in ['data/config.json', 'artifacts/session.json', '.env', '../outside', 'a/.wrangler/state']:
+        for name in ['data/config.json', 'Data/config.json', 'a/NODE_MODULES/key.json', 'artifacts/session.json', '.env', '../outside', 'a/.wrangler/state']:
             with self.assertRaises(backup.BackupError):
                 backup.safe_content(name, b'ordinary')
+        with self.assertRaises(backup.BackupError):
+            backup.safe_content('app.py', b'api_key="aaaaaaaaaaaaaaaaaaaaaaaa"\naccess_token="' + b'1234567890abcdefghijABCDEFGHIJ1234567890' + b'"')
 
     def test_unlisted_pending_content_never_reaches_remote(self):
         first = self.run_backup()
@@ -134,6 +138,72 @@ class SourceBackupTests(unittest.TestCase):
         with self.assertRaisesRegex(backup.BackupError, '分叉'):
             self.run_backup()
         self.assertEqual(self.remote_head().decode(), outsider)
+
+    def api_fixture(self, *, bad_blob=False, changed_remote=False):
+        first = self.run_backup()
+        (self.source / 'app.py').write_text('print("API backup")\n', encoding='utf-8')
+        original = backup.command
+        def offline(args, **kwargs):
+            if 'push' in args:
+                raise backup.BackupError('synthetic offline')
+            return original(args, **kwargs)
+        with patch.object(backup, 'command', side_effect=offline):
+            with self.assertRaises(backup.BackupError):
+                self.run_backup()
+        git = ['git', '--git-dir=' + str(self.folder / 'repository.git')]
+        head = backup.command([*git, 'rev-parse', backup.BRANCH], env=self.env).stdout.decode().strip()
+        tree = backup.command([*git, 'rev-parse', head + '^{tree}'], env=self.env).stdout.decode().strip()
+        raw_commit = backup.command([*git, 'cat-file', 'commit', head], env=self.env).stdout
+        calls, reads = [], []
+        def fake_api(endpoint, env, payload=None, **kwargs):
+            calls.append((endpoint, payload, kwargs))
+            if 'matching-refs' in endpoint:
+                reads.append(endpoint)
+                sha = 'a' * 40 if changed_remote and len(reads)>1 else first['commit']
+                return [{'ref': 'refs/heads/' + backup.BRANCH, 'object': {'sha': sha}}]
+            if '?recursive=1' in endpoint:
+                return {'tree': [], 'truncated': False}
+            if endpoint.endswith('/blobs'):
+                raw = base64.b64decode(payload['content'])
+                sha = hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
+                return {'sha': 'b'*40 if bad_blob else sha}
+            if endpoint.endswith('/trees'):
+                self.assertEqual({x['path'] for x in payload['tree']}, set(backup.snapshot(self.source)))
+                return {'sha': tree}
+            if endpoint.endswith('/commits'):
+                self.assertEqual(payload['parents'], [first['commit']])
+                self.assertEqual(payload['tree'], tree)
+                self.assertEqual(payload['message'], raw_commit.split(b'\n\n', 1)[1].decode())
+                self.assertEqual(payload['author']['date'][-6:], '+00:00')
+                self.assertEqual(payload['author']['name'], 'ClubOps Backup')
+                return {'sha': head}
+            if '/refs/heads/' in endpoint:
+                self.assertEqual(kwargs['method'], 'PATCH')
+                self.assertEqual(payload, {'sha': head, 'force': False})
+                return {}
+            self.fail(endpoint)
+        return git, head, first['commit'], calls, fake_api
+
+    def test_api_upload_preserves_git_objects_and_only_updates_ref_at_end(self):
+        git, head, previous, calls, fake = self.api_fixture()
+        with patch.object(backup, 'api', side_effect=fake):
+            backup.publish_api(git, head, previous, 'owner/repo', backup.BRANCH, self.env)
+        self.assertEqual(calls[-1][2]['method'], 'PATCH')
+        self.assertEqual(sum('/refs/heads/' in c[0] for c in calls), 1)
+
+    def test_api_hash_mismatch_never_updates_ref(self):
+        git, head, previous, calls, fake = self.api_fixture(bad_blob=True)
+        with patch.object(backup, 'api', side_effect=fake):
+            with self.assertRaisesRegex(backup.BackupError, '哈希不符'):
+                backup.publish_api(git, head, previous, 'owner/repo', backup.BRANCH, self.env)
+        self.assertFalse(any('/refs/heads/' in c[0] for c in calls))
+
+    def test_api_concurrent_remote_change_never_updates_ref(self):
+        git, head, previous, calls, fake = self.api_fixture(changed_remote=True)
+        with patch.object(backup, 'api', side_effect=fake):
+            with self.assertRaisesRegex(backup.BackupError, '远端发生变化'):
+                backup.publish_api(git, head, previous, 'owner/repo', backup.BRANCH, self.env)
+        self.assertFalse(any('/refs/heads/' in c[0] for c in calls))
 
 
 if __name__ == '__main__':
