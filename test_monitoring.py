@@ -183,6 +183,60 @@ class MonitorTests(unittest.TestCase):
                 self.assertIsNone(sch.transient_reply_wait(c,row))
             self.assertEqual(sch.transient_retry_seconds(c,{'continuous':0},row),0)
 
+    def identity_network_failure(self,task,**changes):
+        e=dict(operation='identity',transport='http',status='http_failed',identity_check_version='identity-check-v2',
+               http_attempts=1,transport_error='timeout',transport_phase='response_headers',response_bytes=0)
+        e.update(changes)
+        with app.db() as c:
+            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                      (task,'http_read',json.dumps({'responses':[e]}),app.now()))
+        self.finish(task,'network_error')
+
+    def test_identity_network_retries_frozen_discovery_scope_then_stops(self):
+        import discovery_tracking as discovery
+        self.baseline();mon.save({});discovery.save({'enabled':True});mon.command('start')
+        task=sch.tick(NOW)
+        with app.db() as c:frozen=discovery.worker_config(c,task)
+        history=[]
+        for delay in (60,120,240):
+            history.append(task);self.identity_network_failure(task);finished=app.now();sch.tick()
+            due=(datetime.fromisoformat(finished)+timedelta(seconds=delay)).isoformat()
+            self.assertTrue(mon.state()['enabled']);self.assertEqual(mon.state()['next_run_at'],due)
+            self.assertIsNone(self.at((datetime.fromisoformat(due)-timedelta(seconds=1)).isoformat()))
+            task=self.at(due)
+            with app.db() as c:self.assertEqual(discovery.worker_config(c,task),frozen)
+        self.identity_network_failure(task);sch.tick();self.assertEqual(mon.state()['status'],'attention')
+        with app.db() as c:
+            self.assertTrue(all(c.execute('SELECT status FROM collection_tasks WHERE id=?',(t,)).fetchone()[0]=='network_error' for t in history))
+
+    def test_identity_network_recovery_resets_delay_and_honors_stop(self):
+        self.http_baseline();task=sch.tick(NOW);self.identity_network_failure(task);sch.tick()
+        task=self.at(mon.state()['next_run_at']);self.finish(task);sch.tick()
+        task=self.at(mon.state()['next_run_at']);self.identity_network_failure(task);finished=app.now();sch.tick()
+        self.assertEqual(mon.state()['next_run_at'],(datetime.fromisoformat(finished)+timedelta(seconds=60)).isoformat())
+        mon.command('stop');self.assertIsNone(self.at('2026-09-10T10:00:00+00:00'))
+
+    def test_identity_network_retry_requires_transport_evidence_only(self):
+        task=col.start(dict(kind='video',target=VIDEO,transport='http',request_id='identity-rejections'))['id']
+        self.identity_network_failure(task)
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            valid=json.loads(c.execute('SELECT snapshot FROM collection_diagnostics WHERE task_id=?',(task,)).fetchone()[0])['responses'][0]
+            self.assertEqual(sch.transient_identity_wait(c,row),0)
+            for change in ({'http_status':401},{'http_status':403},{'http_status':429},{'http_status':'200'},
+                    {'transport_error':'tls_verification_failed'},{'transport_error':'transport_failed'},
+                    {'transport_phase':'unknown'},{'identity_check_version':'old'},{'http_attempts':True},
+                    {'verification_indicated':True},{'business_code':0},{'user_present':True},
+                    {'status':'account_mismatch'},{'operation':'comments'},{'response_bytes':None}):
+                with self.subTest(change=change):
+                    c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE task_id=?',
+                              (json.dumps({'responses':[{**valid,**change}]}),task))
+                    self.assertIsNone(sch.transient_identity_wait(c,row))
+            c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE task_id=?',(json.dumps({'responses':[valid]}),task))
+            self.assertIsNone(sch.transient_identity_wait(c,{**dict(row),'status':'identity_failed'}),'Old failed identity cannot be reclassified')
+            self.assertIsNone(sch.transient_identity_wait(c,{**dict(row),'videos':1}))
+            self.assertEqual(sch.transient_retry_seconds(c,{'continuous':0},row),0)
+
     def test_explicit_comment_document_timeout_uses_bounded_recovery(self):
         self.baseline();mon.command('start');task=sch.tick(NOW)
         snapshot={'navigation_error':'navigation_timeout','navigation_http_status':None,
@@ -748,21 +802,35 @@ class MonitorTests(unittest.TestCase):
                 request_id,input_hash,input_json,status,result_json,started_at,finished_at)
                 VALUES('comment',?,'model',?,'fixture-model-result',?,?,?,?,?,?)""",
                 (record_id, engine, fingerprint, json.dumps(source), status,
-                 json.dumps(dict(category='noise', analysis_method='model', reason='合成分类', facts={}, game='无畏契约')),
+                 json.dumps(dict(category='noise', analysis_method='model', reason='合成分类',
+                     facts={'evidence':[
+                         dict(kind='category',source='comment',text='找无畏契约陪练'),
+                         dict(kind='game',source='video',text=source['title']),
+                         dict(kind='category',source='parent',text='上级评论中的需求'),
+                         dict(kind='category',source='comment',text='不在原文中的错误引用')]}, game='无畏契约')),
                  NOW, NOW))
         return record_id, fingerprint
 
     def test_result_model_matches_detail_without_rewriting_rule_or_source(self):
+        import monitor_comments
         record_id, _ = self.analysis_fixture()
+        with app.db() as c:
+            jobs_before = c.execute('SELECT COUNT(*) FROM semantic_jobs').fetchone()[0]
         with patch('semantic.state', return_value={'engine':'fixture-model','mode':'remote_api_configured'}):
             row = mon.results()['rows'][0]
             detail = next(x for x in app.state()['comments'] if x['id'] == record_id)
+            history = monitor_comments.history({'filter':'accepted'})['rows'][0]
         self.assertEqual((row['category'], row['analysis_method']), (detail['category'], detail['analysis_method']))
         self.assertEqual((row['category'], row['analysis_state']), ('noise', 'model'))
+        self.assertEqual(row['analysis_reason'], detail['reason'])
+        self.assertEqual(row['analysis_evidence'], [dict(kind='category',source='comment',text='找无畏契约陪练')])
+        for key in ('analysis_reason', 'analysis_evidence', 'analysis_method'):
+            self.assertEqual(history[key], row[key])
         with app.db() as c:
             original = c.execute('SELECT category,analysis_method FROM comments WHERE id=?', (record_id,)).fetchone()
             self.assertEqual(tuple(original), ('buyer', 'rules'))
             self.assertEqual(c.execute('SELECT COUNT(*) FROM message_jobs').fetchone()[0], 0)
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM semantic_jobs').fetchone()[0], jobs_before)
 
     def test_result_human_and_pending_take_priority_over_model(self):
         record_id, _ = self.analysis_fixture()
@@ -772,6 +840,8 @@ class MonitorTests(unittest.TestCase):
             with patch('semantic.state', return_value={'engine':'fixture-model'}):
                 row = mon.results()['rows'][0]
             self.assertEqual((row['category'], row['analysis_state']), ('social', method))
+            self.assertEqual(row['analysis_reason'], '合成规则基线' if method == 'human' else None)
+            self.assertEqual(row['analysis_evidence'], [])
 
     def test_result_disabled_or_other_engine_does_not_adopt_model(self):
         self.analysis_fixture()
@@ -779,6 +849,8 @@ class MonitorTests(unittest.TestCase):
             with patch('semantic.state', return_value={'engine':engine}):
                 row = mon.results()['rows'][0]
             self.assertEqual((row['category'], row['analysis_state']), ('buyer', 'rules'))
+            self.assertEqual(row['analysis_reason'], '合成规则基线')
+            self.assertEqual(row['analysis_evidence'], [])
 
     def test_result_changed_snapshot_does_not_attach_new_analysis(self):
         self.analysis_fixture()
@@ -789,12 +861,16 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(row['text'], '历史原文快照')
         self.assertIsNone(row['category'])
         self.assertEqual(row['analysis_state'], 'snapshot_changed')
+        self.assertIsNone(row['analysis_reason'])
+        self.assertEqual(row['analysis_evidence'], [])
 
     def test_result_changed_context_does_not_adopt_old_model(self):
         self.analysis_fixture(parent='已经变化的上级原文')
         with patch('semantic.state', return_value={'engine':'fixture-model'}):
             row = mon.results()['rows'][0]
         self.assertEqual((row['category'], row['analysis_state']), ('buyer', 'rules'))
+        self.assertEqual(row['analysis_reason'], '合成规则基线')
+        self.assertEqual(row['analysis_evidence'], [])
 
     def test_result_queue_and_failure_states_keep_rule_category(self):
         record_id, fingerprint = self.analysis_fixture(status='failed')
@@ -812,6 +888,8 @@ class MonitorTests(unittest.TestCase):
             with patch('semantic.state', return_value={'engine':'fixture-model'}):
                 row = mon.results()['rows'][0]
             self.assertEqual((row['category'],row['analysis_state']), ('buyer',status))
+            self.assertEqual(row['analysis_reason'], '合成规则基线')
+            self.assertEqual(row['analysis_evidence'], [])
 
 
 if __name__ == '__main__':

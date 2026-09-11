@@ -38,13 +38,13 @@
     },
     {
       "name": "COLLECTION_HTTP.md",
-      "sha256": "a2d82cbb69610c499886545372a46b5ef6eafba3f7e49013885759afcbd28795",
-      "bytes": 19723
+      "sha256": "b2cefc044ae2c484a160dae64967ef113c5777f98b5e29795aa8d44382c4e82b",
+      "bytes": 23062
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "113300bc3a4ce44c4a2490eb92c94b4c12fcfa0f3d17141c46c900b00ec28c74",
-      "bytes": 65351
+      "sha256": "2a610411df45fc4ec76493258ef1bc73dac431b7eeac2a5b0bc81ccfcccdf635",
+      "bytes": 68690
     },
     {
       "name": "DISCOVERY_TRACKING.md",
@@ -63,8 +63,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "b509e93f1c1c42b4bece6a73695acc0e2d8bfb0c8aea33cec9887ce497784662",
-      "bytes": 106767
+      "sha256": "d8500e1dbcbe9a9525a7e320ba61fef6b863f78bdfdb990d957ea92effb609b7",
+      "bytes": 110106
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -103,8 +103,8 @@
     },
     {
       "name": "MODEL_API.md",
-      "sha256": "ffaa22ffdb7311c21e540d1e4395ec19f6546eece2dd3339f822a966aec6ffb6",
-      "bytes": 8055
+      "sha256": "df2c3811d3d45ace8ef21b9ed741db9e391b4926284d00c95f7da1f4b96d031c",
+      "bytes": 9284
     },
     {
       "name": "MODEL_QUEUE.md",
@@ -238,8 +238,8 @@
     },
     {
       "name": "collection_scheduler.py",
-      "sha256": "3fdfaab77721e6262a94e8a471fb7d815a69cb894a44ac6e4fc30cd21f111540",
-      "bytes": 29698
+      "sha256": "07b61f199338745e04c635c622dafcff57d307b408c064978922e58e8b83b68d",
+      "bytes": 31648
     },
     {
       "name": "collector.py",
@@ -258,8 +258,8 @@
     },
     {
       "name": "collector_http_worker.py",
-      "sha256": "5e7c19227d1a61ce28183ddc036aeaa2de80cc856b7521936c15d4a417746268",
-      "bytes": 15869
+      "sha256": "2cfdcd3682ca4911b603a43c6a8ddfa45787bbb94f33730eba524dd6c28a4ff4",
+      "bytes": 17126
     },
     {
       "name": "collector_parser.cjs",
@@ -523,8 +523,8 @@
     },
     {
       "name": "monitoring.py",
-      "sha256": "5f466e92c8aef67bf49e1057002a95d2cbad60648392a81efe2980ea02320450",
-      "bytes": 14035
+      "sha256": "07397075bc19cb57b2b25a5adffb3d86dc361fd4f1249b58b09aaf622dec5c03",
+      "bytes": 14799
     },
     {
       "name": "package.json",
@@ -703,8 +703,8 @@
     },
     {
       "name": "static/app.css",
-      "sha256": "83b15e24c8459e443d5e60fc5cda6cf80999e9efb7abd5e41f3184851d05de70",
-      "bytes": 55110
+      "sha256": "15658ca063d3483035f140a347be1b684df8d178ca13b90c825eae558d829fa1",
+      "bytes": 55420
     },
     {
       "name": "static/app.html",
@@ -713,8 +713,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "727129e57d2feb804e02797ec3a8555017324d417bb2d2c66b787c0579b62199",
-      "bytes": 146514
+      "sha256": "223bf9d3c2d81a27e461c8aea3019617260a80115ea75b40194253dff5fce17e",
+      "bytes": 147393
     },
     {
       "name": "static/clubops-iphone.js",
@@ -828,8 +828,8 @@
     },
     {
       "name": "test_collector_http.py",
-      "sha256": "fdf03f83e8ff410ce6be987148b411359cc605b3a561f62ca1ba057206c1c406",
-      "bytes": 37304
+      "sha256": "dbaa3d8a1efb210faa3cd371157e4f0ee5a1d25eff5fd771ff3b722555d61718",
+      "bytes": 41176
     },
     {
       "name": "test_discovery_tracking.py",
@@ -848,8 +848,8 @@
     },
     {
       "name": "test_frontend_monitor_history.cjs",
-      "sha256": "bb1ebf99b6054218849e01cfa3ed8cf331d2a7a437d374158c11b6d808600eb5",
-      "bytes": 6253
+      "sha256": "f881b21da815da9a787ed0d8b4378fc13bc39dcc759b475812c8e76c1e09b370",
+      "bytes": 7895
     },
     {
       "name": "test_frontend_poll.cjs",
@@ -973,8 +973,8 @@
     },
     {
       "name": "test_monitoring.py",
-      "sha256": "4beb17cb0e7b98db79b4f46cb32e62067d0cec2e49747d0afc2914760e370262",
-      "bytes": 47801
+      "sha256": "1b0e79a84d8d4ab870e1ab282d910c208afd068ec456d28a027516ff0b028a76",
+      "bytes": 53653
     },
     {
       "name": "test_parallel_worker.cjs",

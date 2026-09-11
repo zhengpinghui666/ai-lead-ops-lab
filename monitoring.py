@@ -100,7 +100,8 @@ def command(action, mode='live'):
 def observation_analysis(c, comment_id, text, model_engine):
     """Read the same current analysis as demand details, bound to the visible text."""
     import analysis_store
-    empty = dict(category=None, analysis_method=None, analysis_state='missing')
+    empty = dict(category=None, analysis_method=None, analysis_state='missing',
+                 analysis_reason=None, analysis_evidence=[])
     if not comment_id:
         return empty
     source, archive = analysis_store.inputs(c, 'comment', comment_id)
@@ -127,7 +128,16 @@ def observation_analysis(c, comment_id, text, model_engine):
         WHERE evidence_type='comment' AND record_id=? AND input_hash=? AND engine=?""",
         (comment_id, projected['analysis_input_hash'], model_engine)).fetchone() if model_engine else None
     current_model = model if model.get('engine') == model_engine else {}
+    # Keep explanation and conclusion from the same current, input-bound result.
+    # Only classification quotes from this comment explain its intent; title and
+    # parent quotes may describe context but must not imply the commenter needs it.
+    evidence = (projected.get('facts') or {}).get('evidence', []) if method == 'model' else []
+    category_quotes = [e for e in evidence if isinstance(e, dict)
+        and e.get('kind') == 'category' and e.get('source') == 'comment'
+        and isinstance(e.get('text'), str) and e['text'] and e['text'] in text]
     return dict(category=projected['category'], analysis_method=method, analysis_state=state,
+        analysis_reason=projected.get('reason') if method in ('model', 'rules', 'human') else None,
+        analysis_evidence=category_quotes,
         rule_finished_at=rule.get('finished_at'),
         model_queued_at=job['created_at'] if job else None,
         model_started_at=current_model.get('started_at'),

@@ -151,6 +151,50 @@ class HTTPReadTests(unittest.TestCase):
             self.assertEqual(sessions.identity_state(replacement)['status'], 'prepared')
             self.assertEqual(sessions.identity_state(value)['status'], 'identity_failed')
 
+    def test_identity_network_failure_keeps_session_and_next_batch_rechecks(self):
+        value=session();cfg=dict(kind='video',target=VIDEO,video_limit=1,page_concurrency=1,comment_limit=1)
+        interrupted=dict(status='http_failed',http_attempts=1,response_bytes=0,
+                         transport_error='timeout',transport_phase='response_headers')
+        verified=dict(status='identity_verified',sender_uid=value['sender_uid'],http_status=200,verification_indicated=False)
+        with tempfile.TemporaryDirectory() as td, patch.object(sessions.runtime,'data_dir',return_value=Path(td)), \
+                patch.object(sessions,'load',return_value=value), patch.object(http.Client,'page',return_value=http.parse_page(body(),'comments',VIDEO)) as page:
+            sessions.record_identity_status(value,'identity_verified')
+            before=sessions.path().with_name('identity-status.json').read_bytes()
+            probe=unittest.mock.Mock(side_effect=[interrupted,verified]);events=[]
+            worker.collect(cfg,events.append,threading.Event(),session=value,identity_probe=probe)
+            self.assertEqual(events[-1]['status'],'network_error');page.assert_not_called()
+            self.assertEqual(sessions.path().with_name('identity-status.json').read_bytes(),before)
+            d=next(e['snapshot']['responses'][0] for e in events if e['type']=='diagnostic')
+            self.assertEqual((d['transport_error'],d['transport_phase'],d['identity_check_version']),('timeout','response_headers','identity-check-v2'))
+            worker.collect(cfg,events.append,threading.Event(),session=value,identity_probe=probe)
+            self.assertEqual(probe.call_count,2);page.assert_called_once()
+            self.assertEqual(events[-1]['status'],'completed')
+
+    def test_cancelled_identity_request_does_not_invalidate_session(self):
+        value=session();cancel=threading.Event()
+        def probe(_):cancel.set();return {'status':'http_failed','response_bytes':0}
+        with tempfile.TemporaryDirectory() as td, patch.object(sessions.runtime,'data_dir',return_value=Path(td)), \
+                patch.object(http.Client,'page') as page:
+            sessions.record_identity_status(value,'identity_verified');events=[]
+            worker.collect(dict(kind='video',target=VIDEO,video_limit=1,page_concurrency=1,comment_limit=1),
+                           events.append,cancel,session=value,identity_probe=probe)
+            self.assertEqual(events[-1]['status'],'cancelled');page.assert_not_called()
+            self.assertEqual(sessions.identity_state(value)['status'],'identity_verified')
+
+    def test_identity_mismatch_and_platform_gates_never_reach_comments(self):
+        for identity,expected in [({'status':'account_mismatch'},'identity_failed'),
+                ({'status':'identity_verified','sender_uid':'987654321'},'identity_failed'),
+                ({'status':'identity_verified','sender_uid':session()['sender_uid'],'verification_indicated':True},'needs_verification'),
+                ({'status':'http_failed','http_status':403},'access_denied'),
+                ({'status':'http_failed','http_status':429},'rate_limited'),
+                ({'status':'http_rejected','http_status':401},'needs_login')]:
+            with self.subTest(expected=expected), tempfile.TemporaryDirectory() as td, \
+                    patch.object(sessions.runtime,'data_dir',return_value=Path(td)), patch.object(http.Client,'page') as page:
+                value=session();sessions.record_identity_status(value,'identity_verified');events=[]
+                worker.collect(dict(kind='video',target=VIDEO,video_limit=1,page_concurrency=1,comment_limit=1),
+                               events.append,threading.Event(),session=value,identity_probe=lambda _:identity)
+                page.assert_not_called();self.assertEqual(events[-1]['status'],expected)
+
     def test_large_ids_missing_uid_and_parent_attribution(self):
         value = record(cid=7683708327758415397, reply_id=PARENT, user={'sec_uid': 'not-a-numeric-uid'})
         result = http.parse_page(body([value]), 'replies', VIDEO, PARENT)

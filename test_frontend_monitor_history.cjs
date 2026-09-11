@@ -67,5 +67,18 @@ const result=(video,page=1)=>({rows:[{text:video,video_url:video}],counts:{obser
  run("workFilter='untracked'");html=run('workPool()');
  for(const state of ['监控待处理','监控已暂停','未纳入持续监控'])assert.ok(html.includes(state));
  assert.doesNotMatch(html,/work-item-title[^>]*>reading|work-item-title[^>]*>queued/);
+ const explained={text:'找陪练 <img src=x>',analysis_method:'model',analysis_state:'model',analysis_reason:'有明确需求 <script>alert(1)</script>',analysis_evidence:[{kind:'category',source:'comment',text:'找陪练 <img src=x>'},{kind:'game',source:'video',text:'仅标题依据'},{kind:'category',source:'comment',text:'不在原文'}]};
+ context.explained=explained;
+ html=run('analysisReason(explained)');
+ assert.match(html,/模型理由/);assert.match(html,/原文依据/);assert.match(html,/&lt;script&gt;/);assert.match(html,/&lt;img src=x&gt;/);
+ assert.doesNotMatch(html,/<script>|<img|仅标题依据|不在原文/);
+ html=run("analysisReason({...explained,analysis_method:'rules',analysis_state:'failed',analysis_reason:'合成规则依据'})");
+ assert.match(html,/规则依据/);assert.doesNotMatch(html,/模型理由|原文依据/,'Failed model must not lend its explanation to a rules result');
+ assert.match(run("analysisReason({...explained,analysis_method:'human'})"),/人工理由/);
+ assert.match(run("analysisReason({...explained,analysis_reason:null})"),/历史结果未保存判断理由/);
+ for(const state of ['snapshot_changed','missing','pending'])assert.equal(run(`analysisReason({...explained,analysis_state:'${state}'})`),'');
+ assert.equal(run("analysisReason({...explained,filter_reason:'filtered_blocked'})"),'');
+ run("monitorResultVideo='';monitorResultFilter='accepted';monitorResultQuery='';monitorHistory={...monitorHistory,rows:[explained]};monitorHistoryKey=historyKey();");
+ assert.match(run('monitorResultsPanel()'),/模型理由/,'The comment table actually renders the saved explanation');
  console.log('PASS: request races, pagination, stable loading counts, filter-specific cache, latest scoped counts, error/retry, workspace isolation, honest empty states and exhaustive work groups. Local fixtures only.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

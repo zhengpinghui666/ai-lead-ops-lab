@@ -97,10 +97,40 @@ def transient_reply_wait(connection, task):
         return None
 
 
+def transient_identity_wait(connection, task):
+    """One evidenced identity transport interruption; never skip authentication."""
+    if not task or task['transport'] != 'http' or task['status'] != 'network_error' or not task['finished_at']:
+        return None
+    if task['videos'] or task['comments'] or task['inserted']:
+        return None
+    try:
+        records = connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=?', (task['id'],)).fetchall()
+        if len(records) != 1 or records[0]['stage'] != 'http_read':
+            return None
+        responses = json.loads(records[0]['snapshot']).get('responses')
+        if not isinstance(responses, list) or len(responses) != 1:
+            return None
+        e = responses[0]
+        if (e.get('operation') != 'identity' or e.get('transport') != 'http' or e.get('status') != 'http_failed'
+                or e.get('identity_check_version') != 'identity-check-v2'
+                or type(e.get('http_attempts')) is not int or e['http_attempts'] != 1
+                or e.get('transport_error') not in ('timeout','connection_failed')
+                or e.get('transport_phase') not in ('connect','request','response_headers','response_body')
+                or e.get('http_status') is not None and (type(e['http_status']) is not int or e['http_status'] != 200)
+                or type(e.get('response_bytes')) is not int or not 0 <= e['response_bytes'] <= 262144
+                or e.get('verification_indicated') or e.get('user_present') or 'business_code' in e):
+            return None
+        return 0
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 def transient_batch_wait(connection, task):
     """Keep ordinary incomplete page reads distinct from parser/auth failures."""
     if task and task['status'] == 'schema_changed':
         return transient_reply_wait(connection, task)
+    if task and task['transport'] == 'http' and task['status'] == 'network_error':
+        return transient_identity_wait(connection, task)
     if not task or task['status'] != 'partial':
         return transient_http_wait(connection, task)
     if task['transport'] != 'local_browser' or not task['finished_at']:
@@ -381,7 +411,8 @@ def tick(instant=None):
                     if retry:
                         due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=retry)).astimezone(timezone.utc).isoformat(timespec='seconds')
                         reason=('部分评论未能继续加载，保留部分结果与断点' if task['status']=='partial' else
-                                '回复分页返回异常，保留已读评论与原失败记录' if task['status']=='schema_changed' else '页面或接口暂不可用')
+                                '回复分页返回异常，保留已读评论与原失败记录' if task['status']=='schema_changed' else
+                                '身份核对网络请求暂未完成，保留会话并等待重新核对' if task['transport']=='http' else '页面或接口暂不可用')
                         detail=f'{reason}；等待 {retry} 秒后在后台重试原监控目标，最多连续自动重试 3 次。可随时关闭监控。'
                     else:
                         new_status, detail = 'attention', f'上批结果 {task["status"]}：{task["detail"]}；计划停止自动执行'

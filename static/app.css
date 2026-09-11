@@ -57,6 +57,7 @@
 
 /* Current analysis stays beside its source text, including in narrow table views. */
 .result-analysis{font-size:12px;line-height:1.6;margin:6px 0;color:#466771}
+.analysis-reason{font-size:12px;line-height:1.75;margin:6px 0 9px;padding-left:9px;border-left:2px solid #c9e4dd;color:#466771;overflow-wrap:anywhere}.analysis-reason p{margin:4px 0;white-space:pre-wrap}.analysis-reason strong{font-weight:600}.analysis-quote{color:#62777e}.analysis-quote q{quotes:'“' '”'}
 .channel-summary-note{font-weight:400;color:var(--muted);margin-left:10px}
 #uid-channel-settings .card-body h2{font-size:1rem;margin-bottom:12px}
 #lead-detail:focus{outline:2px solid var(--teal);outline-offset:3px}

@@ -46,11 +46,25 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
             identity = (identity_probe or uid_bootstrap.probe)({'expected_account': session['account'],
                 'cookie': sessions.cookie_header(session, 'identity'), 'user_agent': session['user_agent']})
             diagnostic({'operation': 'identity', 'transport': 'http', 'status': identity['status'],
+                'identity_check_version': 'identity-check-v2',
                 **{k: identity[k] for k in ('http_status', 'response_bytes', 'response_sha256', 'business_code',
-                    'user_present', 'verification_indicated') if k in identity}})
+                    'user_present', 'verification_indicated', 'transport_error', 'transport_phase', 'http_attempts') if k in identity}})
+            if cancel.is_set():
+                raise http.ReadError('cancelled')
+            if identity.get('http_status') in (401,403,429):
+                if identity['http_status'] == 401:
+                    sessions.record_identity_status(session, 'identity_failed')
+                raise http.ReadError({401:'needs_login',403:'access_denied',429:'rate_limited'}[identity['http_status']])
+            if identity['status'] == 'http_failed' and not identity.get('verification_indicated'):
+                # An incomplete request is not evidence that the saved account
+                # is wrong. Every subsequent batch must still verify it anew.
+                raise http.ReadError('network_error', {'reason': 'identity_transport_incomplete'})
             if identity['status'] != 'identity_verified' or identity.get('sender_uid') != session.get('sender_uid'):
                 sessions.record_identity_status(session, 'identity_failed')
                 raise http.ReadError('identity_failed')
+            if identity.get('verification_indicated'):
+                sessions.record_identity_status(session, 'identity_failed')
+                raise http.ReadError('needs_verification')
             sessions.record_identity_status(session, 'identity_verified')
         emit({'type': 'status', 'status': 'running', 'detail': '正在通过后端 HTTP 读取；本批不启动浏览器'})
         targets = config.get('resume_targets') or []
@@ -234,7 +248,9 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
     except http.ReadError as exc:
         if exc.status == 'needs_verification':
             captcha_runtime.http_unavailable(emit)
-        emit({'type': 'status', 'status': exc.status, 'detail': str(exc)})
+        detail = ('账号身份核对请求未完成；保留已有会话，本批未读取评论。'
+                  if exc.evidence.get('reason') == 'identity_transport_incomplete' else str(exc))
+        emit({'type': 'status', 'status': exc.status, 'detail': detail})
     except Exception as exc:
         emit({'type': 'status', 'status': 'failed', 'detail': 'HTTP 采集器异常，已保留数据；错误类型：' + type(exc).__name__})
 
