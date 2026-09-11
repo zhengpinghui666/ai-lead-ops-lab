@@ -110,8 +110,9 @@ def state(mode='live'):
         row['config'] = json.loads(row['config'])
     import live_tracking
     import live_discovery
+    import live_rules
     return dict(config=settings(mode), sessions=sessions, current=current, rows=records, events=events, active_id=active,
-                transport='browser_live', history_available=True, records_limit=500, tracking=live_tracking.state(mode), discovery=live_discovery.state(mode))
+                transport='browser_live', ruleset_version=live_rules.RULESET_VERSION, history_available=True, records_limit=500, tracking=live_tracking.state(mode), discovery=live_discovery.state(mode))
 
 
 def history(query, mode='live'):
@@ -255,7 +256,8 @@ def receive(session_id, message):
             c.execute(f'UPDATE live_sessions SET observed=observed+1,{counter}={counter}+1,updated_at=? WHERE id=?', (app.now(), session_id))
             return
         rejected = comment_filters.rejection(text, config['include_keywords'], config['exclude_keywords']) or ''
-        result = app.classify(text, '') if not rejected else dict(category='uncertain', analysis_method='not_analyzed', reason='按本次固定关键词配置过滤，未作需求判断', facts={})
+        import live_rules
+        result = live_rules.classify(text) if not rejected else dict(category='uncertain', analysis_method='not_analyzed', reason='按本次固定关键词配置过滤，未作需求判断', facts={})
         message_id = c.execute('INSERT INTO live_messages(session_id,room_id,message_id,outer_message_id,uid,nickname,raw_text,published_at,observed_at,filter_reason,category,analysis_method,reason,facts,include_matches,exclude_matches,payload_hash,game) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                   (session_id, room, mid, outer_id, uid, app.clean(row.get('nickname'), 200), text, published, app.now(), rejected, result['category'], result['analysis_method'], result['reason'], json.dumps(result['facts'], ensure_ascii=False),
                    json.dumps(comment_filters.matches(text, config['include_keywords']), ensure_ascii=False), json.dumps(comment_filters.matches(text, config['exclude_keywords']), ensure_ascii=False), digest, result.get('game', ''))).lastrowid

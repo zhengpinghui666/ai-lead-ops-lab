@@ -24,7 +24,15 @@ class ChatAPIAdapter(semantic.OllamaAdapter):
         return http.client.HTTPSConnection(host, timeout=timeout, context=ssl.create_default_context())
 
     def response_error(self, status):
-        return {401:'api_auth',403:'api_denied',429:'api_rate'}.get(status,'unavailable')
+        if status in (401, 403, 429):
+            return {401:'api_auth',403:'api_denied',429:'api_rate'}[status]
+        if 300 <= status < 400:
+            return 'api_redirect'
+        if 400 <= status < 500:
+            return 'api_request'
+        if 500 <= status < 600:
+            return 'api_server'
+        return 'unavailable'
 
     def predict(self, source):
         # Keep identity, cookies and unrelated record fields outside the request.

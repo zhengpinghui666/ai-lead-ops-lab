@@ -4,6 +4,7 @@ import json
 import os
 import re
 import socket
+import ssl
 import threading
 import time
 import model_credentials
@@ -55,8 +56,9 @@ class AnalysisGate:
 
 
 GUARD = AnalysisGate()
+ACTIVE_CANCELLATIONS = {}
 FIELDS = ('service_type', 'region', 'rank_label', 'time', 'budget', 'party_size')
-DEFAULTS = dict(enabled=False, backend='ollama', host='127.0.0.1', port=11434, model='', timeout_seconds=30, auto_analyze=False, api_base_url='', max_concurrency=1)
+DEFAULTS = dict(enabled=False, backend='ollama', host='127.0.0.1', port=11434, model='', timeout_seconds=30, auto_analyze=False, api_base_url='', max_concurrency=1, live_model_enabled=True)
 DETAILS = {
     'unavailable': '模型服务无法连接或响应异常；请核对地址和模型名称。保留规则结果，没有自动重试',
     'timeout': '模型分析超过本次时限；保留规则结果，没有自动重试',
@@ -67,7 +69,53 @@ DETAILS = {
     'api_auth': '模型 API 密钥未通过认证；保留规则结果',
     'api_denied': '模型 API 拒绝访问；保留规则结果',
     'api_rate': '模型 API 返回限流或额度限制；保留规则结果，没有自动重试',
+    'api_server': '模型 API 服务端异常；保留规则结果，没有自动重试',
+    'api_redirect': '模型 API 返回重定向，未跟随；请核对地址。保留规则结果',
+    'api_request': '模型 API 未接受请求参数；请核对模型及接口配置。保留规则结果',
+    'dns': '模型地址解析失败；请检查网络。保留规则结果，没有自动重试',
+    'tls': '模型连接的 TLS 验证或握手失败；保留规则结果，没有自动重试',
+    'connection': '模型网络连接失败或中途关闭；保留规则结果，没有自动重试',
+    'response_type': '模型接口未返回 JSON；请核对接口地址。保留规则结果',
+    'response_size': '模型响应超过读取上限；保留规则结果',
+    'response_json': '模型响应不是有效 JSON；保留规则结果',
+    'response_error': '模型响应包含错误或结构异常；保留规则结果',
 }
+
+DIAGNOSTIC_STAGES = {'prepare', 'connect', 'send', 'headers', 'body', 'decode', 'result', 'validate', 'complete'}
+
+
+def failure_code(exc, adapter=None):
+    # Classify by type or our own enums, never by a provider body/exception string.
+    cancel = getattr(adapter, 'cancel_event', None)
+    if cancel is not None and cancel.is_set():
+        return 'cancelled'
+    if getattr(adapter, 'deadline_expired', False) is True or isinstance(exc, TimeoutError):
+        return 'timeout'
+    if isinstance(exc, ModelError):
+        return str(exc) if str(exc) in DETAILS else 'unavailable'
+    if isinstance(exc, socket.gaierror):
+        return 'dns'
+    if isinstance(exc, ssl.SSLError):
+        return 'tls'
+    if isinstance(exc, (OSError, http.client.HTTPException)):
+        return 'connection'
+    if isinstance(exc, (ValueError, TypeError, KeyError)):
+        return 'invalid_result'
+    return 'unavailable'
+
+
+def diagnostic(adapter, code):
+    value = {'code': code if code in DETAILS or code == 'ok' else 'unavailable'}
+    stage = getattr(adapter, 'stage', None)
+    if isinstance(stage, str) and stage in DIAGNOSTIC_STAGES:
+        value['stage'] = stage
+    status = getattr(adapter, 'http_status', None)
+    if type(status) is int and 100 <= status <= 599:
+        value['http_status'] = status
+    size = getattr(adapter, 'received_bytes', None)
+    if type(size) is int and 0 <= size <= 262145:
+        value['received_bytes'] = size
+    return value
 
 
 def validate_config(data):
@@ -75,7 +123,7 @@ def validate_config(data):
         if not isinstance(data, dict) or set(data) - set(DEFAULTS):
             raise ValueError()
         value = {**DEFAULTS, **data}
-        if type(value['enabled']) is not bool or type(value['auto_analyze']) is not bool or value['backend'] not in ('ollama','openai_compatible') or value['host'] not in ('127.0.0.1', '::1'):
+        if any(type(value[k]) is not bool for k in ('enabled', 'auto_analyze', 'live_model_enabled')) or value['backend'] not in ('ollama','openai_compatible') or value['host'] not in ('127.0.0.1', '::1'):
             raise ValueError()
         if type(value['port']) is not int or not 1 <= value['port'] <= 65535:
             raise ValueError()
@@ -96,6 +144,18 @@ def validate_config(data):
 
 def concurrency(settings):
     return settings['max_concurrency'] if settings['backend'] == 'openai_compatible' else 1
+
+
+def effective_config(settings, kind):
+    value = {**DEFAULTS, **settings}
+    if kind == 'comment':
+        value.pop('live_model_enabled')
+    return value
+
+
+def config_unchanged(settings, issues, kind):
+    current, current_issues = config()
+    return current_issues == issues and effective_config(current, kind) == effective_config(settings, kind)
 
 
 def config():
@@ -133,6 +193,10 @@ def save(body, mode='live'):
         raise ValueError('启用前请填写模型名称')
     with app.LOCKS[mode]:
         previous, _ = config()
+        # An older cached settings form does not know this switch. Saving other
+        # fields must not silently re-enable a source the user has disabled.
+        if 'live_model_enabled' not in body:
+            value['live_model_enabled'] = previous['live_model_enabled']
         if api_key:
             if value['backend'] != 'openai_compatible':
                 raise ValueError('只有 API 通道接受密钥')
@@ -145,7 +209,13 @@ def save(body, mode='live'):
         os.replace(temp, path)
         if previous != value or api_key:
             import semantic_queue
-            semantic_queue.cancel_all(mode, detail='模型配置已改变；停止旧配置的待处理分析')
+            live_only = not api_key and effective_config(previous, 'comment') == effective_config(value, 'comment')
+            semantic_queue.cancel_all(mode, evidence_type='live' if live_only else None,
+                detail='直播模型设置已改变；保留规则结果' if live_only else '模型配置已改变；停止旧配置的待处理分析')
+            if not value['live_model_enabled']:
+                for kind, cancel in ACTIVE_CANCELLATIONS.values():
+                    if kind == 'live':
+                        cancel.set()
     return dict(saved=True, detail='模型配置已保存；没有启动分析、下载模型或访问服务')
 
 
@@ -309,6 +379,10 @@ class OllamaAdapter:
         self.settings = validate_config(settings)
         self.deadline = time.monotonic() + self.settings['timeout_seconds']
         self.phase = 'prepare'
+        self.stage = 'prepare'
+        self.http_status = None
+        self.received_bytes = 0
+        self.deadline_expired = False
 
     def prepare_request(self, path):
         if path not in ('/api/status', '/api/show', '/api/chat'):
@@ -323,6 +397,7 @@ class OllamaAdapter:
         return 'unavailable'
 
     def request(self, path, body=None):
+        self.stage, self.http_status, self.received_bytes = 'prepare', None, 0
         cancel = getattr(self, 'cancel_event', None)
         if cancel is not None and cancel.is_set():
             raise ModelError('cancelled')
@@ -336,6 +411,7 @@ class OllamaAdapter:
         watcher = None
         try:
             payload = json.dumps(body, ensure_ascii=False).encode() if body is not None else None
+            self.stage = 'connect'
             connection.connect()
             wire_socket = connection.sock
             def interrupt():
@@ -360,15 +436,22 @@ class OllamaAdapter:
             left = self.deadline - time.monotonic()
             if left <= 0:
                 raise TimeoutError()
-            timer = threading.Timer(left, interrupt)
+            def deadline_interrupt():
+                self.deadline_expired = True
+                interrupt()
+            timer = threading.Timer(left, deadline_interrupt)
             timer.daemon = True
             timer.start()
+            self.stage = 'send'
             connection.request('POST' if body is not None else 'GET', path, body=payload, headers=headers)
+            self.stage = 'headers'
             response = connection.getresponse()
+            self.http_status = response.status
             if response.status != 200:
                 raise ModelError(self.response_error(response.status))
             if 'application/json' not in response.getheader('Content-Type', '').lower():
-                raise ModelError('unavailable')
+                raise ModelError('response_type')
+            self.stage = 'body'
             chunks, size = [], 0
             while True:
                 left = self.deadline - time.monotonic()
@@ -380,12 +463,18 @@ class OllamaAdapter:
                 if not chunk:
                     break
                 size += len(chunk)
+                self.received_bytes = size
                 if size > 262144:
-                    raise ModelError('unavailable')
+                    raise ModelError('response_size')
                 chunks.append(chunk)
-            result = json.loads(b''.join(chunks))
+            self.stage = 'decode'
+            try:
+                result = json.loads(b''.join(chunks))
+            except (ValueError, UnicodeError):
+                raise ModelError('response_json') from None
             if not isinstance(result, dict) or 'error' in result:
-                raise ModelError('unavailable')
+                raise ModelError('response_error')
+            self.stage = 'result'
             return result
         finally:
             watcher_stop.set()
@@ -427,17 +516,21 @@ def analyze_one(body, mode='live', *, adapter_factory=None, cancel_event=None, e
     if kind not in ('comment', 'live') or type(record_id) is not int or record_id <= 0:
         raise ValueError('模型分析原文类型或 ID 无效')
     settings, issues = config()
+    if kind == 'live' and not settings['live_model_enabled']:
+        raise ValueError('直播弹幕当前仅使用规则初筛，模型分析已关闭')
     if not GUARD.acquire(blocking=False, limit=concurrency(settings), key=(mode, kind, record_id)):
         raise ModelBusy('模型分析已达到并发上限，或本条原文正在分析，请等待完成')
     try:
-        if expected_config is not None and expected_config != settings:
+        if expected_config is not None and effective_config(expected_config, kind) != effective_config(settings, kind):
             raise ValueError('入队后的模型配置已改变')
         channel = state()
         if issues or not channel['can_analyze']:
             raise ValueError('；'.join(issues) or '尚未启用语义模型，继续使用规则模式')
         with app.LOCKS[mode], app.db(mode) as c:
-            if config() != (settings, issues):
+            if not config_unchanged(settings, issues, kind):
                 raise ValueError('模型配置已改变，请重新开始本条分析')
+            cancel_event = cancel_event if cancel_event is not None else threading.Event()
+            ACTIVE_CANCELLATIONS[threading.get_ident()] = (kind, cancel_event)
             source, row = store.inputs(c, kind, record_id)
             fingerprint = store.digest(source)
             old = c.execute("SELECT * FROM intent_results WHERE evidence_type=? AND record_id=? AND method='model' AND request_id=?", (kind, record_id, request_id)).fetchone()
@@ -458,6 +551,7 @@ def analyze_one(body, mode='live', *, adapter_factory=None, cancel_event=None, e
             run_id = c.execute('''INSERT INTO intent_results(evidence_type,record_id,method,engine,request_id,input_hash,input_json,status,started_at)
                 VALUES(?,?,'model',?,?,?,?,'running',?)''', (kind, record_id, channel['engine'], request_id, fingerprint, json.dumps(source, ensure_ascii=False), app.now())).lastrowid
         result, status, detail = {}, 'completed', '模型结果已保存；人工判断优先，不授予联系权限'
+        code = 'ok'
         adapter = None
         try:
             if adapter_factory is None:
@@ -468,18 +562,24 @@ def analyze_one(body, mode='live', *, adapter_factory=None, cancel_event=None, e
             if cancel_event is not None and cancel_event.is_set():
                 raise ModelError('cancelled')
             raw, model_fingerprint = adapter.predict(source)
+            adapter.stage = 'validate'
             if not isinstance(model_fingerprint, str) or not re.fullmatch(r'[0-9a-f]{64}', model_fingerprint):
                 raise ValueError()
             result = validate_result(raw, source)
             result['model_fingerprint'] = model_fingerprint
+            adapter.stage = 'complete'
         except Exception as exc:
             status = 'failed'
-            code = str(exc) if isinstance(exc, ModelError) else 'timeout' if isinstance(exc, TimeoutError) else 'invalid_result' if isinstance(exc, (ValueError, TypeError, KeyError)) else 'unavailable'
+            code = failure_code(exc, adapter)
             detail = DETAILS.get(code, DETAILS['unavailable'])
+            http_status = diagnostic(adapter, code).get('http_status')
+            if http_status is not None and http_status != 200:
+                detail += f'（HTTP {http_status}）'
         result['phase'] = getattr(adapter, 'phase', 'adapter')
+        result['diagnostic'] = diagnostic(adapter, code)
         with app.LOCKS[mode], app.db(mode) as c:
             current, _ = store.inputs(c, kind, record_id)
-            if store.digest(current) != fingerprint or config() != (settings, issues):
+            if store.digest(current) != fingerprint or not config_unchanged(settings, issues, kind):
                 status, detail = 'stale', DETAILS['stale']
             if cancel_event is not None and cancel_event.is_set():
                 status, detail = 'cancelled', DETAILS['cancelled']
@@ -490,4 +590,6 @@ def analyze_one(body, mode='live', *, adapter_factory=None, cancel_event=None, e
                 on_finish(c, dict(status=status, detail=detail, id=run_id))
         return dict(status=status, detail=detail, id=run_id)
     finally:
+        with app.LOCKS[mode]:
+            ACTIVE_CANCELLATIONS.pop(threading.get_ident(), None)
         GUARD.release()

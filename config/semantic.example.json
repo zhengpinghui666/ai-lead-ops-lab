@@ -5,5 +5,7 @@
   "port": 11434,
   "model": "",
   "timeout_seconds": 30,
-  "max_concurrency": 1
+  "max_concurrency": 1,
+  "auto_analyze": false,
+  "live_model_enabled": false
 }

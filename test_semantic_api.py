@@ -85,7 +85,7 @@ class APITests(unittest.TestCase):
         connect.assert_not_called()
 
     def test_redirect_auth_and_rate_fail_once_without_echoing_body(self):
-        for status,code in ((302,'unavailable'),(401,'api_auth'),(403,'api_denied'),(429,'api_rate'),(500,'unavailable')):
+        for status,code in ((302,'api_redirect'),(400,'api_request'),(401,'api_auth'),(403,'api_denied'),(429,'api_rate'),(500,'api_server')):
             adapter=semantic_api.ChatAPIAdapter(self.settings)
             conn=MagicMock()
             conn.getresponse.return_value.status=status

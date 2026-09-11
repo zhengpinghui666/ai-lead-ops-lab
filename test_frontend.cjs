@@ -317,6 +317,12 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.match(run('semanticPanel()'),/保存不启动分析或下载模型/);
   assert.match(run('semanticPanel()'),/name="auto_analyze"/);
   assert.match(run('semanticPanel()'),/name="max_concurrency"/);
+  assert.match(run('semanticPanel()'),/name="live_model_enabled"/);
+  run('S.semantic.config.live_model_enabled=false');
+  assert.ok(!run("modelEvidence({...semRow,evidence_type:'live'})").includes('data-action="semantic-analyze"'));
+  assert.match(run("modelEvidence({...semRow,evidence_type:'live'})"),/已保存模型结果/);
+  assert.match(run('modelEvidence(semRow)'),/data-action="semantic-analyze"/);
+  assert.match(run('liveMonitor()'),/仅规则初筛 · 模型已关闭/);
   run('S.semantic.running=true;S.semantic.at_capacity=false');
   assert.ok(!run('modelEvidence(semRow)').includes('disabled'));
   run('S.semantic.at_capacity=true');
@@ -328,12 +334,13 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.match(run('connectionRows()'),/远程 API 已配置/);
   run('const beforeApiFormState=S');
   for(const key of ['', 'synthetic-ui-key']){
-    const form={getAttribute:()=> 'semantic-form',values:Object.entries({backend:'openai_compatible',api_base_url:'https://api.example.test/v1',api_key:key,model:'test-model',host:'127.0.0.1',port:'11434',enabled:'true',auto_analyze:'true',timeout_seconds:'60',max_concurrency:'3'}),querySelector:()=>null};
+    const form={getAttribute:()=> 'semantic-form',values:Object.entries({backend:'openai_compatible',api_base_url:'https://api.example.test/v1',api_key:key,model:'test-model',host:'127.0.0.1',port:'11434',enabled:'true',auto_analyze:'true',timeout_seconds:'60',max_concurrency:'3',live_model_enabled:'false'}),querySelector:()=>null};
     await listeners.get('submit')({target:form,preventDefault(){}});
     assert.match(posts.at(-1).url,/\/api\/semantic-save\?/);
     assert.equal(posts.at(-1).body.backend,'openai_compatible');
     assert.equal(posts.at(-1).body.auto_analyze,true);
     assert.equal(posts.at(-1).body.max_concurrency,3);
+    assert.equal(posts.at(-1).body.live_model_enabled,false);
     assert.equal(posts.at(-1).body.api_key,key||undefined);
     assert.equal(run('semanticDraftDirty'),false);
   }

@@ -218,5 +218,10 @@
   "github_backup.py",
   "test_github_backup.py",
   "GITHUB_BACKUP.md",
-  "test_semantic_concurrency.py"
+  "test_semantic_concurrency.py",
+  "test_semantic_diagnostics.py",
+  "live_rules.py",
+  "test_live_rules.py",
+  "test_semantic_live_policy.py",
+  "LIVE_RULES.md"
 ]

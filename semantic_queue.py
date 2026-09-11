@@ -43,7 +43,7 @@ def enqueue(kind, record_ids, mode='live'):
     with app.LOCKS[mode], app.db(mode) as c:
         settings, issues = semantic.config()
         channel = semantic.state()
-        if issues or not channel['can_analyze'] or not settings['auto_analyze']:
+        if issues or not channel['can_analyze'] or not settings['auto_analyze'] or kind == 'live' and not settings['live_model_enabled']:
             return summary
         pending = c.execute("SELECT COUNT(*) FROM semantic_jobs WHERE status IN ('queued','running','cancelling')").fetchone()[0]
         for record_id in dict.fromkeys(record_ids):
@@ -87,14 +87,18 @@ def finish(c, job_id, result):
               (result['status'], result['detail'], result.get('id'), app.now(), job_id))
 
 
-def cancel_all(mode='live', *, detail='用户停止自动分析；保留规则结果'):
+def cancel_all(mode='live', *, detail='用户停止自动分析；保留规则结果', evidence_type=None):
     if mode != 'live':
         raise ValueError('演示区没有自动模型任务')
+    if evidence_type not in (None, 'comment', 'live'):
+        raise ValueError('模型取消范围无效')
     with app.LOCKS[mode], app.db(mode) as c:
-        queued = c.execute("UPDATE semantic_jobs SET status='cancelled',detail=?,finished_at=? WHERE status='queued'", (detail, app.now())).rowcount
+        scope = ' AND evidence_type=?' if evidence_type else ''
+        params = (evidence_type,) if evidence_type else ()
+        queued = c.execute("UPDATE semantic_jobs SET status='cancelled',detail=?,finished_at=? WHERE status='queued'" + scope, (detail, app.now()) + params).rowcount
         # Final model result and job outcome commit together under this lock.
         # A cancellation arriving after completion cannot relabel that result.
-        running = [r[0] for r in c.execute("SELECT id FROM semantic_jobs WHERE status IN ('running','cancelling')")]
+        running = [r[0] for r in c.execute("SELECT id FROM semantic_jobs WHERE status IN ('running','cancelling')" + scope, params)]
         for job_id in running:
             if job_id in ACTIVE:
                 ACTIVE[job_id].set()
@@ -132,7 +136,10 @@ def run_one(*, adapter_factory=None):
             job = dict(row)
             job_id = job['id']
             source, evidence = store.inputs(c, job['evidence_type'], job['record_id'])
-            if (issues or settings != json.loads(job['config_json']) or not settings['enabled'] or not settings['auto_analyze']
+            if job['evidence_type'] == 'live' and not settings['live_model_enabled']:
+                finish(c, job_id, dict(status='cancelled', detail='直播模型分析已关闭；保留规则结果'))
+                return True
+            if (issues or semantic.effective_config(settings, job['evidence_type']) != semantic.effective_config(json.loads(job['config_json']), job['evidence_type']) or not settings['enabled'] or not settings['auto_analyze']
                     or semantic.state()['engine'] != job['engine'] or store.digest(source) != job['input_hash']):
                 finish(c, job_id, dict(status='stale', detail='原文、上下文或模型配置已变化；未调用模型'))
                 return True
