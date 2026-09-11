@@ -32,7 +32,7 @@ class Page extends EventEmitter{
     }
     this.vid=url.split('/').pop();trace({action:'goto',video_id:this.vid});
     if(scenario.startsWith('navigation-')&&this.vid===ids[1]){
-      const http=scenario==='navigation-rate-limit'?429:403;
+      const http=scenario==='navigation-rate-limit'?429:scenario==='navigation-upstream'?502:403;
       trace({action:'navigation-denied',video_id:this.vid,http});return {status:()=>http};
     }
     const endpoint=`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${this.vid}`;

@@ -20,7 +20,7 @@ function run(scenario,concurrency=2){return new Promise((resolve,reject)=>{
 });}
 const terminal=r=>r.rows.filter(x=>x.type==='status').at(-1)?.status;
 (async()=>{
-  const scenarios=['success','gate-resume','gate-persistent','gate-close','gate-rate-limit','rate-limit','wrong-video','cancel-parallel','navigation-rate-limit','navigation-access-denied'];
+  const scenarios=['success','gate-resume','gate-persistent','gate-close','gate-rate-limit','rate-limit','wrong-video','cancel-parallel','navigation-rate-limit','navigation-access-denied','navigation-upstream'];
   const results=await Promise.all(scenarios.map(s=>run(s)));
   for(const [index,r] of results.entries()){
     const name=scenarios[index],metrics=r.rows.filter(x=>x.type==='parallel');
@@ -31,7 +31,7 @@ const terminal=r=>r.rows.filter(x=>x.type==='status').at(-1)?.status;
       assert.equal(terminal(r),'completed',name);assert.equal(r.rows.filter(x=>x.type==='comment').length,6);
       assert.equal(r.rows.filter(x=>x.type==='checkpoint'&&x.status==='done').length,3);
     }else{
-      const expected={'gate-persistent':'no_data','gate-close':'interrupted','gate-rate-limit':'rate_limited','rate-limit':'rate_limited','wrong-video':'schema_changed','cancel-parallel':'cancelled','navigation-rate-limit':'rate_limited','navigation-access-denied':'access_denied'};
+      const expected={'gate-persistent':'no_data','gate-close':'interrupted','gate-rate-limit':'rate_limited','rate-limit':'rate_limited','wrong-video':'schema_changed','cancel-parallel':'cancelled','navigation-rate-limit':'rate_limited','navigation-access-denied':'access_denied','navigation-upstream':'network_error'};
       assert.equal(terminal(r),expected[name],name);
       if(name!=='wrong-video')assert.ok(!r.rows.some(x=>x.type==='fixture'&&x.action==='goto'&&x.video_id.endsWith('103')),`${name}: no new target after gate/stop`);
     }
@@ -47,5 +47,5 @@ const terminal=r=>r.rows.filter(x=>x.type==='status').at(-1)?.status;
     }
   }
   const serial=await run('success',1);assert.equal(terminal(serial),'completed');assert.ok(serial.rows.filter(x=>x.type==='parallel').every(x=>x.peak_pages===1));
-  console.log('PASS: eleven isolated multi-page process scenarios: serial/parallel, correlation, shared verification, persistent gate, closure, response/navigation limits and cancel. No live access.');
+  console.log('PASS: 12 isolated multi-page process scenarios: serial/parallel, correlation, shared verification, persistent gate, closure, response/navigation limits, gateway failures and cancel. No live access.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

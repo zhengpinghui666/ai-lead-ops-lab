@@ -3,13 +3,20 @@ const parser=require('./collector_parser.cjs');
 const {OrderedResponseQueue}=require('./collector_queue.cjs');
 const {promptVisible,describe}=require('./captcha_browser.cjs');
 
+function retryAfterSeconds(response){
+  const raw=String(response.headers?.()['retry-after']||'').trim();
+  if(!raw||raw.length>100)return null;
+  const seconds=/^\d+$/.test(raw)?Number(raw):Math.ceil((Date.parse(raw)-Date.now())/1000);
+  return Number.isFinite(seconds)?Math.min(86401,Math.max(0,seconds)):null;
+}
+
 // Every page owns its URL scope, parsing state, budget and queue. No shared current-video state.
 function createReader(page,shared){
   const {config,emit,status,Stop}=shared;
   let phase='idle',current=null,networkBlock='',recognized=false,hasMore=null;
   let requestSerial=0,lastValidRequest=0;
   const requestNumbers=new WeakMap();
-  let readErrors=0,schemaErrors=0,commentResponses=0,invalidComments=0,processingLimit=false,navigationError='';
+  let readErrors=0,schemaErrors=0,commentResponses=0,invalidComments=0,processingLimit=false,navigationError='',navigationStatus=null,navigationRetryAfter=null;
   const searchResults=new Map(),commentIds=new Set(),videoIds=new Set(),perVideo=new Map(),responseMeta=[];
   const queue=new OrderedResponseQueue({concurrency:2,capacity:8,onError:()=>{readErrors++;}});
   function check(){shared.check();if(page.isClosed())throw new Stop('interrupted','采集页面已关闭；本批停止，已入库数据保留。');if(processingLimit)throw new Stop('resource_limited','单页待处理响应超过 8 条，本批停止；已入库数据保留。');}
@@ -23,7 +30,7 @@ function createReader(page,shared){
       await emit({type:'diagnostic',stage:'captcha_dom',snapshot:{title:'验证码页面结构（不含图片与凭证）',visible_text:JSON.stringify(await describe(page)),responses:[]}});
     }
     let url='';try{const u=new URL(page.url());url=u.protocol==='https:'&&u.hostname==='www.douyin.com'?u.origin+u.pathname:'非抖音内容页';}catch{}
-    await emit({type:'diagnostic',stage,snapshot:{title:await page.title().catch(()=>''),page_url:url,visible_text:(await visibleText()).slice(0,2500),video_links:await page.locator('a[href*="/video/"]').count().catch(()=>0),responses:responseMeta.slice(-15),navigation_error:navigationError,processing:{pending:queue.pending,high_water:queue.highWater,capacity:8,concurrency:2}}});
+    await emit({type:'diagnostic',stage,snapshot:{title:await page.title().catch(()=>''),page_url:url,visible_text:(await visibleText()).slice(0,2500),video_links:await page.locator('a[href*="/video/"]').count().catch(()=>0),responses:responseMeta.slice(-15),navigation_error:navigationError,navigation_http_status:navigationStatus,navigation_retry_after_seconds:navigationRetryAfter,processing:{pending:queue.pending,high_water:queue.highWater,capacity:8,concurrency:2}}});
   }
   async function pause(code,detail){await shared.pause(reader,code,detail);networkBlock='';}
   async function guard(){
@@ -47,6 +54,7 @@ function createReader(page,shared){
     const http=response.status(),meta={kind,status:http};responseMeta.push(meta);if(responseMeta.length>30)responseMeta.shift();
     if(http===429||http===403){networkBlock=http===429?'rate_limited':'access_denied';shared.fail(new Stop(networkBlock,shared.reasons[networkBlock]));return;}
     if(http===401){networkBlock='needs_login';return;}
+    if(http>=500&&http<=599){meta.retry_after_seconds=retryAfterSeconds(response);shared.fail(new Stop('network_error',`数据接口暂不可用（HTTP ${http}），本批停止并保留已读取内容。`));return;}
     if(http!==200)return;
     const expected=current;
     if(!queue.submit(async()=>{
@@ -96,9 +104,15 @@ function createReader(page,shared){
   }
   async function drain(){check();await queue.drain();check();}
   async function goto(url){
-    await ready();networkBlock='';navigationError='';
+    await ready();networkBlock='';navigationError='';navigationStatus=null;navigationRetryAfter=null;
     try{const r=await page.goto(url,{waitUntil:'domcontentloaded',timeout:30000});
       const http=r?.status();
+      navigationStatus=Number.isInteger(http)?http:null;
+      if(http>=500&&http<=599){
+        navigationRetryAfter=retryAfterSeconds(r);
+        const error=new Stop('network_error',`页面暂不可用（HTTP ${http}），本批停止并保留已读取内容。`);
+        shared.fail(error);throw error;
+      }
       if(http===429||http===403){
         networkBlock=http===429?'rate_limited':'access_denied';
         const error=new Stop(networkBlock,shared.reasons[networkBlock]);shared.fail(error);throw error;

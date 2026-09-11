@@ -16,9 +16,16 @@ class Page extends EventEmitter {
   constructor(ctx){super();this.ctx=ctx;this.address='about:blank';this.mouse={wheel:async()=>{}};}
   url(){return this.address;}
   isClosed(){return this.ctx.closed;}
-  async title(){return scenario==='public-comments-login-to-post'?'合成夹具：无畏契约陪玩 - 抖音':scenario.includes('verification')&&!verified?'验证码中间页':'合成夹具页面';}
+  async title(){return scenario==='gateway-title-only'?'502 Bad Gateway':scenario==='public-comments-login-to-post'?'合成夹具：无畏契约陪玩 - 抖音':scenario.includes('verification')&&!verified?'验证码中间页':'合成夹具页面';}
   async goto(url){
     this.address=url;
+    if(scenario==='navigation-502')return {status:()=>502,headers:()=>({'retry-after':'90','set-cookie':'PRIVATE_RESPONSE_SENTINEL'})};
+    if(scenario==='gateway-title-only')return {status:()=>200};
+    if(scenario==='search-503'||scenario==='comment-503'&&!url.includes('/search/')){
+      const endpoint=scenario==='search-503'?'https://www.douyin.com/aweme/v1/web/general/search/single/':`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`;
+      this.emit('response',{url:()=>endpoint,status:()=>503,headers:()=>({'retry-after':'180','set-cookie':'PRIVATE_RESPONSE_SENTINEL'}),body:async()=>{throw Error('Must not parse 503 body');}});
+      return {status:()=>200};
+    }
     if(scenario==='verification-window-close')this.ctx.closeTimer=setTimeout(()=>this.ctx.close(),6000);
     if(scenario.startsWith('verification')||scenario==='device-challenge')return {status:()=>200};
     if(url.includes('/search/')){

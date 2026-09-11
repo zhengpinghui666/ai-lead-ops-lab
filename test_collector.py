@@ -3,7 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import clubops as app
 import collector as col
 
@@ -196,6 +196,28 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(t['status'],'failed')
         self.assertNotIn('SECRET',t['detail'])
         self.assertFalse(t['active'])
+
+    def test_worker_http_failure_evidence_survives_diagnostic_storage(self):
+        task_id=self.start()
+        messages=[{'type':'diagnostic','stage':'finished-error','snapshot':{
+            'navigation_http_status':502,'navigation_retry_after_seconds':90,
+            'responses':[{'kind':'search','status':503,'retry_after_seconds':180}],
+            'headers':'PRIVATE_SENTINEL'}},
+            {'type':'status','status':'network_error','detail':'Synthetic upstream failure'}]
+        process=Mock(stdin=io.StringIO(),stdout=io.StringIO(''.join(json.dumps(m)+'\n' for m in messages)))
+        process.poll.return_value=0;process.wait.return_value=0
+        with patch('collector.subprocess.Popen',return_value=process):
+            col.run(task_id,col.ACTIVE[task_id])
+        with app.db() as c:
+            row=c.execute('SELECT snapshot FROM collection_diagnostics WHERE task_id=?',(task_id,)).fetchone()
+        self.assertIsNotNone(row)
+        evidence=json.loads(row[0])
+        self.assertEqual(evidence['navigation_http_status'],502)
+        self.assertEqual(evidence['navigation_retry_after_seconds'],90)
+        self.assertEqual(evidence['responses'][0]['retry_after_seconds'],180)
+        self.assertNotIn('PRIVATE_SENTINEL',row[0])
+        self.assertEqual(col.state()['tasks'][0]['status'],'network_error')
+        self.assertFalse(col.state()['tasks'][0]['active'])
 
     def test_automatic_analysis_does_not_spend_batch_on_unrelated_backlog(self):
         app.ingest({'records': [dict(comment_id=f'backlog-{i}', video_id='import-video',

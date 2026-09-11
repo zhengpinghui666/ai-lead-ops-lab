@@ -18,6 +18,20 @@ function run(scenario,{interactive=false,onStatus,kind='search'}={}){
 }
 const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
 (async()=>{
+  const upstream=await Promise.all(['navigation-502','search-503','comment-503','gateway-title-only'].map(s=>run(s)));
+  for(const messages of upstream.slice(0,3)){
+    assert.equal(terminal(messages),'network_error');
+    assert.equal(messages.filter(m=>m.type==='comment').length,0);
+    assert.ok(!JSON.stringify(messages).includes('PRIVATE_RESPONSE_SENTINEL'));
+  }
+  const navigation=upstream[0].find(m=>m.type==='diagnostic'&&m.stage==='finished-error').snapshot;
+  assert.equal(navigation.navigation_http_status,502);assert.equal(navigation.navigation_retry_after_seconds,90);
+  for(const messages of upstream.slice(1,3)){
+    const meta=messages.find(m=>m.type==='diagnostic'&&m.stage==='finished-error').snapshot.responses.find(m=>m.status===503);
+    assert.equal(meta.retry_after_seconds,180);assert.equal(meta.body_bytes,undefined);
+  }
+  assert.equal(terminal(upstream[3]),'no_data');
+  assert.equal(upstream[3].find(m=>m.type==='diagnostic').snapshot.navigation_http_status,200);
   const [success,cancelled,closed,eof,schema,invalid,overflow,mixed,resumed,replies,device,publicRead,scrollPartial,scrollDone,emptyNull,ambiguousNull,emptySearch,htmlSearch,unavailableSearch]=await Promise.all([
     run('success'),
     run('verification-cancel',{interactive:true,onStatus:(m,c)=>{if(m.status==='needs_verification')c.stdin.write('{"command":"cancel"}\n');}}),
@@ -68,5 +82,5 @@ const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
   assert.equal(replyRecords.length,2,'Roots and replies share the same per-video budget');
   assert.equal(replyRecords[1].parent_comment_id,replyRecords[0].comment_id);
   for(const messages of [cancelled,closed,eof,schema,invalid,device])assert.equal(messages.filter(m=>m.type==='comment').length,0);
-  console.log('PASS: nineteen child-process scenarios including empty/unreadable search response classification without raw content, explicit/ambiguous empty comments, scroll obstruction/late budget, login/verification and bounded responses. Synthetic only.');
+  console.log('PASS: 23 child-process scenarios including numeric HTTP 502/503 navigation/search/comment failures, Retry-After evidence, title-only ambiguity, empty/unreadable responses, login/verification and bounded responses. Synthetic only.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

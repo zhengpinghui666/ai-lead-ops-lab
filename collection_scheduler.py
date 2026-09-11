@@ -11,6 +11,59 @@ THREAD = None
 GATED = {'needs_login', 'needs_verification', 'rate_limited', 'access_denied', 'session_expired', 'identity_failed'}
 
 
+def transient_http_wait(connection, task):
+    """Require numeric HTTP evidence; a 502-looking title is insufficient."""
+    if (not task or task['transport'] != 'local_browser' or task['status'] != 'network_error'
+            or not task['finished_at']):
+        return None
+    found, requested = False, 0
+    try:
+        for row in connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=? ORDER BY id DESC LIMIT 25', (task['id'],)):
+            if row['stage'] in ('captcha_workflow', 'captcha_dom', 'needs_login', 'needs_verification'):
+                return None
+            snapshot = json.loads(row['snapshot'])
+            responses = snapshot.get('responses', [])
+            if not isinstance(responses, list):
+                return None
+            evidence = [(snapshot.get('navigation_http_status'), snapshot.get('navigation_retry_after_seconds'))]
+            evidence += [(item.get('status'), item.get('retry_after_seconds')) for item in responses]
+            for status, retry_after in evidence:
+                if status in (401, 403, 429) or isinstance(status, str) and status in GATED:
+                    return None
+                if type(status) is int and 500 <= status <= 599:
+                    if status not in (500, 502, 503, 504):
+                        return None
+                    found = True
+                    if retry_after is not None:
+                        if type(retry_after) is not int or not 0 <= retry_after <= 3600:
+                            return None
+                        requested = max(requested, retry_after)
+        return requested if found else None
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def transient_retry_seconds(connection, plan, task):
+    """At most three retries (60/120/240s) within one monitor activation."""
+    if not plan['continuous'] or plan['status'] != 'running' or not plan['activated_at']:
+        return 0
+    requested = transient_http_wait(connection, task)
+    if requested is None:
+        return 0
+    rows = connection.execute('''SELECT * FROM collection_tasks WHERE request_id LIKE ? AND id<=?
+        AND julianday(created_at)>=julianday(?) ORDER BY id DESC LIMIT 4''',
+        (f'plan-{plan["id"]}-run-%', task['id'], plan['activated_at'])).fetchall()
+    if not rows or rows[0]['id'] != task['id']:
+        return 0
+    failures = 0
+    for row in rows:
+        if ((row['kind'], row['target'], row['transport']) != (plan['kind'], plan['target'], plan['transport'])
+                or transient_http_wait(connection, row) is None):
+            break
+        failures += 1
+    return max(60 * 2**(failures-1), requested, plan['interval_seconds']) if 1 <= failures <= 3 else 0
+
+
 def verification_retry_seconds(connection, task):
     """Explicit local policy; only a finished, archived browser challenge qualifies."""
     if not task or task['status'] != 'needs_verification' or task['transport'] != 'local_browser' or not task['finished_at']:
@@ -128,12 +181,21 @@ def command(plan_id, action, mode='live', *, allow_monitor=False):
             retry = verification_retry_seconds(c,latest) if row['continuous'] and latest and (row['kind'],row['target'])==(latest['kind'],latest['target']) else 0
             if retry:
                 healthy = bool(c.execute("SELECT 1 FROM collection_tasks WHERE transport=? AND status='completed' AND comments+filtered_old+filtered_unknown+filtered_future+filtered_keyword+filtered_blocked>0 LIMIT 1",(row['transport'],)).fetchone())
+            if row['continuous'] and latest and (row['kind'],row['target'])==(latest['kind'],latest['target']):
+                upstream = transient_http_wait(c, latest)
+                if upstream is not None:
+                    healthy = bool(c.execute("""SELECT 1 FROM collection_tasks WHERE transport=? AND kind=? AND target=?
+                        AND status='completed' AND comments+filtered_old+filtered_unknown+filtered_future+filtered_keyword+filtered_blocked>0 LIMIT 1""",
+                        (row['transport'],row['kind'],row['target'])).fetchone())
+                    retry = max(60, upstream, row['interval_seconds'])
             if not healthy:
                 raise ValueError('请先手动完成一批实际读到评论的采集，再启用持续计划；目前尚未验证或最近一批未正常完成')
             status, due = 'running', app.now()
             if retry:
                 due=max(datetime.fromisoformat(due),datetime.fromisoformat(latest['finished_at'])+timedelta(seconds=retry)).isoformat(timespec='seconds')
             detail = '监控已开启；按批检查滚动时间范围，直到关闭或遇到需要处理的状态' if row['continuous'] else '已启用有限调度；空闲时按优先级执行，遇到验证或失败暂停'
+            if retry and latest['status'] == 'network_error':
+                detail = f'监控已开启；上次页面或接口暂不可用，等待至 {due} 后检查原目标，后续最多连续自动重试 3 次。'
         else:
             status, due = 'paused', None
             detail = '监控已关闭；已阻止后续批次，保留已有数据' if row['continuous'] else '已暂停后续批次；如需结束当前浏览器任务，请使用任务的停止按钮'
@@ -211,7 +273,12 @@ def tick(instant=None):
                     due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=300)).astimezone(timezone.utc).isoformat(timespec='seconds')
                     detail='验证码未通过，样本已记录；暂停 5 分钟后在后台重新加载原监控目标。可随时关闭监控。'
                 elif task['status'] != 'completed':
-                    new_status, detail = 'attention', f'上批结果 {task["status"]}：{task["detail"]}；计划停止自动执行'
+                    retry = transient_retry_seconds(c, p, task)
+                    if retry:
+                        due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=retry)).astimezone(timezone.utc).isoformat(timespec='seconds')
+                        detail=f'页面或接口暂不可用；等待 {retry} 秒后在后台重试原监控目标，最多连续自动重试 3 次。可随时关闭监控。'
+                    else:
+                        new_status, detail = 'attention', f'上批结果 {task["status"]}：{task["detail"]}；计划停止自动执行'
                 elif not p['continuous'] and p['run_count'] >= p['run_limit']:
                     new_status, detail = 'completed', '已达到本计划总批次上限，不再自动请求'
                 elif p['status'] == 'running':

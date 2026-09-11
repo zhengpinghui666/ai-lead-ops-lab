@@ -69,6 +69,129 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(sch.state(), [])
         self.assertEqual(col.state()['tasks'], [])
 
+    def upstream_failure(self, task, snapshot=None, stage='finished-error'):
+        if snapshot is None:
+            snapshot = {'navigation_http_status': 502, 'responses': []}
+        with app.db() as c:
+            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                      (task, stage, json.dumps(snapshot), app.now()))
+        self.finish(task, 'network_error')
+
+    def at(self, instant):
+        self.now.return_value = instant
+        return sch.tick(instant)
+
+    def test_gateway_retries_three_times_then_stops_without_changing_scope(self):
+        self.baseline();mon.save({});mon.command('start');task=sch.tick(NOW)
+        for delay in (60, 120, 240):
+            finished=app.now();self.upstream_failure(task)
+            self.assertIsNone(sch.tick(finished))
+            due=(datetime.fromisoformat(finished)+timedelta(seconds=delay)).isoformat()
+            self.assertEqual(mon.state()['next_run_at'],due)
+            self.assertTrue(mon.state()['enabled'])
+            self.assertIsNone(self.at((datetime.fromisoformat(due)-timedelta(seconds=1)).isoformat()))
+            task=self.at(due)
+            self.assertIsNotNone(task)
+            with app.db() as c:
+                row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            self.assertEqual((row['kind'],row['target'],row['transport'],row['interactive']),
+                             ('search','无畏契约陪玩','local_browser',0))
+            self.assertEqual((row['video_limit'],row['comment_limit'],row['page_concurrency'],row['lookback_hours']), (3,30,1,1))
+        self.upstream_failure(task);self.assertIsNone(sch.tick())
+        self.assertEqual(mon.state()['status'],'attention');self.assertFalse(mon.state()['enabled'])
+        self.assertIsNone(self.at('2026-09-10T10:00:00+00:00'))
+        self.assertEqual(mon.state()['run_count'],4)
+
+    def test_successful_batch_resets_gateway_backoff(self):
+        self.baseline();mon.command('start');task=sch.tick(NOW)
+        self.upstream_failure(task);sch.tick();task=self.at(mon.state()['next_run_at'])
+        self.finish(task);sch.tick();task=self.at(mon.state()['next_run_at'])
+        finished=app.now();self.upstream_failure(task);sch.tick()
+        self.assertEqual(mon.state()['next_run_at'],(datetime.fromisoformat(finished)+timedelta(seconds=60)).isoformat())
+
+    def test_gateway_wait_respects_retry_after_and_configured_interval(self):
+        self.baseline();mon.save({'interval_seconds':300});mon.command('start');task=sch.tick(NOW)
+        self.upstream_failure(task,{'responses':[{'status':503,'retry_after_seconds':900}]});sch.tick()
+        self.assertEqual(mon.state()['next_run_at'],'2026-09-09T10:15:00+00:00')
+        task=self.at(mon.state()['next_run_at']);self.finish(task);sch.tick()
+        task=self.at(mon.state()['next_run_at']);finished=app.now();self.upstream_failure(task);sch.tick()
+        self.assertEqual(mon.state()['next_run_at'],(datetime.fromisoformat(finished)+timedelta(seconds=300)).isoformat())
+
+    def test_gateway_cooldown_stop_and_restart_do_not_resume(self):
+        self.baseline();mon.command('start');task=sch.tick(NOW)
+        self.upstream_failure(task);sch.tick();mon.command('stop')
+        self.assertIsNone(self.at('2026-09-09T10:10:00+00:00'));self.assertFalse(mon.state()['enabled'])
+        self.baseline();mon.command('start');task=sch.tick()
+        self.upstream_failure(task);sch.tick();sch.recover()
+        self.assertIsNone(self.at('2026-09-09T11:00:00+00:00'));self.assertFalse(mon.state()['enabled'])
+
+    def test_gateway_retry_requires_numeric_unambiguous_eligible_evidence(self):
+        task=self.task();self.finish(task,'network_error')
+        rejected=[{}, {'title':'502 Bad Gateway','navigation_http_status':200},
+                  {'navigation_http_status':'502'}, {'navigation_http_status':501},
+                  {'navigation_http_status':502,'navigation_retry_after_seconds':3601},
+                  {'navigation_http_status':502,'navigation_retry_after_seconds':-1},
+                  {'navigation_http_status':502,'navigation_retry_after_seconds':'120'}]
+        # Build mixed evidence separately so each response is independently checked.
+        rejected.extend({'navigation_http_status':502,'responses':[{'status':s}]} for s in (401,403,429,'needs_verification','needs_login',501))
+        rejected.extend([{'navigation_http_status':502,'responses':{}}, {'navigation_http_status':502,'responses':[None]}])
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            for snapshot in rejected:
+                with self.subTest(snapshot=snapshot):
+                    c.execute('DELETE FROM collection_diagnostics WHERE task_id=?',(task,))
+                    c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(task,'finished-error',json.dumps(snapshot),NOW))
+                    self.assertIsNone(sch.transient_http_wait(c,row))
+            c.execute('DELETE FROM collection_diagnostics WHERE task_id=?',(task,))
+            for stage in ('captcha_workflow','captcha_dom','needs_login','needs_verification'):
+                c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(task,stage,'{"navigation_http_status":502}',NOW))
+                self.assertIsNone(sch.transient_http_wait(c,row))
+            c.execute('DELETE FROM collection_diagnostics WHERE task_id=?',(task,))
+            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(task,'finished-error','{broken',NOW))
+            self.assertIsNone(sch.transient_http_wait(c,row))
+
+    def test_gateway_retry_excludes_finite_manual_and_other_transport(self):
+        self.baseline()
+        plan=sch.save({'kind':'search','target':'无畏契约陪玩','interval_seconds':300,'run_limit':5})
+        sch.command(plan['id'],'start');task=sch.tick(NOW)
+        self.upstream_failure(task);sch.tick()
+        self.assertEqual(sch.state()[0]['status'],'attention')
+        manual=self.task();self.upstream_failure(manual)
+        self.assertIsNone(self.at('2026-09-09T11:00:00+00:00'))
+        with app.db() as c:
+            row=dict(c.execute('SELECT * FROM collection_tasks WHERE id=?',(manual,)).fetchone())
+            row['transport']='http';self.assertIsNone(sch.transient_http_wait(c,row))
+
+    def test_gateway_wait_is_cancelled_by_new_account_gate(self):
+        self.baseline();mon.command('start');task=sch.tick(NOW)
+        self.upstream_failure(task);sch.tick()
+        manual=self.task();self.finish(manual,'rate_limited')
+        self.assertIsNone(self.at('2026-09-09T10:01:00+00:00'))
+        self.assertEqual(mon.state()['status'],'attention');self.assertFalse(mon.state()['enabled'])
+
+    def test_explicit_monitor_start_after_gateway_failure_requires_same_proven_scope(self):
+        task=self.task();self.upstream_failure(task)
+        with self.assertRaises(ValueError):mon.command('start')
+        self.baseline();task=self.task()
+        self.upstream_failure(task,{'navigation_http_status':503,'navigation_retry_after_seconds':180})
+        mon.command('start')
+        self.assertTrue(mon.state()['enabled'])
+        self.assertEqual(mon.state()['next_run_at'],'2026-09-09T10:03:00+00:00')
+        self.assertIsNone(self.at('2026-09-09T10:02:59+00:00'))
+        task=self.at('2026-09-09T10:03:00+00:00')
+        self.assertIsNotNone(task);self.finish(task);sch.tick();mon.command('stop')
+
+    def test_gateway_start_rejects_unproven_target_and_excessive_retry_after(self):
+        self.baseline();task=self.task()
+        self.upstream_failure(task,{'navigation_http_status':502,'navigation_retry_after_seconds':3601})
+        with self.assertRaises(ValueError):mon.command('start')
+        self.upstream_failure(task)
+        with app.db() as c:
+            c.execute('DELETE FROM collection_diagnostics WHERE task_id=? AND snapshot LIKE ?',(task,'%3601%'))
+            c.execute('UPDATE collection_tasks SET target=? WHERE id=?',('无畏契约陪练',task))
+        mon.save({'target':'无畏契约陪练'})
+        with self.assertRaises(ValueError):mon.command('start')
+
     def test_continuous_monitor_dispatches_without_a_browser_window(self):
         self.baseline()
         mon.save({})

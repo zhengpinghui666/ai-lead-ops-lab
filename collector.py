@@ -524,7 +524,7 @@ def run(task_id, control):
                     c.execute('UPDATE collection_tasks SET skipped=skipped+? WHERE id=?', (min(500, max(0, int(message.get('count', 1)))), task_id))
             elif typ == 'diagnostic':
                 snapshot = message.get('snapshot', {})
-                allowed = {'title', 'page_url', 'visible_text', 'video_links', 'responses', 'navigation_error', 'processing'}
+                allowed = {'title', 'page_url', 'visible_text', 'video_links', 'responses', 'navigation_error', 'navigation_http_status', 'navigation_retry_after_seconds', 'processing'}
                 snapshot = {k: v for k, v in snapshot.items() if k in allowed}
                 encoded = json.dumps(snapshot, ensure_ascii=False)
                 if len(encoded) <= 20000:
