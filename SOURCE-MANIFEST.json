@@ -43,8 +43,8 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "6c0bebead9efa0ae841c169fa908c49423b507f83f0d64b0e412fc3f88a6724d",
-      "bytes": 26957
+      "sha256": "574127d7d8b80e64c9b2ddb0287cc4dba2ff1e11103e7e0e624033f4c2eb7824",
+      "bytes": 29252
     },
     {
       "name": "EXTERNAL_ACCESS.md",
@@ -58,8 +58,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "7ebdf5f5d04cbd5f78de905c5dbb4f6f7a68823f988096ea9a76294f6aa2250c",
-      "bytes": 70555
+      "sha256": "5370e1b71d397d870aae9f6b7e18279dadd853db7af797a75a218578a195eceb",
+      "bytes": 72850
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -93,13 +93,13 @@
     },
     {
       "name": "MODEL_API.md",
-      "sha256": "a5ff7863b85a87599ac922c7be7747373b82a56a5cf9e2bbd3c8cc30c3cbdcdd",
-      "bytes": 4201
+      "sha256": "88d147a7796026d0c1f8b3f98961d68ff9500643ab74f188df3f9f2db066c84b",
+      "bytes": 6523
     },
     {
       "name": "MODEL_QUEUE.md",
-      "sha256": "8678ad701c89fe1bf69879109cb56e6381ba1e1bfc13374a1ada8d9e4d5271c5",
-      "bytes": 3725
+      "sha256": "94ebd818666e5a3782d441db97e46894066b116a00ac5581a05d25104af6671a",
+      "bytes": 6020
     },
     {
       "name": "MONITOR_CENTER.md",
@@ -298,8 +298,8 @@
     },
     {
       "name": "design-qa.md",
-      "sha256": "9847368c2bd20fc7d1e71c261638f18e9f17d4f5c748b94cc9d0afd2582f9ee7",
-      "bytes": 17946
+      "sha256": "8aae3b69e5b69bcc60faf7bb38fa78ca21256de56701fa7775dce31260ad2c38",
+      "bytes": 19142
     },
     {
       "name": "evaluation/intent-development-v1.json",
