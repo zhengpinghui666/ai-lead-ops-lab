@@ -19,16 +19,16 @@ function searchVideos(body) {
   return [...found.values()];
 }
 function comments(body, expectedVideo, context={}) {
-  if(body?.status_code!==undefined&&body.status_code!==0)return {rows:[],recognized:false,skipped:0,hasMore:null};
+  if(body?.status_code!==undefined&&body.status_code!==0)return {rows:[],recognized:false,skipped:0,nonText:0,invalid:0,hasMore:null};
   // Observed task #9: a successful, explicitly empty response uses null instead of [].
   // Missing fields or conflicting totals remain unrecognized, not invented zero comments.
   if(body?.comments===null&&body.status_code===0&&body.total===0&&body.has_more===0)
-    return {rows:[],recognized:true,skipped:0,hasMore:false};
-  if(!Array.isArray(body?.comments)) return {rows:[],recognized:false,skipped:0,hasMore:null};
+    return {rows:[],recognized:true,skipped:0,nonText:0,invalid:0,hasMore:false};
+  if(!Array.isArray(body?.comments)) return {rows:[],recognized:false,skipped:0,nonText:0,invalid:0,hasMore:null};
   const rows=[],seen=new Set();
   // One bounded embedded reply level only; never invent unseen replies or recurse.
   const limit=1000;
-  let skipped=0,examined=0,truncated=false;
+  let skipped=0,nonText=0,invalid=0,examined=0,truncated=false;
   const reference=value=>value==null||value===''||value===0||value==='0'?'':id(value)||null;
   function append(c,root='') {
     if(examined>=limit){truncated=true;return false;}
@@ -37,10 +37,12 @@ function comments(body, expectedVideo, context={}) {
     const raw=text(c?.text);
     const thread=reference(c?.reply_id),direct=reference(c?.reply_to_reply_id);
     const parent=direct||thread||root;
-    if(!cid || !raw || !id(vid) || vid!==expectedVideo || thread===null || direct===null ||
-      (root&&thread&&thread!==root) || parent===cid) {skipped++;return false;}
+    if(!cid || typeof c?.text!=='string' || !id(vid) || vid!==expectedVideo || thread===null || direct===null ||
+      (root&&thread&&thread!==root) || parent===cid) {skipped++;invalid++;return false;}
     if(seen.has(cid))return true;
     seen.add(cid);
+    // A valid image-only parent can still have independently readable text replies.
+    if(!raw){skipped++;nonText++;return true;}
     // Do not mix sec_uid and numeric UID in the same identity namespace.
     const uid=id(c.user?.uid);
     const timestamp=Number.isSafeInteger(c.create_time)&&c.create_time>0 ? c.create_time : null;
@@ -57,7 +59,7 @@ function comments(body, expectedVideo, context={}) {
       append(reply,id(c.cid));
     }
   }
-  return {rows,recognized:true,skipped,truncated,hasMore:body.has_more===0?false:body.has_more===1?true:null};
+  return {rows,recognized:true,skipped,nonText,invalid,truncated,hasMore:body.has_more===0?false:body.has_more===1?true:null};
 }
 function responseKind(url, expectedVideo='') {
   let u;try{u=new URL(url);}catch{return '';}
@@ -66,9 +68,14 @@ function responseKind(url, expectedVideo='') {
   if(/^\/aweme\/v\d+\/web\/comment\/list\//.test(u.pathname)&&id(expectedVideo)&&u.searchParams.get('aweme_id')===expectedVideo)return 'comment';
   return '';
 }
-function pageVideoTitle(value,url,expectedVideo){
+function contentPageKind(url,expectedVideo){
   let u;try{u=new URL(url);}catch{return '';}
-  if(u.protocol!=='https:'||u.hostname!=='www.douyin.com'||u.pathname!==`/video/${expectedVideo}`||!id(expectedVideo))return '';
+  if(u.origin!=='https://www.douyin.com'||!id(expectedVideo))return '';
+  const match=u.pathname.match(/^\/(video|note)\/(\d{5,30})\/?$/);
+  return match&&match[2]===expectedVideo?match[1]:'';
+}
+function pageVideoTitle(value,url,expectedVideo){
+  if(!contentPageKind(url,expectedVideo))return '';
   const title=text(value).replace(/\s*-\s*抖音\s*$/,'').trim();
   if(!title||title===expectedVideo||title==='抖音'||/验证码中间页|发现更多精彩视频|安全验证|使用原设备扫码/.test(title))return '';
   return title;
@@ -88,4 +95,4 @@ function blockFromBody(body){
   const reason=body.search_nil_info?.search_nil_type;
   return typeof reason==='string'&&/verify|antispam|risk|captcha/i.test(reason)?'needs_verification':'';
 }
-module.exports={id,video,searchVideos,comments,responseKind,pageVideoTitle,blockFromText,blockFromBody};
+module.exports={id,video,searchVideos,comments,responseKind,contentPageKind,pageVideoTitle,blockFromText,blockFromBody};

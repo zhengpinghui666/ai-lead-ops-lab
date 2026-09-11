@@ -21,9 +21,15 @@ HISTORY = """WITH raw AS (
  WHERE trim(x.raw_text)!='' AND NOT EXISTS (
   SELECT 1 FROM collection_observations o WHERE o.kind='comment'
   AND o.external_id=x.external_id AND o.page_url=v.url AND trim(o.comment_text)!='')
+), latest AS (
+ SELECT *,FIRST_VALUE(text) OVER(PARTITION BY video_url,external_id ORDER BY task_id DESC,observed_at DESC) AS latest_text,
+ FIRST_VALUE(user_identifier) OVER(PARTITION BY video_url,external_id ORDER BY task_id DESC,observed_at DESC) AS latest_user
+ FROM raw
 ), ranked AS (
- SELECT *,ROW_NUMBER() OVER(PARTITION BY video_url,external_id ORDER BY task_id DESC,observed_at DESC) AS rank,
- COALESCE(first_seen_at,FIRST_VALUE(observed_at) OVER(PARTITION BY video_url,external_id ORDER BY julianday(observed_at),observed_at)) AS collected_at FROM raw
+ SELECT *,ROW_NUMBER() OVER(PARTITION BY video_url,external_id ORDER BY
+ CASE WHEN filter_reason='' AND text=latest_text AND COALESCE(user_identifier,'')=COALESCE(latest_user,'') THEN 0 ELSE 1 END,
+ task_id DESC,observed_at DESC) AS rank,
+ COALESCE(first_seen_at,FIRST_VALUE(observed_at) OVER(PARTITION BY video_url,external_id ORDER BY julianday(observed_at),observed_at)) AS collected_at FROM latest
 ), scoped AS (SELECT * FROM ranked WHERE rank=1 AND (:video='' OR video_url=:video))
 """
 
@@ -63,7 +69,7 @@ def history(query, mode='live'):
         rows = []
         for source_row in source_rows:
             row = dict(source_row)
-            row.pop('rank')
+            row.pop('rank');row.pop('latest_text');row.pop('latest_user')
             row.update(current[(row['video_url'],row['external_id'])] if not row['filter_reason'] else dict(category=None,analysis_method=None,analysis_state=None))
             row['include_matches'] = comment_filters.matches(row['text'],row.pop('include_keywords'))
             row['exclude_matches'] = comment_filters.matches(row['text'],row.pop('exclude_keywords'))

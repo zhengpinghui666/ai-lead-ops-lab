@@ -52,17 +52,18 @@ def transient_batch_wait(connection, task):
     """Keep ordinary incomplete page reads distinct from parser/auth failures."""
     if not task or task['status'] != 'partial':
         return transient_http_wait(connection, task)
-    if task['transport'] != 'local_browser' or not task['finished_at'] or task['skipped']:
+    if task['transport'] != 'local_browser' or not task['finished_at']:
         return None
     observed = sum(task[k] for k in ('comments','filtered_old','filtered_unknown','filtered_future','filtered_keyword','filtered_blocked'))
     if observed <= 0:
         return None
-    checkpoints = connection.execute('SELECT status,detail FROM collection_checkpoints WHERE task_id=?', (task['id'],)).fetchall()
+    checkpoints = connection.execute('SELECT status,detail,video_url FROM collection_checkpoints WHERE task_id=?', (task['id'],)).fetchall()
     partial = [row for row in checkpoints if row['status'] == 'partial']
     if (not partial or any(row['status'] not in ('done','unavailable','partial') for row in checkpoints)
             or any(row['detail'] != '取得部分评论，但页面未能继续加载' for row in partial)):
         return None
     try:
+        quality = {}
         for row in connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=?', (task['id'],)):
             if row['stage'].startswith(('captcha', 'needs_')):
                 return None
@@ -72,6 +73,18 @@ def transient_batch_wait(connection, task):
             for response in snapshot.get('responses', []):
                 if response.get('body_error') or response.get('status') not in (None,200):
                     return None
+            if row['stage'] == 'comment-read':
+                page = snapshot.get('page_url')
+                info = snapshot.get('processing', {})
+                if (page in quality or info.get('version') != 'comment-quality-v1' or info.get('recognized') is not True
+                        or any(type(info.get(k)) is not int or info[k] < 0 for k in ('skipped','non_text_skipped','invalid_records','parse_errors'))
+                        or info['invalid_records'] or info['parse_errors'] or info['skipped'] != info['non_text_skipped']):
+                    return None
+                quality[page] = info['non_text_skipped']
+        if task['skipped']:
+            expected = {row['video_url'] for row in checkpoints if row['status'] != 'unavailable'}
+            if set(quality) != expected or sum(quality.values()) != task['skipped']:
+                return None
         return 0
     except (ValueError, TypeError, AttributeError):
         return None

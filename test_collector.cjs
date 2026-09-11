@@ -16,10 +16,14 @@ assert.equal(p.comments({comments:[{cid,text:'测试夹具'}]},vid).rows[0].publ
 assert.equal(p.comments({comments:[{cid:7600000000000000002,text:'bad ID'}]},vid).skipped,1);
 assert.equal(p.comments({status_code:7},vid).recognized,false);
 assert.equal(p.comments({comments:[],has_more:0},vid).recognized,true);
-assert.deepEqual(p.comments({status_code:0,comments:null,total:0,has_more:0},vid),{rows:[],recognized:true,skipped:0,hasMore:false});
+assert.deepEqual(p.comments({status_code:0,comments:null,total:0,has_more:0},vid),{rows:[],recognized:true,skipped:0,nonText:0,invalid:0,hasMore:false});
 for(const empty of [{comments:null,total:0,has_more:0},{status_code:0,comments:null,total:1,has_more:0},{status_code:0,comments:null,total:0,has_more:1},{status_code:0,comments:null},{status_code:0,total:0,has_more:0}])
   assert.equal(p.comments(empty,vid).recognized,false,'Null/missing comments require explicit successful empty evidence');
 const reply='7600000000000000003',direct='7600000000000000004';
+r=p.comments({comments:[{cid,aweme_id:vid,text:'',reply_comment:[{cid:reply,text:'图片下的合成文字回复'}]},
+  {cid:direct,text:'   '},{cid:'7600000000000000005'},{cid:7600000000000000006,text:''}]},vid);
+assert.equal(r.nonText,2);assert.equal(r.invalid,2);assert.equal(r.skipped,4);
+assert.equal(r.rows.length,1);assert.equal(r.rows[0].comment_id,reply);assert.equal(r.rows[0].parent_comment_id,cid);
 const root={cid,aweme_id:vid,text:'合成主评论',reply_id:'0',reply_comment:[
   {cid:reply,text:'合成回复：多少钱',reply_id:cid,user:{uid}},
   {cid:direct,text:'合成回复的回复',reply_id:cid,reply_to_reply_id:reply}
@@ -50,6 +54,11 @@ assert.equal(p.pageVideoTitle('无畏契约陪玩避坑指南！ - 抖音',`http
 assert.equal(p.pageVideoTitle('验证码中间页',`https://www.douyin.com/video/${vid}`,vid),'');
 assert.equal(p.pageVideoTitle('其他视频',`https://www.douyin.com/video/7600000000000000009`,vid),'');
 assert.equal(p.pageVideoTitle('搜索结果',`https://www.douyin.com/search/keyword`,vid),'');
+assert.equal(p.pageVideoTitle('图文作品 - 抖音',`https://www.douyin.com/note/${vid}`,vid),'图文作品');
+assert.equal(p.contentPageKind(`https://www.douyin.com/note/${vid}/?tab=comment`,vid),'note');
+for(const wrong of [`https://www.douyin.com/note/${cid}`,`https://www.douyin.com:444/note/${vid}`,`http://www.douyin.com/note/${vid}`,`https://other.example/note/${vid}`,`https://www.douyin.com/search/${vid}`]){
+  assert.equal(p.contentPageKind(wrong,vid),'');assert.equal(p.pageVideoTitle('错误来源',wrong,vid),'');
+}
 // Phrases actually observed in task #4; no identity or QR content retained here.
 assert.equal(p.blockFromText('登录后即可搜索更多精彩视频\n使用原设备扫码\n为保障账号安全，请使用「抖音 APP」扫码验证，以确保为本人操作'),'needs_verification');
 assert.equal(p.blockFromText('为保障账号安全\n请使用「抖音 APP」扫码验证'),'needs_verification');

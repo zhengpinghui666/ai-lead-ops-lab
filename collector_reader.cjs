@@ -16,7 +16,7 @@ function createReader(page,shared){
   let phase='idle',current=null,networkBlock='',recognized=false,hasMore=null;
   let requestSerial=0,lastValidRequest=0;
   const requestNumbers=new WeakMap();
-  let readErrors=0,schemaErrors=0,commentResponses=0,invalidComments=0,processingLimit=false,navigationError='',navigationStatus=null,navigationRetryAfter=null;
+  let readErrors=0,schemaErrors=0,commentResponses=0,invalidComments=0,nonTextComments=0,processingLimit=false,navigationError='',navigationStatus=null,navigationRetryAfter=null;
   const searchResults=new Map(),commentIds=new Set(),videoIds=new Set(),perVideo=new Map(),responseMeta=[];
   const queue=new OrderedResponseQueue({concurrency:2,capacity:8,onError:()=>{readErrors++;}});
   function check(){shared.check();if(page.isClosed())throw new Stop('interrupted','采集页面已关闭；本批停止，已入库数据保留。');if(processingLimit)throw new Stop('resource_limited','单页待处理响应超过 8 条，本批停止；已入库数据保留。');}
@@ -49,6 +49,7 @@ function createReader(page,shared){
     if(shared.stopping()||phase==='idle')return;
     const kind=parser.responseKind(response.url(),current?.video_id||'');
     if(!kind||(phase==='search'&&kind!=='search')||(phase==='comment'&&kind!=='comment'))return;
+    if(kind==='comment'&&!parser.contentPageKind(page.url(),current?.video_id))return;
     const requestNumber=response.request?requestNumbers.get(response.request())||0:0;
     if(kind==='comment')commentResponses++;
     const http=response.status(),meta={kind,status:http};responseMeta.push(meta);if(responseMeta.length>30)responseMeta.shift();
@@ -85,14 +86,16 @@ function createReader(page,shared){
       if(Array.isArray(body?.comments))meta.comments_count=body.comments.length;
       for(const key of ['status_code','has_more','total'])if(Number.isSafeInteger(body?.[key]))meta[key]=body[key];
       if(!expected)return;
+      if(!parser.contentPageKind(page.url(),expected.video_id))return;
       if(!expected.video_title||expected.video_title===expected.video_id){
         const title=parser.pageVideoTitle(await page.title().catch(()=>''),page.url(),expected.video_id);if(title)expected.video_title=title;
       }
       const parsed=parser.comments(body,expected.video_id,expected);
-      if(body?.status_code===0&&parsed.recognized&&!parsed.skipped&&!parsed.truncated){lastValidRequest=requestNumber;if(networkBlock==='needs_verification')networkBlock='';}
+      if(body?.status_code===0&&parsed.recognized&&!parsed.invalid&&!parsed.truncated){lastValidRequest=requestNumber;if(networkBlock==='needs_verification')networkBlock='';}
       if(!parsed.recognized)schemaErrors++;
       if(parsed.truncated)schemaErrors++;
-      invalidComments+=parsed.skipped;recognized ||= parsed.recognized;hasMore=parsed.hasMore;
+      invalidComments+=parsed.invalid;nonTextComments+=parsed.nonText;recognized ||= parsed.recognized;hasMore=parsed.hasMore;
+      meta.non_text_skipped=parsed.nonText;meta.invalid_records=parsed.invalid;
       if(parsed.recognized)await observeVideo();
       if(parsed.skipped)await emit({type:'skipped',count:parsed.skipped});
       for(const row of parsed.rows){
@@ -159,13 +162,25 @@ function createReader(page,shared){
     return selected;
   }
   async function collect(row){
-    phase='idle';await drain();await ready();current=row;recognized=false;hasMore=null;commentResponses=0;invalidComments=0;
+    phase='idle';await drain();await ready();current=row;recognized=false;hasMore=null;commentResponses=0;invalidComments=0;nonTextComments=0;responseMeta.length=0;
     const errorsAtStart=readErrors+schemaErrors;
     await emit({type:'checkpoint',video_id:row.video_id,status:'reading',detail:'正在读取页面已加载评论'});
     if(config.kind==='search')await observeVideo();
     phase='comment';await shared.running(`正在读取视频 ${row.video_id} 的已加载评论（最多 ${config.comment_limit} 条）。`);
     await goto(row.video_url);
-    if(!recognized){
+    if(!recognized&&parser.contentPageKind(page.url(),row.video_id)==='note'){
+      // Task 118: the note page has a plain DIV tab, not an accessible button.
+      await guard();
+      const tabs=page.getByText(/^评论\(\d+\)$/),count=await tabs.count(),visible=[];
+      if(count<=4)for(let i=0;i<count;i++){const tab=tabs.nth(i);if(await tab.isVisible())visible.push(tab);}
+      if(visible.length===1){
+        await visible[0].click({timeout:3000}).catch(()=>{});await wait(2500);await drain();
+        await emit({type:'diagnostic',stage:'note-comments-open',snapshot:{title:'图文评论入口',
+          page_url:`https://www.douyin.com/note/${row.video_id}`,responses:[],
+          visible_text:recognized?'已打开同一作品的评论标签并收到可识别的评论响应。':'已尝试打开同一作品的唯一可见评论标签，尚未收到可识别的评论响应。'}});
+      }
+    }
+    if(!recognized&&parser.contentPageKind(page.url(),row.video_id)==='video'){
       await ready();const buttons=page.getByRole('button',{name:/^评论(?:\s|\d|$)/});
       if(await buttons.count()===1&&await buttons.first().isVisible()){await buttons.first().click({timeout:3000}).catch(()=>{});await wait(2500);await drain();}
     }
@@ -197,8 +212,14 @@ function createReader(page,shared){
       await ready();await page.mouse.wheel(0,650);await wait(2000);await drain();
     }
     await guard();phase='idle';await drain();
-    const errors=readErrors+schemaErrors-errorsAtStart,done=!errors&&(hasMore===false||(perVideo.get(row.video_id)||0)>=config.comment_limit);
-    await emit({type:'checkpoint',video_id:row.video_id,status:done?'done':'partial',detail:done?'已读完本批预算或页面声明没有更多评论':errors?`${errors} 次响应解析失败，保留已读记录；不能确认本批完整性`:'取得部分评论，但页面未能继续加载'});
+    const errors=readErrors+schemaErrors-errorsAtStart,done=!errors&&!invalidComments&&(hasMore===false||(perVideo.get(row.video_id)||0)>=config.comment_limit);
+    // Save page-scoped quality evidence even when some responses succeeded. No raw bodies or request queries.
+    await emit({type:'diagnostic',stage:'comment-read',snapshot:{title:'评论分页读取摘要',page_url:row.video_url,
+      visible_text:`已保存 ${perVideo.get(row.video_id)||0} 条文字；跳过 ${nonTextComments} 条无文字记录、${invalidComments} 条字段无效记录；${errors} 次响应未能解析。`,
+      responses:responseMeta.slice(-15),navigation_error:navigationError,navigation_http_status:navigationStatus,
+      processing:{version:'comment-quality-v1',recognized,has_more:hasMore,emitted_comments:perVideo.get(row.video_id)||0,
+        skipped:nonTextComments+invalidComments,non_text_skipped:nonTextComments,invalid_records:invalidComments,parse_errors:errors}}});
+    await emit({type:'checkpoint',video_id:row.video_id,status:done?'done':'partial',detail:done?'已读完本批预算或页面声明没有更多评论':errors?`${errors} 次响应解析失败，保留已读记录；不能确认本批完整性`:invalidComments?`${invalidComments} 条评论字段无效，保留有效记录`:'取得部分评论，但页面未能继续加载'});
     return done;
   }
   page.on('request',request=>requestNumbers.set(request,++requestSerial));
@@ -210,7 +231,9 @@ function createReader(page,shared){
       try{
         const expected=phase==='search'?'https://www.douyin.com/search/'+encodeURIComponent(config.target):current.video_url;
         const actual=new URL(page.url()),wanted=new URL(expected);
-        if(actual.origin!==wanted.origin||actual.pathname!==wanted.pathname)return false;
+        if(phase==='comment'){
+          if(!parser.contentPageKind(expected,current.video_id)||!parser.contentPageKind(page.url(),current.video_id))return false;
+        }else if(actual.origin!==wanted.origin||actual.pathname!==wanted.pathname)return false;
         const title=await page.title(),text=await page.locator('body').innerText({timeout:1000});
         if(!text.trim()||parser.blockFromText(title+'\n'+text))return false;
         if(await promptVisible(page))return false;

@@ -164,6 +164,32 @@ class MonitorTests(unittest.TestCase):
         sch.recover();self.assertFalse(mon.state()['enabled'])
         self.assertIsNone(self.at('2026-09-09T12:00:00+00:00'))
 
+    def test_nontext_quality_allows_retry_but_requires_complete_consistent_evidence(self):
+        task=self.task();self.incomplete_page(task)
+        page='https://www.douyin.com/video/'+VIDEO
+        info={'version':'comment-quality-v1','recognized':True,'skipped':2,'non_text_skipped':2,'invalid_records':0,'parse_errors':0}
+        with app.db() as c:
+            row={**dict(c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()),'skipped':2}
+            def evidence(snapshot):
+                c.execute('DELETE FROM collection_diagnostics WHERE task_id=?',(task,))
+                c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                          (task,'comment-read',json.dumps(snapshot),NOW))
+            valid={'page_url':page,'processing':info,'navigation_http_status':200,'responses':[{'status':200}]}
+            evidence(valid);self.assertEqual(sch.transient_batch_wait(c,row),0)
+            for changes in [{'version':'unknown'},{'recognized':False},{'skipped':'2'},{'non_text_skipped':1},
+                            {'invalid_records':1},{'parse_errors':1}]:
+                evidence({**valid,'processing':{**info,**changes}})
+                self.assertIsNone(sch.transient_batch_wait(c,row))
+            evidence({**valid,'page_url':page+'9'});self.assertIsNone(sch.transient_batch_wait(c,row))
+            evidence(valid)
+            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                      (task,'comment-read',json.dumps(valid),NOW))
+            self.assertIsNone(sch.transient_batch_wait(c,row))
+            evidence(valid)
+            c.execute('INSERT INTO collection_checkpoints(task_id,video_id,video_title,video_url,status,detail,updated_at) VALUES(?,?,?,?,?,?,?)',
+                      (task,VIDEO+'9','synthetic',page+'9','done','read',NOW))
+            self.assertIsNone(sch.transient_batch_wait(c,row))
+
     def test_timeout_recovery_rejects_ambiguous_or_gated_evidence(self):
         task=self.task();self.finish(task,'network_error')
         base={'navigation_error':'navigation_timeout','navigation_http_status':None,

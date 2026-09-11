@@ -113,3 +113,36 @@ class CommentHistoryTests(unittest.TestCase):
             c.execute("UPDATE comments SET raw_text='修改后的原文' WHERE id=?",(first['rows'][1]['comment_id'],))
         self.assertEqual(comments.history({'filter':'valuable'})['total'],26,'Changed source text cannot keep an old buyer projection')
         self.assertFalse(collector.ACTIVE)
+
+    def test_accepted_intent_survives_later_time_window_rejection_without_rewriting_observations(self):
+        cid='7600000000000000401'
+        first=self.batch(VIDEO,[(cid,'找陪练')])
+        with app.db() as c: ident=c.execute('SELECT id FROM comments WHERE external_id=?',(cid,)).fetchone()[0]
+        app.analyze(comment_ids=[ident])
+        with patch('clubops.now',return_value='2026-09-11T05:00:00+00:00'):
+            later=self.batch(VIDEO,[(cid,'找陪练')])
+        # Same source text was accepted earlier; a later monitoring window is narrower.
+        with app.db() as c:
+            c.execute("UPDATE collection_observations SET filter_reason='filtered_old' WHERE task_id=? AND kind='comment'",(later,))
+        row=comments.history({'filter':'valuable'})['rows'][0]
+        self.assertEqual((row['external_id'],row['task_id'],row['collected_at']),(cid,first,NOW))
+        self.assertEqual(comments.history({})['counts'],{'observed':1,'accepted':1,'filtered':0})
+        with app.db() as c:
+            self.assertEqual(c.execute("SELECT filter_reason FROM collection_observations WHERE task_id=? AND kind='comment'",(later,)).fetchone()[0],'filtered_old')
+        app.mutate('review',dict(id=ident,category='noise',reason='人工撤回需求'))
+        self.assertEqual(comments.history({'filter':'valuable'})['total'],0)
+        self.assertEqual(comments.history({'filter':'accepted'})['total'],1)
+
+    def test_new_filtered_text_or_identity_does_not_inherit_old_intent(self):
+        cid='7600000000000000402'
+        self.batch(VIDEO,[(cid,'找陪练')])
+        with app.db() as c: ident=c.execute('SELECT id FROM comments WHERE external_id=?',(cid,)).fetchone()[0]
+        app.analyze(comment_ids=[ident])
+        later=self.batch(VIDEO,[(cid,'接单广告')],excluded='接单')
+        self.assertEqual(comments.history({'filter':'valuable'})['total'],0)
+        self.assertEqual(comments.history({'filter':'accepted'})['total'],0)
+        row=comments.history({})['rows'][0]
+        self.assertEqual((row['text'],row['task_id']),('接单广告',later))
+        with app.db() as c:
+            c.execute("UPDATE collection_observations SET comment_text='找陪练',user_identifier='987654321012' WHERE task_id=? AND kind='comment'",(later,))
+        self.assertEqual(comments.history({'filter':'valuable'})['total'],0)

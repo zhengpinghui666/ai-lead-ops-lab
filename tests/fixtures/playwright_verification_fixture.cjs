@@ -40,7 +40,8 @@ class Page extends EventEmitter{
     else this.emit('response',response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`,{status_code:0,has_more:0,comments:[{cid:vid+'1',aweme_id:vid,text:'合成测试：找陪练预算100',user:{uid:vid+'2',nickname:'合成样例'}}]},request));
   }
   async goto(url){this.address=url;trace(url.includes('/search/')?'search':'video');
-    if(url.includes('/search/')||scenario==='second-challenge'){
+    if(scenario.startsWith('note-'))this.address=`https://www.douyin.com/note/${scenario==='note-wrong-page'?'7600000000000000802':vid}`;
+    if(url.includes('/search/')||scenario==='second-challenge'||scenario.startsWith('note-')){
       this.challenge=true;
       const endpoint=url.includes('/search/')?'https://www.douyin.com/aweme/v1/web/general/search/single/':`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`;
       const request={};this.emit('request',request);

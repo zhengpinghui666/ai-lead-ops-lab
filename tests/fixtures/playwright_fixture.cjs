@@ -19,6 +19,10 @@ class Page extends EventEmitter {
   async title(){return scenario==='gateway-title-only'?'502 Bad Gateway':scenario==='public-comments-login-to-post'?'合成夹具：无畏契约陪玩 - 抖音':scenario.includes('verification')&&!verified?'验证码中间页':'合成夹具页面';}
   async goto(url){
     this.address=url;
+    if(scenario.startsWith('note-')&&!url.includes('/search/')){
+      this.address=`https://${scenario==='note-wrong-origin'?'other.example':'www.douyin.com'}/note/${scenario==='note-wrong-post'?'7600000000000000009':vid}`;
+      return {status:()=>200};
+    }
     if((scenario==='unavailable-video'||scenario==='unavailable-first'&&url.endsWith(vid))&&!url.includes('/search/'))return {status:()=>200};
     if(scenario==='comment-navigation-timeout'&&!url.includes('/search/')){
       const error=Error('synthetic navigation timeout');error.name='TimeoutError';throw error;
@@ -56,6 +60,11 @@ class Page extends EventEmitter {
         return {status:()=>200};
       }
       const body=scenario==='schema-error'?{status_code:99,comments:[]}:{status_code:0,comments:[{cid:scenario==='invalid-id'?7600000000000000002:'7600000000000000002',aweme_id:vid,text:'合成夹具评论：找个陪练',user:{uid:'123456789012',nickname:'测试夹具'},create_time:1750000000}],has_more:0};
+      if(scenario==='nontext-only'||scenario==='nontext-reply'){
+        body.comments[0].text='';
+        if(scenario==='nontext-reply')body.comments[0].reply_comment=[{cid:'7600000000000000003',text:'合成图片回复：陪练多少钱',user:{uid:'123456789013'}}];
+      }
+      if(scenario==='mixed-invalid')body.comments.push({cid:7600000000000000003,text:'不安全数字 ID 的合成记录'});
       if(scenario.startsWith('scroll-'))body.has_more=1;
       if(scenario==='empty-null'||scenario==='ambiguous-null'){
         body.comments=null;body.total=scenario==='empty-null'?0:1;
@@ -65,12 +74,27 @@ class Page extends EventEmitter {
         {cid:'7600000000000000004',text:'超出本批总评论上限，不应输出'}
       ];
       this.emit('response',response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`,body));
+      if(scenario==='mixed-body-empty'){
+        const empty=response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`,{});
+        empty.body=async()=>Buffer.alloc(0);this.emit('response',empty);
+      }
       if(scenario==='mixed-schema')this.emit('response',response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`,{status_code:99,comments:[]}));
     }
     return {status:()=>200};
   }
   locator(selector){return {innerText:async()=>scenario==='device-challenge'?'登录后即可搜索更多精彩视频\n使用原设备扫码\n为保障账号安全，请使用「抖音 APP」扫码验证':scenario==='public-comments-login-to-post'?'全部评论\n请先登录后发表评论\n已加载的合成评论\n登录后即可参与互动讨论':scenario==='success'?'合成夹具正文':'',count:async()=>selector==='[data-e2e="comment-list"]'&&scenario.startsWith('scroll-')?1:0,evaluateAll:async()=>scenario==='resume-search-dom'&&verified&&selector.startsWith('a[')?[{href:`https://www.douyin.com/video/${vid}`,label:'人工继续后的合成视频'}]:[],isVisible:async()=>scenario.startsWith('scroll-'),hover:async()=>{if(scenario==='scroll-late-budget')this.emit('response',response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`,{status_code:0,comments:[{cid:'7600000000000000005',aweme_id:vid,text:'迟到的合成评论',user:{uid:'123456789015'}}],has_more:1}));if(scenario.startsWith('scroll-')){const e=Error('synthetic hover obstruction');e.name='TimeoutError';throw e;}},first(){return this;},click:async()=>{},all:async()=>[]};}
   getByRole(){return this.locator('button');}
-  getByText(text){const missing=scenario==='unavailable-video'||scenario==='unavailable-first'&&this.address.endsWith(vid);return {count:async()=>missing&&text==='你要观看的视频不存在'?1:0,isVisible:async()=>missing};}
+  getByText(text){
+    if(scenario.startsWith('note-')&&text instanceof RegExp&&text.test('评论(8)')){
+      return {count:async()=>['note-hidden-duplicate','note-ambiguous'].includes(scenario)?2:1,
+        nth:index=>({isVisible:async()=>scenario!=='note-hidden-duplicate'||index===1,click:async()=>{
+          if(['note-ambiguous','note-wrong-post','note-wrong-origin'].includes(scenario))throw Error('Must not click an ambiguous or unrelated page');
+          if(scenario!=='note-no-response')this.emit('response',response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`,
+            {status_code:0,has_more:0,comments:[{cid:'7600000000000000002',aweme_id:vid,text:'合成图文评论：找陪练',user:{uid:'123456789012'}}]}));
+        }})};
+    }
+    const missing=scenario==='unavailable-video'||scenario==='unavailable-first'&&this.address.endsWith(vid);
+    return {count:async()=>missing&&text==='你要观看的视频不存在'?1:0,isVisible:async()=>missing};
+  }
 }
 module.exports={devices:{'Desktop Chrome':{userAgent:'fixture Desktop Chrome'}},chromium:{launchPersistentContext:async(profile,options)=>{if(options.userAgent!=='fixture Desktop Chrome')throw Error('Desktop client configuration missing');return new Context();}}};

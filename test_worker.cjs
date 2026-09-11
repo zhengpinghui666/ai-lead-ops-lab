@@ -18,6 +18,17 @@ function run(scenario,{interactive=false,onStatus,kind='search',candidatePolicy=
 }
 const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
 (async()=>{
+  const notes=await Promise.all(['note-redirect','note-hidden-duplicate','note-ambiguous','note-wrong-post','note-wrong-origin','note-no-response'].map(s=>run(s,{kind:'video'})));
+  for(const messages of notes.slice(0,2)){
+    assert.equal(terminal(messages),'completed');assert.equal(messages.filter(m=>m.type==='comment').length,1);
+    assert.equal(messages.find(m=>m.type==='comment').record.video_id,'7600000000000000001');
+    assert.equal(messages.find(m=>m.type==='diagnostic'&&m.stage==='note-comments-open').snapshot.page_url,'https://www.douyin.com/note/7600000000000000001');
+  }
+  for(const messages of notes.slice(2)){
+    assert.equal(terminal(messages),'needs_interaction');assert.equal(messages.filter(m=>m.type==='comment').length,0);
+  }
+  for(const messages of notes.slice(2,5))assert.ok(!messages.some(m=>m.type==='diagnostic'&&m.stage==='note-comments-open'));
+  assert.match(notes[5].find(m=>m.type==='diagnostic'&&m.stage==='note-comments-open').snapshot.visible_text,/尚未收到/);
   const candidatePolicy={version:'candidate-rotation-v1',as_of_ms:100000,round:1,history:[{video_id:'7600000000000000001',last_selected_ms:90000,priority_ms:200000}]};
   const [rotated,gatedPool]=await Promise.all([run('candidate-rotation',{candidatePolicy}),run('search-503',{candidatePolicy})]);
   assert.equal(terminal(rotated),'completed');
@@ -55,6 +66,23 @@ const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
   }
   assert.equal(missing.filter(m=>m.type==='comment').length,0);
   assert.ok(mixedMissing.some(m=>m.type==='comment'&&m.record.video_id==='7600000000000000009'));
+  const [nonText,textReply,mixedInvalid,emptyBody]=await Promise.all(['nontext-only','nontext-reply','mixed-invalid','mixed-body-empty'].map(s=>run(s)));
+  assert.equal(terminal(nonText),'completed');assert.equal(nonText.filter(m=>m.type==='comment').length,0);
+  assert.equal(terminal(textReply),'completed');assert.equal(textReply.filter(m=>m.type==='comment').length,1);
+  assert.equal(textReply.find(m=>m.type==='comment').record.parent_comment_id,'7600000000000000002');
+  for(const messages of [nonText,textReply]){
+    const quality=messages.find(m=>m.type==='diagnostic'&&m.stage==='comment-read').snapshot.processing;
+    assert.equal(quality.non_text_skipped,1);assert.equal(quality.invalid_records,0);assert.equal(quality.parse_errors,0);
+  }
+  assert.equal(terminal(mixedInvalid),'partial');assert.equal(mixedInvalid.filter(m=>m.type==='comment').length,1);
+  assert.equal(mixedInvalid.find(m=>m.type==='diagnostic'&&m.stage==='comment-read').snapshot.processing.invalid_records,1);
+  assert.equal(terminal(emptyBody),'partial');assert.equal(emptyBody.filter(m=>m.type==='comment').length,1);
+  const emptyQuality=emptyBody.find(m=>m.type==='diagnostic'&&m.stage==='comment-read').snapshot;
+  assert.equal(emptyQuality.processing.parse_errors,1);assert.equal(emptyQuality.responses.find(m=>m.body_error).body_error,'empty_body');
+  assert.ok(!JSON.stringify(emptyQuality).includes('合成夹具评论：找个陪练'),'Quality evidence must not contain raw response/comment bodies');
+  const nextQuality=mixedMissing.find(m=>m.type==='diagnostic'&&m.stage==='comment-read').snapshot;
+  assert.equal(nextQuality.page_url,'https://www.douyin.com/video/7600000000000000009');
+  assert.ok(nextQuality.responses.every(m=>m.kind==='comment'),'No previous search/video response metadata in this page summary');
   const [success,cancelled,closed,eof,schema,invalid,overflow,mixed,resumed,replies,device,publicRead,scrollPartial,scrollDone,emptyNull,ambiguousNull,emptySearch,htmlSearch,unavailableSearch]=await Promise.all([
     run('success'),
     run('verification-cancel',{interactive:true,onStatus:(m,c)=>{if(m.status==='needs_verification')c.stdin.write('{"command":"cancel"}\n');}}),
@@ -105,5 +133,5 @@ const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
   assert.equal(replyRecords.length,2,'Roots and replies share the same per-video budget');
   assert.equal(replyRecords[1].parent_comment_id,replyRecords[0].comment_id);
   for(const messages of [cancelled,closed,eof,schema,invalid,device])assert.equal(messages.filter(m=>m.type==='comment').length,0);
-  console.log('PASS: 28 child-process scenarios including missing-work isolation, document timeout, candidate rotation/gated discovery, HTTP failures, login/verification and bounded responses. Synthetic only.');
+  console.log('PASS: 38 child-process scenarios including same-work note tabs, ambiguous/foreign redirects, non-text/invalid separation, page quality, missing-work isolation, timeouts, gates and bounded responses. Synthetic only.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

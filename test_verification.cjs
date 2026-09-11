@@ -36,13 +36,13 @@ function run(scenario){return new Promise((resolve,reject)=>{
     if(scenario==='cancel'&&row.type==='verification'&&row.event.phase==='recognizing')child.stdin.write('{"command":"cancel"}\n');
   }});
   child.on('error',reject);child.on('close',code=>{clearTimeout(timer);code===0?resolve({scenario,rows}):reject(Error(error));});
-  child.stdin.write(JSON.stringify({kind:'search',target:'合成集成测试',interactive:false,video_limit:1,comment_limit:2,page_concurrency:1,
+  child.stdin.write(JSON.stringify({kind:scenario.startsWith('note-')?'video':'search',target:scenario.startsWith('note-')?'https://www.douyin.com/video/7600000000000000801':'合成集成测试',interactive:false,video_limit:1,comment_limit:2,page_concurrency:1,
     profile_dir:'synthetic-only',captcha:{mode:'auto',python:scenario==='missing-dependency'?path.join(__dirname,'nonexistent-python'):python}})+'\n');
 });}
 
 (async()=>{
   await units();
-  const scenarios=['accepted','rejected','no-response','old-response','unsupported','changed','second-challenge','cancel','missing-dependency','iframe-accepted','iframe-stays'];
+  const scenarios=['accepted','rejected','no-response','old-response','unsupported','changed','second-challenge','cancel','missing-dependency','iframe-accepted','iframe-stays','note-accepted','note-wrong-page'];
   const results=await Promise.all(scenarios.map(run));
   for(const {scenario,rows,skipped} of results){
     if(skipped){console.log('SKIP: '+scenario+': '+skipped);continue;}
@@ -51,8 +51,8 @@ function run(scenario){return new Promise((resolve,reject)=>{
     assert.equal(rows.filter(r=>r.type==='fixture'&&r.action==='headless-browser').length,1);
     assert.equal(rows.filter(r=>r.type==='fixture'&&r.action==='visible-browser').length,0);
     assert.ok(rows.filter(r=>r.type==='fixture'&&r.action==='mouse-down').length<=1);
-    if(scenario==='accepted'||scenario==='iframe-accepted'){
-      assert.equal(last,'completed');assert.equal(rows.filter(r=>r.type==='comment').length,1);
+    if(scenario==='accepted'||scenario==='iframe-accepted'||scenario==='note-accepted'){
+      assert.equal(last,'completed',scenario+': '+JSON.stringify(phases));assert.equal(rows.filter(r=>r.type==='comment').length,1);
       assert.deepEqual(phases.map(e=>e.phase),['detected','capturing','recognizing','submitting','verifying','accepted']);
       if(scenario==='iframe-accepted')assert.equal(phases.find(e=>e.phase==='recognizing').adapter,'douyin_iframe_slider');
     }else if(scenario==='cancel')assert.equal(last,'cancelled');
@@ -60,9 +60,9 @@ function run(scenario){return new Promise((resolve,reject)=>{
       assert.equal(last,'needs_verification',scenario);
       assert.equal(rows.filter(r=>r.type==='comment').length,0);
       const expected={rejected:'acceptance_not_observed','no-response':'acceptance_not_observed','old-response':'acceptance_not_observed',unsupported:'background_missing',changed:'challenge_changed','second-challenge':'batch_attempt_limit','missing-dependency':'dependency_missing','iframe-stays':'acceptance_not_observed'};
-      assert.equal(phases.at(-1).reason,expected[scenario]);
+      assert.equal(phases.at(-1).reason,scenario==='note-wrong-page'?'acceptance_not_observed':expected[scenario]);
       if(scenario!=='second-challenge')assert.ok(!phases.some(e=>e.phase==='accepted'));
     }
   }
-  console.log('PASS: workflow units and eleven collector process scenarios. Browser is synthetic; installed ddddocr worker is real. No platform traffic.');
+  console.log('PASS: workflow units and thirteen collector process scenarios, including note identity checks. Browser is synthetic; installed ddddocr worker is real. No platform traffic.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
