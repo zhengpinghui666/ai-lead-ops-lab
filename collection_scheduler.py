@@ -48,8 +48,59 @@ def transient_http_wait(connection, task):
         return None
 
 
+def transient_reply_wait(connection, task):
+    """Retry a malformed reply envelope only with identity and same-video evidence.
+
+    Parsing stays strict. Missing diagnostics, bad records/IDs, challenges and
+    cursor loops remain stop conditions; no historical failure is reclassified.
+    """
+    if not task or task['transport'] != 'http' or task['status'] != 'schema_changed' or not task['finished_at']:
+        return None
+    try:
+        identity = False
+        main_videos = set()
+        failed = []
+        for row in connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=? ORDER BY id', (task['id'],)):
+            if row['stage'] != 'http_read':
+                return None
+            responses = json.loads(row['snapshot']).get('responses')
+            if not isinstance(responses, list) or not responses:
+                return None
+            for e in responses:
+                if not isinstance(e, dict) or e.get('transport') != 'http' or e.get('http_status') != 200:
+                    return None
+                if e.get('operation') == 'identity':
+                    if e.get('status') != 'identity_verified' or e.get('verification_indicated') is not False:
+                        return None
+                    identity = True
+                    continue
+                if not identity or e.get('response_shape', {}).get('verification_indicated') is True:
+                    return None
+                if e.get('status') == 'valid_page':
+                    if e.get('skipped_reasons', {}).get('invalid_record') != 0:
+                        return None
+                    if e.get('operation') == 'comments' and type(e.get('rows')) is int and e['rows'] > 0:
+                        main_videos.add(e.get('video_id'))
+                    continue
+                shape = e.get('response_shape', {})
+                if (e.get('status') != 'schema_changed' or e.get('operation') != 'replies'
+                        or e.get('video_id') not in main_videos
+                        or not re.fullmatch(r'\d{5,30}', e.get('parent_comment_id', ''))
+                        or e.get('reason') not in ('invalid_has_more','invalid_cursor','invalid_page_container','empty_page_with_more')
+                        or shape.get('version') != 'http-page-shape-v1'
+                        or shape.get('status_code_type') != 'int' or shape.get('status_code') != 0
+                        or shape.get('verification_indicated') is not False):
+                    return None
+                failed.append(e)
+        return 0 if len(failed) == 1 else None
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 def transient_batch_wait(connection, task):
     """Keep ordinary incomplete page reads distinct from parser/auth failures."""
+    if task and task['status'] == 'schema_changed':
+        return transient_reply_wait(connection, task)
     if not task or task['status'] != 'partial':
         return transient_http_wait(connection, task)
     if task['transport'] != 'local_browser' or not task['finished_at']:
@@ -329,7 +380,8 @@ def tick(instant=None):
                     retry = transient_retry_seconds(c, retry_plan, task)
                     if retry:
                         due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=retry)).astimezone(timezone.utc).isoformat(timespec='seconds')
-                        reason='部分评论未能继续加载，保留部分结果与断点' if task['status']=='partial' else '页面或接口暂不可用'
+                        reason=('部分评论未能继续加载，保留部分结果与断点' if task['status']=='partial' else
+                                '回复分页返回异常，保留已读评论与原失败记录' if task['status']=='schema_changed' else '页面或接口暂不可用')
                         detail=f'{reason}；等待 {retry} 秒后在后台重试原监控目标，最多连续自动重试 3 次。可随时关闭监控。'
                     else:
                         new_status, detail = 'attention', f'上批结果 {task["status"]}：{task["detail"]}；计划停止自动执行'

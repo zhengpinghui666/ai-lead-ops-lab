@@ -175,6 +175,58 @@ class HTTPReadTests(unittest.TestCase):
             http.parse_page(value, 'search')
         self.assertEqual(caught.exception.status, 'needs_verification')
 
+    def test_reply_shape_diagnostics_preserve_strict_parser_without_private_fields(self):
+        cases = [(body(comments=None,total='1'), 'invalid_page_container'),
+                 (body([],has_more=1,cursor=10), 'empty_page_with_more'),
+                 (body(has_more='0'), 'invalid_has_more'), (body(cursor='10'), 'invalid_cursor')]
+        for payload, reason in cases:
+            with self.subTest(reason=reason):
+                log=[]
+                payload.update(token='TEST_ONLY_BODY_SECRET',status_msg='TEST_ONLY_MESSAGE')
+                client=http.Client(session(),signer=FakeSigner(),diagnostic=log.append,
+                    transport=lambda *args:(200,'application/json',json.dumps(payload).encode()))
+                with self.assertRaises(http.ReadError) as caught:
+                    client.page('replies',video=VIDEO,parent=PARENT)
+                self.assertEqual(caught.exception.status,'schema_changed')
+                self.assertEqual(log[-1]['reason'],reason)
+                self.assertEqual(log[-1]['parent_comment_id'],PARENT)
+                self.assertEqual(log[-1]['response_shape']['status_code'],0)
+                self.assertIs(log[-1]['response_shape']['verification_indicated'],False)
+                encoded=json.dumps(log)
+                for private in ('TEST_ONLY_BODY_SECRET','TEST_ONLY_MESSAGE','TEST_ONLY_SECRET','TEST_ONLY_SIGNATURE'):
+                    self.assertNotIn(private,encoded)
+        with self.assertRaises(http.ReadError) as caught:
+            http.parse_page(body(comments=None,total=1,verify_type='captcha'),'replies',VIDEO,PARENT)
+        self.assertEqual(caught.exception.status,'needs_verification')
+
+    def test_terminal_null_replies_keep_statistical_total_and_main_comments_continue(self):
+        empty=body(comments=None,total=1,cursor=10)
+        result=http.parse_page(empty,'replies',VIDEO,PARENT)
+        self.assertEqual(result['rows'],[]);self.assertFalse(result['has_more'])
+        self.assertEqual(result['reply_visibility'],{'state':'terminal_without_visible_replies','declared_total':1,'returned_rows':0})
+        # Only an explicit null reply container and valid terminal envelope qualify.
+        rejected=[{k:v for k,v in empty.items() if k!='comments'}, {**empty,'total':-1},
+                  {**empty,'total':True}, {**empty,'total':False}, {**empty,'total':None}, {**empty,'has_more':1},
+                  {**empty,'cursor':'10'}, {**empty,'comments':{}}, {**empty,'status_code':8}]
+        for payload in rejected:
+            with self.subTest(payload=payload), self.assertRaises(http.ReadError):
+                http.parse_page(payload,'replies',VIDEO,PARENT)
+        with self.assertRaises(http.ReadError):http.parse_page(empty,'comments',VIDEO)
+        calls=[]
+        class Client:
+            def page(self,operation,**kw):
+                calls.append((operation,kw['cursor']))
+                payload=(empty if operation=='replies' else
+                         body([record(reply_comment_total=1)],has_more=1,cursor=10) if kw['cursor']==0 else
+                         body([record(cid='7683708327758415397')],cursor=20))
+                return http.parse_page(payload,operation,VIDEO,PARENT if operation=='replies' else '')
+        events=[]
+        worker.collect(dict(kind='video',target=VIDEO,page_concurrency=1,video_limit=1,comment_limit=3),
+                       events.append,threading.Event(),client=Client())
+        self.assertEqual(calls,[('comments',0),('replies',0),('comments',10)])
+        self.assertEqual(events[-1]['status'],'completed')
+        self.assertEqual(len([e for e in events if e['type']=='comment']),2)
+
     def test_no_retry_and_redacted_diagnostics(self):
         for status, raw, expected in ((429, b'limited', 'rate_limited'), (403, b'x', 'access_denied'),
                                      (200, b'', 'empty_response'), (200, b'bad', 'schema_changed')):

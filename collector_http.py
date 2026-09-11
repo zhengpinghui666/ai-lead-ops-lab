@@ -129,10 +129,26 @@ class F2Signer:
         return query + '&' + urlencode({'a_bogus': value})
 
 
+def page_shape(body):
+    """Fixed structural fields only; never copy comment text, tokens or messages."""
+    result = {'version': 'http-page-shape-v1', 'body_type': type(body).__name__}
+    if not isinstance(body, dict):
+        return result
+    for key in ('status_code', 'has_more', 'cursor', 'total', 'comments'):
+        value = body.get(key)
+        result[key + '_type'] = type(value).__name__ if key in body else 'missing'
+        if key != 'comments' and type(value) is int and -(2**63) <= value < 2**63:
+            result[key] = value
+    result['verification_indicated'] = bool(body.get('verify_type') or body.get('verify_data'))
+    if isinstance(body.get('comments'), list):
+        result['comments_count'] = len(body['comments'])
+    return result
+
+
 def parse_page(body, operation, video='', parent='', title=''):
     """Strict known containers only; IDs remain arbitrary-precision strings."""
     if not isinstance(body, dict) or type(body.get('status_code')) is not int:
-        raise ReadError('schema_changed')
+        raise ReadError('schema_changed', {'reason': 'invalid_status_code'})
     if body['status_code'] != 0:
         raise ReadError('upstream_rejected', {'business_code': body['status_code']})
     if body.get('verify_type') or body.get('verify_data'):
@@ -144,18 +160,27 @@ def parse_page(body, operation, video='', parent='', title=''):
             raise ReadError('needs_verification', {'reason': 'search_verification_required'})
     more = body.get('has_more')
     if type(more) is not int or more not in (0, 1):
-        raise ReadError('schema_changed')
+        raise ReadError('schema_changed', {'reason': 'invalid_has_more'})
     cursor = body.get('cursor', body.get('offset'))
     if cursor is None and not more:
         cursor = 0
     if type(cursor) is not int or not 0 <= cursor < 2**63:
-        raise ReadError('schema_changed')
+        raise ReadError('schema_changed', {'reason': 'invalid_cursor'})
     key = 'data' if operation == 'search' else 'comments'
     items = body.get(key)
-    if items is None and body.get('total') == 0 and more == 0 and operation != 'search':
+    # Replies can report a nonzero statistical total while exposing no rows on
+    # the terminal page. This says nothing about deletion or the total count.
+    empty_replies = (operation == 'replies' and 'comments' in body and items is None
+                     and more == 0 and type(body.get('total')) is int and 0 <= body['total'] < 2**63)
+    if empty_replies:
         items = []
-    if not isinstance(items, list) or len(items) > 1000 or (not items and more):
-        raise ReadError('schema_changed')
+    if (items is None and operation == 'comments' and 'comments' in body
+            and type(body.get('total')) is int and body['total'] == 0 and more == 0):
+        items = []
+    if not isinstance(items, list):
+        raise ReadError('schema_changed', {'reason': 'invalid_page_container'})
+    if len(items) > 1000 or (not items and more):
+        raise ReadError('schema_changed', {'reason': 'invalid_page_size' if items else 'empty_page_with_more'})
     rows, skipped, reply_targets, seen = [], 0, [], set()
     nontext = 0
     for item in items:
@@ -208,8 +233,11 @@ def parse_page(body, operation, video='', parent='', title=''):
     search_id = (body.get('log_pb') or {}).get('impr_id', '') if isinstance(body.get('log_pb'), dict) else ''
     if operation == 'search' and more and (not isinstance(search_id, str) or not search_id):
         raise ReadError('schema_changed')
-    return {'rows': rows, 'cursor': cursor, 'has_more': bool(more), 'search_id': search_id,
-            'skipped': skipped, 'skipped_reasons': {'non_text':nontext,'invalid_record':skipped-nontext}, 'reply_targets': reply_targets}
+    result = {'rows': rows, 'cursor': cursor, 'has_more': bool(more), 'search_id': search_id,
+              'skipped': skipped, 'skipped_reasons': {'non_text':nontext,'invalid_record':skipped-nontext}, 'reply_targets': reply_targets}
+    if empty_replies:
+        result['reply_visibility'] = {'state': 'terminal_without_visible_replies', 'declared_total': body['total'], 'returned_rows': 0}
+    return result
 
 
 def exchange(url, headers, cancelled):
@@ -348,6 +376,8 @@ class Client:
         evidence = {'operation': operation, 'request_number': number, 'provider': getattr(signer, 'provider', 'injected-test-provider'), 'transport': 'http'}
         if video:
             evidence['video_id'] = str(video)
+        if parent:
+            evidence['parent_comment_id'] = str(parent)
         evidence['requested_cursor'] = cursor
         try:
             if self.cancelled():
@@ -369,7 +399,9 @@ class Client:
             try:
                 body = json.loads(raw)
             except (ValueError, UnicodeError):
-                raise ReadError('schema_changed') from None
+                raise ReadError('schema_changed', {'reason': 'invalid_json'}) from None
+            if operation in ('comments', 'replies'):
+                evidence['response_shape'] = page_shape(body)
             if operation == 'search' and isinstance(body, dict):
                 evidence['response_keys'] = [k[:60] for k in body if isinstance(k, str)][:40]
                 nil = body.get('search_nil_info')
@@ -384,6 +416,8 @@ class Client:
                 result = parse_page(body, operation, video, parent, title)
             evidence.update(status='valid_page', rows=len(result['rows']), skipped=result['skipped'],
                             skipped_reasons=result['skipped_reasons'],has_more=result['has_more'],next_cursor=result['cursor'])
+            if result.get('reply_visibility'):
+                evidence['reply_visibility'] = result['reply_visibility']
             if self.real_transport:
                 sessions.record_endpoint_status(self.session, operation, 'valid_page')
             return result

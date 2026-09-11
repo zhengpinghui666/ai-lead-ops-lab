@@ -109,6 +109,80 @@ class MonitorTests(unittest.TestCase):
         finished=app.now();self.upstream_failure(task);sch.tick()
         self.assertEqual(mon.state()['next_run_at'],(datetime.fromisoformat(finished)+timedelta(seconds=60)).isoformat())
 
+    def reply_evidence(self):
+        return [dict(operation='identity',transport='http',http_status=200,status='identity_verified',verification_indicated=False),
+                dict(operation='comments',transport='http',http_status=200,status='valid_page',video_id=VIDEO,rows=10,skipped_reasons={'invalid_record':0}),
+                dict(operation='replies',transport='http',http_status=200,status='schema_changed',video_id=VIDEO,
+                     parent_comment_id='7600000000000000002',reason='invalid_page_container',
+                     response_shape=dict(version='http-page-shape-v1',status_code_type='int',status_code=0,verification_indicated=False))]
+
+    def reply_failure(self,task,evidence=None):
+        with app.db() as c:
+            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                      (task,'http_read',json.dumps({'responses':evidence or self.reply_evidence()}),app.now()))
+        self.finish(task,'schema_changed')
+
+    def http_baseline(self):
+        task=col.start(dict(kind='video',target=VIDEO,transport='http',request_id='http-baseline'))['id']
+        self.video(task);self.comment(task);self.finish(task)
+        mon.save(dict(kind='video',target=VIDEO,transport='http'))
+        mon.command('start')
+
+    def test_reply_envelope_retries_three_times_and_keeps_failure_history(self):
+        self.http_baseline();task=sch.tick(NOW);history=[]
+        for delay in (60,120,240):
+            history.append(task);self.reply_failure(task);finished=app.now();sch.tick()
+            due=(datetime.fromisoformat(finished)+timedelta(seconds=delay)).isoformat()
+            self.assertTrue(mon.state()['enabled']);self.assertEqual(mon.state()['next_run_at'],due)
+            task=self.at(due)
+            with app.db() as c:row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            self.assertEqual((row['kind'],row['target'],row['transport']),('video',col.canonical_video(VIDEO),'http'))
+        self.reply_failure(task);sch.tick()
+        self.assertEqual(mon.state()['status'],'attention')
+        with app.db() as c:
+            self.assertTrue(all(c.execute('SELECT status FROM collection_tasks WHERE id=?',(t,)).fetchone()[0]=='schema_changed' for t in history))
+
+    def test_reply_retry_stop_and_success_reset(self):
+        self.http_baseline();task=sch.tick(NOW);self.reply_failure(task);sch.tick()
+        task=self.at(mon.state()['next_run_at']);self.finish(task);sch.tick()
+        task=self.at(mon.state()['next_run_at']);self.reply_failure(task);finished=app.now();sch.tick()
+        self.assertEqual(mon.state()['next_run_at'],(datetime.fromisoformat(finished)+timedelta(seconds=60)).isoformat())
+        mon.command('stop');self.assertIsNone(self.at('2026-09-10T10:00:00+00:00'))
+
+    def test_discovery_reply_retry_keeps_http_job_in_browser_search_monitor(self):
+        import discovery_tracking as discovery
+        self.baseline();mon.save({});discovery.save({'enabled':True});mon.command('start')
+        task=sch.tick(NOW)
+        with app.db() as c:frozen=discovery.worker_config(c,task)
+        self.assertEqual((frozen['kind'],frozen['transport']),('video','http'))
+        self.reply_failure(task);sch.tick()
+        self.assertTrue(mon.state()['enabled']);due=mon.state()['next_run_at']
+        discovery.save({'keywords':['无畏契约复盘'],'work_interval':120})
+        retried=self.at(due)
+        with app.db() as c:
+            self.assertEqual(discovery.worker_config(c,retried),frozen)
+            self.assertEqual(c.execute('SELECT transport FROM collection_tasks WHERE id=?',(retried,)).fetchone()[0],'http')
+        self.assertEqual(mon.state()['target'],'无畏契约陪玩')
+
+    def test_reply_retry_rejects_gates_missing_evidence_and_bad_records(self):
+        task=col.start(dict(kind='video',target=VIDEO,transport='http',request_id='reply-rejections'))['id']
+        self.finish(task,'schema_changed')
+        cases=[[],self.reply_evidence()[1:]]
+        for change in ({'status':'needs_verification'},{'http_status':403},{'operation':'comments'},
+                       {'video_id':'7600000000000000999'},{'parent_comment_id':''},{'reason':'invalid_json'},
+                       {'reason':'invalid_record'},{'response_shape':{}},
+                       {'response_shape':dict(version='http-page-shape-v1',status_code_type='int',status_code=0,verification_indicated=True)}):
+            value=self.reply_evidence();value[-1].update(change);cases.append(value)
+        value=self.reply_evidence();value[1]['skipped_reasons']['invalid_record']=1;cases.append(value)
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            for evidence in cases:
+                c.execute('DELETE FROM collection_diagnostics WHERE task_id=?',(task,))
+                c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                          (task,'http_read',json.dumps({'responses':evidence}),NOW))
+                self.assertIsNone(sch.transient_reply_wait(c,row))
+            self.assertEqual(sch.transient_retry_seconds(c,{'continuous':0},row),0)
+
     def test_explicit_comment_document_timeout_uses_bounded_recovery(self):
         self.baseline();mon.command('start');task=sch.tick(NOW)
         snapshot={'navigation_error':'navigation_timeout','navigation_http_status':None,

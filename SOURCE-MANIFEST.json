@@ -38,13 +38,13 @@
     },
     {
       "name": "COLLECTION_HTTP.md",
-      "sha256": "db3f7ec6680749fc638de88ca953b9329449304c40e75f2c9bc51bf3bf51feef",
-      "bytes": 16612
+      "sha256": "a2d82cbb69610c499886545372a46b5ef6eafba3f7e49013885759afcbd28795",
+      "bytes": 19723
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "37f5bc17e64dac711fade13a57fd3ccfbdc3ba6e85d6ca902f536156ebcab745",
-      "bytes": 62240
+      "sha256": "113300bc3a4ce44c4a2490eb92c94b4c12fcfa0f3d17141c46c900b00ec28c74",
+      "bytes": 65351
     },
     {
       "name": "DISCOVERY_TRACKING.md",
@@ -63,8 +63,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "e6d56b38af79a2cb658c9691154efdde01e8cd4c049d52124118e44fd455c33f",
-      "bytes": 103656
+      "sha256": "b509e93f1c1c42b4bece6a73695acc0e2d8bfb0c8aea33cec9887ce497784662",
+      "bytes": 106767
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -238,8 +238,8 @@
     },
     {
       "name": "collection_scheduler.py",
-      "sha256": "42299c4c7c7b8dd693c2dd81cd109e364e7b95314149b21da015e97395737120",
-      "bytes": 26772
+      "sha256": "3fdfaab77721e6262a94e8a471fb7d815a69cb894a44ac6e4fc30cd21f111540",
+      "bytes": 29698
     },
     {
       "name": "collector.py",
@@ -248,8 +248,8 @@
     },
     {
       "name": "collector_http.py",
-      "sha256": "b028426e7298c1619469fc6cab170ed4b764c4b7ba99a388f89ed5abb63aeda4",
-      "bytes": 21756
+      "sha256": "06750e08775c0c571c34b4e8c844f35baccd248d0ca909ec1a0fb385f7a96f73",
+      "bytes": 23750
     },
     {
       "name": "collector_http_session.py",
@@ -828,8 +828,8 @@
     },
     {
       "name": "test_collector_http.py",
-      "sha256": "600fda2d334082f6e0a0f79da38a756c4c0cea839ac805d19c0b8350f341d8c5",
-      "bytes": 33661
+      "sha256": "fdf03f83e8ff410ce6be987148b411359cc605b3a561f62ca1ba057206c1c406",
+      "bytes": 37304
     },
     {
       "name": "test_discovery_tracking.py",
@@ -973,8 +973,8 @@
     },
     {
       "name": "test_monitoring.py",
-      "sha256": "44207834ec666102c0be3df8cbaee85a0d94da49576911d49db6ba6d7d1c6182",
-      "bytes": 42569
+      "sha256": "4beb17cb0e7b98db79b4f46cb32e62067d0cec2e49747d0afc2914760e370262",
+      "bytes": 47801
     },
     {
       "name": "test_parallel_worker.cjs",
