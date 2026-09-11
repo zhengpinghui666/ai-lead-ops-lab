@@ -1,0 +1,21 @@
+# Runtime state, business data and diagnostic captures stay on this computer.
+/data/
+/artifacts/
+/archive/
+/dist/
+.tools/
+.wrangler/
+node_modules/
+__pycache__/
+*.py[cod]
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.bak
+*.log
+.env*
+.dev.vars*
+*.pem
+*.key

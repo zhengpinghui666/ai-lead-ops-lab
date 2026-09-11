@@ -1,0 +1,231 @@
+"""JSON-line worker for the existing collector ledger; never launches a browser."""
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import deque
+import json
+import sys
+import threading
+import traceback
+import video_metadata
+import video_discovery
+from pathlib import Path
+
+import collector_http as http
+import collector_http_session as sessions
+import uid_bootstrap
+import captcha_runtime
+from collector import video_targets
+
+
+def collect(config, emit, cancel, *, client=None, session=None, identity_probe=None):
+    stopped = threading.Event()
+    failure = []
+    lock = threading.Lock()
+    counts = {'active': 0, 'peak': 0, 'skipped': 0, 'unsupported':0}
+    limit = min(int(config['page_concurrency']), int(config['video_limit']))
+    def diagnostic(value):
+        emit({'type': 'diagnostic', 'stage': 'http_read', 'snapshot': {'responses': [value]}})
+    def progress(change):
+        with lock:
+            counts['active'] += change
+            counts['peak'] = max(counts['peak'], counts['active'])
+            emit({'type': 'parallel', 'active_pages': counts['active'], 'peak_pages': counts['peak'], 'page_concurrency': limit})
+    try:
+        if cancel.is_set():
+            raise http.ReadError('cancelled')
+        if client is None:
+            try:
+                session = session or sessions.load()
+            except FileNotFoundError:
+                raise http.ReadError('needs_login') from None
+            except Exception:
+                raise http.ReadError('session_expired') from None
+            client = http.Client(session, cancelled=lambda: cancel.is_set() or stopped.is_set(), diagnostic=diagnostic)
+            operation = {'search': 'search', 'author': 'detail'}.get(config['kind'], 'comments') if not config.get('resume_targets') else 'comments'
+            client.check_gate(operation)
+            identity = (identity_probe or uid_bootstrap.probe)({'expected_account': session['account'],
+                'cookie': sessions.cookie_header(session, 'identity'), 'user_agent': session['user_agent']})
+            diagnostic({'operation': 'identity', 'transport': 'http', 'status': identity['status'],
+                **{k: identity[k] for k in ('http_status', 'response_bytes', 'response_sha256', 'business_code',
+                    'user_present', 'verification_indicated') if k in identity}})
+            if identity['status'] != 'identity_verified' or identity.get('sender_uid') != session.get('sender_uid'):
+                sessions.record_identity_status(session, 'identity_failed')
+                raise http.ReadError('identity_failed')
+            sessions.record_identity_status(session, 'identity_verified')
+        emit({'type': 'status', 'status': 'running', 'detail': '正在通过后端 HTTP 读取；本批不启动浏览器'})
+        targets = config.get('resume_targets') or []
+        if not targets and config['kind'] == 'video':
+            targets = video_targets(config['target'])
+        if not targets and config['kind'] == 'author':
+            seeds = [row['video_id'] for row in video_targets(config['target'])]
+            result = video_discovery.discover(client, seeds, author_pages=1, page_size=10, include_related=False)
+            targets, audit = video_discovery.select_author_targets(result, config['video_limit'])
+            emit({'type': 'diagnostic', 'stage': 'author_discovery', 'snapshot': {
+                'title': '作者作品发现', 'responses': [audit],
+                'visible_text': f"限定作者候选 {audit['candidate_count']} 个，文案匹配无畏契约 {audit['relevant_count']} 个，选择 {len(targets)} 个。仅在返回候选中按作品发布时间优先；不代表全站或作者全部作品。"}})
+            if result['failures']:
+                raise http.ReadError(result['failures'][0]['status'])
+        if not targets and config['kind'] == 'search':
+            cursor, search_id, seen_cursors = 0, '', set()
+            while len(targets) < config['video_limit']:
+                page = client.page('search', keyword=config['target'], cursor=cursor, search_id=search_id,
+                                   count=min(10, config['video_limit']))
+                with lock:
+                    counts['skipped'] += page['skipped']
+                    counts['unsupported'] += page['skipped']
+                known = {r['video_id'] for r in targets}
+                for row in page['rows']:
+                    if row['video_id'] not in known and len(targets) < config['video_limit']:
+                        targets.append(row)
+                        known.add(row['video_id'])
+                if not page['has_more'] or len(targets) >= config['video_limit']:
+                    break
+                if page['cursor'] == cursor or page['cursor'] in seen_cursors:
+                    raise http.ReadError('schema_changed')
+                seen_cursors.add(cursor)
+                cursor, search_id = page['cursor'], page['search_id']
+        if not targets:
+            emit({'type': 'status', 'status': 'no_data', 'detail': '本次有限发现未找到可读取的相关视频；未扩大范围或切换入口'})
+            return
+        emit({'type': 'targets', 'records': targets})
+
+        def read_video(target):
+            if cancel.is_set() or stopped.is_set():
+                return
+            vid, title = target['video_id'], target['video_title']
+            progress(1)
+            seen = set()
+            skipped = unsupported = 0
+            def remaining():
+                return max(0, config['comment_limit'] - len(seen) - skipped)
+            try:
+                metadata_failed = False
+                if config.get('refresh_video_metrics'):
+                    metrics=target.get('metrics') or config.get('known_video_metrics',{}).get(vid)
+                    if video_metadata.stale(metrics):
+                        try:
+                            target={**target,**client.page('detail',video=vid,count=1)['rows'][0]}
+                            title=target['video_title']
+                        except http.ReadError as exc:
+                            if exc.status not in ('empty_response','schema_changed','no_data','network_error','timeout'):
+                                raise
+                            metadata_failed = True
+                            target={**target,'metrics':metrics}
+                            diagnostic({'operation':'work_metadata','video_id':vid,'status':exc.status,
+                                        'detail':'作品参数未更新；保留原快照，继续本批评论读取'})
+                    else:
+                        target={**target,'metrics':metrics}
+                if config.get('resolve_video_titles') and (not title or title == vid):
+                    title = config.get('known_video_titles', {}).get(vid)
+                    if not title and not metadata_failed:
+                        metadata = client.page('detail', video=vid, count=1)
+                        title = metadata['rows'][0]['video_title']
+                    target = {**target, 'video_title': title or vid}
+                emit({'type': 'video', 'record': target})
+                emit({'type': 'checkpoint', 'video_id': vid, 'status': 'reading', 'detail': 'HTTP 评论／回复读取中'})
+                def deliver(page):
+                    nonlocal skipped, unsupported
+                    omitted = min(page['skipped'], remaining())
+                    nontext = min(omitted, page.get('skipped_reasons', {}).get('non_text', 0))
+                    skipped += omitted
+                    unsupported += omitted-nontext
+                    for row in page['rows']:
+                        if cancel.is_set() or stopped.is_set():
+                            raise http.ReadError('cancelled')
+                        if row['comment_id'] not in seen and remaining():
+                            emit({'type': 'comment', 'record': row})
+                            seen.add(row['comment_id'])
+                main_cursor, main_visited = 0, set()
+                reply_queue, queued_parents = deque(), set()
+                reply_turn = False
+                while remaining() and (main_cursor is not None or reply_queue):
+                    is_reply = bool(reply_queue) and (reply_turn or main_cursor is None)
+                    if is_reply:
+                        parent, cursor, visited = reply_queue.popleft()
+                        page = client.page('replies', video=vid, parent=parent, title=title,
+                            cursor=cursor, count=min(10,remaining()))
+                    else:
+                        cursor, visited = main_cursor, main_visited
+                        page = client.page('comments', video=vid, title=title, cursor=cursor,
+                            count=min(10,remaining()))
+                    deliver(page)
+                    if not remaining():
+                        break
+                    if page['has_more']:
+                        if page['cursor'] == cursor or page['cursor'] in visited:
+                            raise http.ReadError('schema_changed')
+                        visited.add(cursor)
+                    if is_reply:
+                        if page['has_more']:
+                            reply_queue.append((parent, page['cursor'], visited))
+                        reply_turn = False
+                    else:
+                        main_cursor = page['cursor'] if page['has_more'] else None
+                        for parent in page['reply_targets']:
+                            if parent in seen and parent not in queued_parents:
+                                reply_queue.append((parent, 0, set()))
+                                queued_parents.add(parent)
+                        reply_turn = True
+                emit({'type': 'checkpoint', 'video_id': vid, 'status': 'partial' if unsupported else 'done',
+                      'detail': '达到本批观察预算或已读取响应可见末页；无文字内容计入跳过，不代表全量评论' if not unsupported else '部分记录结构不支持，保留已读取数据'})
+            except http.ReadError as exc:
+                with lock:
+                    if not failure:
+                        failure.append(exc)
+                stopped.set()
+                emit({'type': 'checkpoint', 'video_id': vid, 'status': 'partial', 'detail': str(exc)})
+            except Exception as exc:
+                frames = traceback.extract_tb(exc.__traceback__)
+                diagnostic({'operation':'processing', 'video_id':vid, 'status':'schema_changed',
+                    'error_type':type(exc).__name__, 'frames':[
+                        {'file':Path(f.filename).name, 'function':f.name, 'line':f.lineno}
+                        for f in frames[-4:]]})
+                with lock:
+                    if not failure:
+                        failure.append(http.ReadError('schema_changed'))
+                stopped.set()
+                emit({'type': 'checkpoint', 'video_id': vid, 'status': 'partial', 'detail': 'HTTP 响应处理异常；已停止整批并保留已有数据'})
+            finally:
+                with lock:
+                    counts['skipped'] += skipped
+                    counts['unsupported'] += unsupported
+                if skipped:
+                    emit({'type': 'skipped', 'count': skipped})
+                progress(-1)
+        with ThreadPoolExecutor(max_workers=limit) as pool:
+            futures = [pool.submit(read_video, row) for row in targets]
+            for future in as_completed(futures):
+                future.result()
+        if cancel.is_set():
+            raise http.ReadError('cancelled')
+        if failure:
+            raise failure[0]
+        emit({'type': 'status', 'status': 'partial' if counts['unsupported'] else 'completed',
+              'detail': 'HTTP 批次已结束；已保存来源和本批观察结果' + ('，部分结构不支持' if counts['unsupported'] else f"；跳过 {counts['skipped']} 条无文字内容" if counts['skipped'] else '')})
+    except http.ReadError as exc:
+        if exc.status == 'needs_verification':
+            captcha_runtime.http_unavailable(emit)
+        emit({'type': 'status', 'status': exc.status, 'detail': str(exc)})
+    except Exception as exc:
+        emit({'type': 'status', 'status': 'failed', 'detail': 'HTTP 采集器异常，已保留数据；错误类型：' + type(exc).__name__})
+
+
+def main():
+    config = json.loads(sys.stdin.readline(30001))
+    cancel = threading.Event()
+    output_lock = threading.Lock()
+    def emit(message):
+        with output_lock:
+            print(json.dumps(message, ensure_ascii=False), flush=True)
+    def commands():
+        for raw in sys.stdin:
+            try:
+                if json.loads(raw).get('command') == 'cancel':
+                    cancel.set()
+            except ValueError:
+                cancel.set()
+    threading.Thread(target=commands, daemon=True).start()
+    collect(config, emit, cancel)
+
+
+if __name__ == '__main__':
+    main()

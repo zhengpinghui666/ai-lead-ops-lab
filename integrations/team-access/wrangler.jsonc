@@ -1,0 +1,11 @@
+{
+  "name": "clubops-team-gateway",
+  "main": "gateway.mjs",
+  "compatibility_date": "2026-09-11",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {"enabled": false},
+  "vars": {"PUBLIC_ORIGIN": "https://clubops-team-4ff187.pages.dev"},
+  "durable_objects": {"bindings": [{"name": "TEAM", "class_name": "TeamGateway"}]},
+  "migrations": [{"tag": "v1", "new_sqlite_classes": ["TeamGateway"]}]
+}

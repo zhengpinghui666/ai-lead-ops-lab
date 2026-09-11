@@ -1,0 +1,6 @@
+{
+  "name": "clubops-team-4ff187",
+  "pages_build_output_dir": "./public",
+  "compatibility_date": "2026-09-11",
+  "durable_objects": {"bindings": [{"name": "TEAM", "class_name": "TeamGateway", "script_name": "clubops-team-gateway"}]}
+}

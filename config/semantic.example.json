@@ -1,0 +1,8 @@
+{
+  "enabled": false,
+  "backend": "ollama",
+  "host": "127.0.0.1",
+  "port": 11434,
+  "model": "",
+  "timeout_seconds": 30
+}

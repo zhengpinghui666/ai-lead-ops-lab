@@ -1,0 +1,222 @@
+import copy
+import json
+from pathlib import Path
+import tempfile
+import time
+import threading
+import unittest
+from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
+
+import collector_http as http
+import collector_http_session as sessions
+import video_discovery as discovery
+from test_collector_http import session, FakeSigner, VIDEO, PARENT, body, record
+import collector_http_worker as worker
+
+AUTHOR = 'MS4wLjABAAAA_TEST_AUTHOR'
+
+
+def item(vid=VIDEO, **kwargs):
+    return {'aweme_id': vid, 'desc': '无畏契约找队友', 'author': {'sec_uid': AUTHOR},
+            'create_time': int(time.time()), 'statistics': {'comment_count': 42}, **kwargs}
+
+
+class DiscoveryTests(unittest.TestCase):
+    def test_optional_metrics_failure_keeps_comments_but_challenge_stops(self):
+        for status in ('empty_response','needs_verification'):
+            calls=[]
+            class Client:
+                def page(self,operation,**kw):
+                    calls.append(operation)
+                    if operation=='detail':raise http.ReadError(status)
+                    return http.parse_page(body([record()]),operation,VIDEO)
+            events=[]
+            worker.collect({'kind':'video','target':VIDEO,'video_limit':1,'comment_limit':1,'page_concurrency':1,
+                'resolve_video_titles':True,'refresh_video_metrics':True},events.append,threading.Event(),client=Client())
+            self.assertEqual(calls,['detail','comments'] if status=='empty_response' else ['detail'])
+            self.assertEqual(events[-1]['status'],'completed' if status=='empty_response' else status)
+
+    def test_formal_worker_refreshes_stale_stats_and_keeps_fresh_cache(self):
+        import video_metadata
+        for cached in (None,video_metadata.extract({'statistics':{'digg_count':9}})):
+            calls=[]
+            class Client:
+                def page(self,operation,**kw):
+                    calls.append(operation)
+                    if operation=='detail':return discovery.parse_discovery({'status_code':0,'aweme_detail':item(statistics={'digg_count':42})},operation,video=VIDEO)
+                    return http.parse_page(body([record()]),operation,VIDEO,title=kw.get('title',''))
+            events=[]
+            worker.collect({'kind':'video','target':VIDEO,'video_limit':1,'comment_limit':1,'page_concurrency':1,
+                'resolve_video_titles':True,'known_video_titles':{VIDEO:'cached'},'refresh_video_metrics':True,
+                'known_video_metrics':{VIDEO:cached}},events.append,threading.Event(),client=Client())
+            metrics=next(e['record']['metrics'] for e in events if e['type']=='video')
+            self.assertEqual(metrics['likes'],9 if cached else 42)
+            self.assertEqual(calls,['comments'] if cached else ['detail','comments'])
+
+    def test_missing_video_title_resolves_once_and_cached_title_skips_detail(self):
+        for cached in ('', '已保存的作品文案'):
+            calls=[]
+            class Client:
+                def page(self,operation,**kw):
+                    calls.append(operation)
+                    if operation=='detail':return discovery.parse_discovery({'status_code':0,'aweme_detail':item()},operation,video=VIDEO)
+                    return http.parse_page(body([record()]),operation,VIDEO,title=kw.get('title',''))
+            events=[]
+            worker.collect({'kind':'video','target':VIDEO,'video_limit':1,'comment_limit':1,'page_concurrency':1,
+                'resolve_video_titles':True,'known_video_titles':{VIDEO:cached}},events.append,threading.Event(),client=Client())
+            title=next(e['record']['video_title'] for e in events if e['type']=='video')
+            self.assertEqual(title,cached or '无畏契约找队友')
+            self.assertEqual(calls,['comments'] if cached else ['detail','comments'])
+            self.assertEqual(events[-1]['status'],'completed')
+
+    def test_processing_diagnostics_exclude_exception_message(self):
+        class Client:
+            def page(self,*args,**kwargs):raise RuntimeError('PRIVATE_TOKEN_AND_RESPONSE')
+        events=[]
+        worker.collect({'kind':'video','target':VIDEO,'video_limit':1,'comment_limit':10,'page_concurrency':1},
+            events.append,threading.Event(),client=Client())
+        processing=[e['snapshot']['responses'][0] for e in events if e['type']=='diagnostic']
+        self.assertEqual(processing[0]['error_type'],'RuntimeError')
+        self.assertEqual(processing[0]['video_id'],VIDEO)
+        self.assertNotIn('PRIVATE_TOKEN',json.dumps(events))
+        with patch('collector_http_session.load',side_effect=ValueError('PRIVATE_COOKIE')):
+            events=[]
+            worker.collect({'kind':'video','target':VIDEO,'video_limit':1,'comment_limit':10,'page_concurrency':1},
+                events.append,threading.Event())
+        self.assertEqual(events[-1]['status'],'session_expired')
+        self.assertNotIn('PRIVATE_COOKIE',json.dumps(events))
+
+    def test_reply_pages_rotate_between_parents(self):
+        parents=[PARENT,str(int(PARENT)+1)];calls=[]
+        class Client:
+            def page(self,operation,**kw):
+                if operation=='comments':
+                    return http.parse_page(body([record(cid=p,reply_comment_total=5) for p in parents]),operation,VIDEO)
+                parent,cursor=kw['parent'],kw['cursor'];calls.append((parent,cursor))
+                cid=str(int(parent)+100+cursor*10)
+                return http.parse_page(body([record(cid=cid,reply_id=parent)],has_more=int(cursor==0),cursor=cursor+1),
+                    operation,VIDEO,parent)
+        events=[]
+        worker.collect({'kind':'video','target':VIDEO,'video_limit':1,'comment_limit':6,'page_concurrency':1},
+            events.append,threading.Event(),client=Client())
+        self.assertEqual(calls,[(parents[0],0),(parents[1],0),(parents[0],1),(parents[1],1)])
+
+    def test_large_old_reply_thread_does_not_starve_second_main_page(self):
+        calls=[]
+        class Client:
+            def page(self,operation,**kw):
+                cursor=kw['cursor'];calls.append((operation,cursor))
+                if operation=='comments':
+                    rows=[record(cid=str(int(PARENT)+cursor+i),reply_comment_total=100 if i==0 else 0) for i in range(10)]
+                else:
+                    rows=[record(cid=str(int(PARENT)+100+cursor+i),reply_id=PARENT) for i in range(10)]
+                return http.parse_page(body(rows,has_more=1,cursor=cursor+10),operation,VIDEO,kw.get('parent',''))
+        events=[]
+        worker.collect({'kind':'video','target':VIDEO,'video_limit':1,'comment_limit':30,'page_concurrency':1},
+            events.append,threading.Event(),client=Client())
+        self.assertEqual(calls,[('comments',0),('replies',0),('comments',10)])
+        comments=[e['record'] for e in events if e['type']=='comment']
+        self.assertEqual(len(comments),30)
+        self.assertEqual(len([r for r in comments if not r['parent_comment_id']]),20)
+
+    def test_existing_snapshot_derives_only_matching_unexpired_cookies(self):
+        value = session()
+        value['cookies']['comments'].append({'name':'narrow', 'value':'DO_NOT_FORWARD',
+            'domain':'.douyin.com', 'path':sessions.PATHS['comments'], 'expires':-1})
+        value['cookies']['identity'].append({'name':'expired', 'value':'OLD',
+            'domain':'.douyin.com', 'path':'/', 'expires':time.time()-10})
+        original = copy.deepcopy(value)
+        for operation in ('detail','author','related'):
+            self.assertEqual(sessions.cookie_header(value,operation),'sessionid=TEST_ONLY_SECRET')
+        self.assertEqual(value,original)
+        value['cookies']['search'][0]['value']='CONFLICT'
+        with self.assertRaises(ValueError):sessions.cookie_header(value,'author')
+
+    def test_fixed_routes_and_params_and_redacted_diagnostics(self):
+        calls, diagnostics = [], []
+        def exchange(url, headers, cancelled):
+            parsed=urlsplit(url);calls.append((parsed,headers))
+            if parsed.path==sessions.READ_PATHS['detail']:
+                payload={'status_code':0,'aweme_detail':item()}
+            else:payload={'status_code':0,'aweme_list':[item()], 'has_more':0,'max_cursor':0}
+            return 200,'application/json',json.dumps(payload).encode()
+        client=http.Client(session(),signer=FakeSigner(),transport=exchange,diagnostic=diagnostics.append)
+        for operation in ('detail','author','related'):
+            result=client.page(operation,video=VIDEO,sec_uid=AUTHOR)
+            self.assertEqual(result['rows'][0]['video_id'],VIDEO)
+        self.assertEqual([p.path for p,h in calls],[sessions.READ_PATHS[k] for k in ('detail','author','related')])
+        self.assertEqual(parse_qs(calls[1][0].query)['sec_user_id'],[AUTHOR])
+        self.assertEqual(parse_qs(calls[2][0].query)['filterGids'],[VIDEO])
+        self.assertEqual(calls[1][1]['Referer'],sessions.ORIGIN+'/user/'+AUTHOR)
+        self.assertNotIn('SECRET',json.dumps(diagnostics))
+        self.assertNotIn('SIGNATURE',json.dumps(diagnostics))
+
+    def test_wrong_identity_and_unknown_payload_are_never_candidates(self):
+        for operation,payload in [('detail',{'status_code':0,'aweme_detail':item('123456')}),
+                ('author',{'status_code':0,'aweme_list':[item(author={'sec_uid':'ANOTHER_AUTHOR'})],'has_more':0}),
+                ('related',{'status_code':0,'data':[]}),('author',{'status_code':0,'aweme_list':[],'has_more':1,'max_cursor':1})]:
+            with self.subTest(operation=operation),self.assertRaises(http.ReadError):
+                discovery.parse_discovery(payload,operation,video=VIDEO,sec_uid=AUTHOR)
+        unknown=discovery.parse_discovery({'status_code':0,'aweme_detail':item(create_time=None,statistics={})},'detail',video=VIDEO)
+        self.assertIsNone(unknown['rows'][0]['published_at'])
+        self.assertIsNone(unknown['rows'][0]['comment_count'])
+
+    def test_dedup_retains_multiple_sources_and_bounds_pages(self):
+        calls=[]
+        class Client:
+            def page(self,operation,**kw):
+                calls.append(operation)
+                return discovery.parse_discovery({'status_code':0,
+                    'aweme_detail':item(), 'aweme_list':[item('123456'),item('123456')],
+                    'has_more':1,'max_cursor':100},operation,video=VIDEO,sec_uid=AUTHOR)
+        result=discovery.discover(Client(),[VIDEO,VIDEO])
+        self.assertEqual(calls,['detail','author','related'])
+        self.assertEqual(len(result['candidates']),1)
+        self.assertEqual([p['kind'] for p in result['candidates'][0]['provenance']],['author','related'])
+        self.assertFalse(result['all_douyin'])
+        self.assertFalse(result['comment_freshness_verified'])
+
+    def test_failed_read_keeps_candidates_but_stops_expansion(self):
+        calls=[]
+        class Client:
+            def page(self,operation,**kw):
+                calls.append(operation)
+                if operation=='related':raise http.ReadError('needs_verification')
+                return discovery.parse_discovery({'status_code':0,'aweme_detail':item(),
+                    'aweme_list':[item('123456')],'has_more':0},operation,video=VIDEO,sec_uid=AUTHOR)
+        result=discovery.discover(Client(),[VIDEO,'123456'])
+        self.assertEqual(calls,['detail','author','related'])
+        self.assertEqual(result['status'],'partial')
+        self.assertEqual(len(result['candidates']),1)
+        self.assertEqual(result['failures'][0]['status'],'needs_verification')
+
+    def test_account_challenge_blocks_new_endpoints_search_only_does_not(self):
+        with tempfile.TemporaryDirectory() as folder,patch('collector_http_session.path',return_value=Path(folder)/'session.dpapi'):
+            value=session()
+            sessions.record_endpoint_status(value,'search','needs_verification',verification_scope='search')
+            client=http.Client(value,signer=FakeSigner())
+            client.check_gate('author')
+            sessions.record_endpoint_status(value,'related','needs_verification')
+            with patch('collector_http.exchange') as exchange,self.assertRaises(http.ReadError):
+                client.page('detail',video=VIDEO)
+            exchange.assert_not_called()
+
+    def test_request_budget_cancel_and_invalid_parameters_make_no_extra_reads(self):
+        calls=[]
+        def exchange(*args):
+            calls.append(1)
+            return 200,'application/json',json.dumps({'status_code':0,'aweme_detail':item()}).encode()
+        client=http.Client(session(),signer=FakeSigner(),transport=exchange,request_limit=1)
+        client.page('detail',video=VIDEO)
+        with self.assertRaises(http.ReadError):client.page('detail',video=VIDEO)
+        for kwargs in ({'operation':'author','sec_uid':'https://other.test'},
+                {'operation':'detail','video':VIDEO,'cursor':1}, {'operation':'related','video':VIDEO,'count':True}):
+            with self.assertRaises(ValueError):client.page(**kwargs)
+        self.assertEqual(len(calls),1)
+        client.cancelled=lambda:True
+        with self.assertRaises(http.ReadError) as result:client.page('detail',video=VIDEO)
+        self.assertEqual(result.exception.status,'cancelled')
+
+
+if __name__=='__main__':unittest.main()

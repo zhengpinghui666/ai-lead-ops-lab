@@ -1,0 +1,55 @@
+'use strict';
+// ISOLATED SYNTHETIC TEST DOUBLE: no browser, no HTTP, no Douyin access, no live DB.
+const {EventEmitter}=require('node:events');
+const scenario=process.env.CLUBOPS_FIXTURE_SCENARIO||'success';
+const vid='7600000000000000001';
+let verified=false;
+process.stdin.on('data',chunk=>{if(String(chunk).includes('"command":"resume"'))verified=true;});
+const response=(url,body)=>({url:()=>url,status:()=>200,headers:()=>({'content-type':'application/json'}),body:async()=>Buffer.from(JSON.stringify(body))});
+class Context extends EventEmitter {
+  constructor(){super();this.closed=false;this.page=new Page(this);}
+  pages(){return [this.page];}
+  async newPage(){return this.page;}
+  async close(){if(this.closed)return;this.closed=true;clearTimeout(this.closeTimer);this.emit('close');}
+}
+class Page extends EventEmitter {
+  constructor(ctx){super();this.ctx=ctx;this.address='about:blank';this.mouse={wheel:async()=>{}};}
+  url(){return this.address;}
+  isClosed(){return this.ctx.closed;}
+  async title(){return scenario==='public-comments-login-to-post'?'合成夹具：无畏契约陪玩 - 抖音':scenario.includes('verification')&&!verified?'验证码中间页':'合成夹具页面';}
+  async goto(url){
+    this.address=url;
+    if(scenario==='verification-window-close')this.ctx.closeTimer=setTimeout(()=>this.ctx.close(),6000);
+    if(scenario.startsWith('verification')||scenario==='device-challenge')return {status:()=>200};
+    if(url.includes('/search/')){
+      if(scenario==='resume-search-dom')return {status:()=>200};
+      if(['search-empty-body','search-html-body','search-body-unavailable'].includes(scenario)){
+        const reply=response('https://www.douyin.com/aweme/v1/web/general/search/single/',{});
+        reply.headers=()=>({'content-type':scenario==='search-html-body'?'text/html':'application/json'});
+        reply.body=async()=>{if(scenario==='search-body-unavailable')throw Error('PRIVATE_RESPONSE_SENTINEL');return Buffer.from(scenario==='search-html-body'?'<html>PRIVATE_RESPONSE_SENTINEL</html>':'');};
+        this.emit('response',reply);return {status:()=>200};
+      }
+      if(scenario==='queue-overflow'){
+        for(let i=0;i<9;i++)this.emit('response',response('https://www.douyin.com/aweme/v1/web/general/search/single/',{data:[]}));
+        return {status:()=>200};
+      }
+      this.emit('response',response('https://www.douyin.com/aweme/v1/web/general/search/single/',{data:[{aweme_info:{aweme_id:vid,desc:'合成夹具：无畏契约陪练'}}]}));
+    }else {
+      const body=scenario==='schema-error'?{status_code:99,comments:[]}:{status_code:0,comments:[{cid:scenario==='invalid-id'?7600000000000000002:'7600000000000000002',aweme_id:vid,text:'合成夹具评论：找个陪练',user:{uid:'123456789012',nickname:'测试夹具'},create_time:1750000000}],has_more:0};
+      if(scenario.startsWith('scroll-'))body.has_more=1;
+      if(scenario==='empty-null'||scenario==='ambiguous-null'){
+        body.comments=null;body.total=scenario==='empty-null'?0:1;
+      }
+      if(scenario==='embedded-replies')body.comments[0].reply_comment=[
+        {cid:'7600000000000000003',text:'合成二级评论：多少钱',reply_id:'7600000000000000002',user:{uid:'123456789013'}},
+        {cid:'7600000000000000004',text:'超出本批总评论上限，不应输出'}
+      ];
+      this.emit('response',response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`,body));
+      if(scenario==='mixed-schema')this.emit('response',response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`,{status_code:99,comments:[]}));
+    }
+    return {status:()=>200};
+  }
+  locator(selector){return {innerText:async()=>scenario==='device-challenge'?'登录后即可搜索更多精彩视频\n使用原设备扫码\n为保障账号安全，请使用「抖音 APP」扫码验证':scenario==='public-comments-login-to-post'?'全部评论\n请先登录后发表评论\n已加载的合成评论\n登录后即可参与互动讨论':scenario==='success'?'合成夹具正文':'',count:async()=>selector==='[data-e2e="comment-list"]'&&scenario.startsWith('scroll-')?1:0,evaluateAll:async()=>scenario==='resume-search-dom'&&verified&&selector.startsWith('a[')?[{href:`https://www.douyin.com/video/${vid}`,label:'人工继续后的合成视频'}]:[],isVisible:async()=>scenario.startsWith('scroll-'),hover:async()=>{if(scenario==='scroll-late-budget')this.emit('response',response(`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`,{status_code:0,comments:[{cid:'7600000000000000005',aweme_id:vid,text:'迟到的合成评论',user:{uid:'123456789015'}}],has_more:1}));if(scenario.startsWith('scroll-')){const e=Error('synthetic hover obstruction');e.name='TimeoutError';throw e;}},first(){return this;},click:async()=>{},all:async()=>[]};}
+  getByRole(){return this.locator('button');}
+}
+module.exports={chromium:{launchPersistentContext:async()=>new Context()}};

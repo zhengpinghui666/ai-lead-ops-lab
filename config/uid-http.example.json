@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "sender_uid": "",
+  "allowed_recipient_uids": [],
+  "provider_file": "private/uid_session.py"
+}

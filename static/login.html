@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light"><title>账号登录 · ClubOps</title>
+  <link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/login.css">
+  <script defer src="/vendor/lucide.min.js"></script><script defer src="/login.js"></script>
+</head>
+<body>
+  <button class="mobile-nav-backdrop" data-command="close-menu" aria-label="关闭导航遮罩" tabindex="-1"></button>
+  <aside id="sidebar">
+    <button class="icon-button mobile-nav-close" data-command="close-menu" aria-label="关闭导航"><i data-lucide="x"></i></button>
+    <a class="brand" href="/#overview"><span class="brand-mark"><i data-lucide="audio-lines"></i></span><span>ClubOps<small>无畏契约 · 获客导流</small></span></a>
+    <div class="nav-caption">工作台</div>
+    <nav aria-label="主导航">
+      <a href="/#overview"><i data-lucide="layout-dashboard"></i>工作总览</a>
+      <a href="/#monitor"><i data-lucide="radar"></i>视频与采集</a>
+      <a href="/#live"><i data-lucide="radio"></i>直播弹幕</a>
+      <a href="/#leads"><i data-lucide="scan-text"></i>需求筛选</a>
+      <a href="/#inbox"><i data-lucide="messages-square"></i>私信导流</a>
+      <a href="/#analytics"><i data-lucide="chart-no-axes-combined"></i>导流统计</a>
+      <a href="/#settings"><i data-lucide="sliders-horizontal"></i>数据与设置</a>
+      <a href="/login" class="active" aria-current="page"><i data-lucide="key-round"></i>账号登录</a>
+    </nav>
+    <div class="sidebar-bottom">本机工作区 · 登录恢复</div>
+  </aside>
+  <div class="shell">
+    <button class="icon-button mobile-menu" data-command="menu" aria-label="打开导航" aria-controls="sidebar" aria-expanded="false"><i data-lucide="menu"></i><span>导航</span></button>
+    <main id="main" class="login-main" tabindex="-1">
+      <div class="page-head"><div><h1>账号登录</h1><p class="muted">保留登录状态，让中断的采集继续。</p></div><a class="button small" href="/#monitor">返回采集</a></div>
+      <div id="feedback" role="status" aria-live="polite" hidden></div>
+      <section class="card login-status-card" aria-labelledby="status-title">
+        <div class="card-body"><div class="row spread"><span class="login-eyebrow">当前连接</span><span id="status-badge" class="badge">正在读取</span></div>
+          <h2 id="status-title">正在检查本机状态…</h2><p id="status-description" class="muted">此页面只读取状态，不会自动请求短信。</p>
+          <div id="job-context" class="login-meta" hidden></div>
+          <div class="login-actions"><button class="button primary" id="setup-link" data-command="setup" hidden>连接手机转发</button><button class="button primary" id="start-login" data-command="start" disabled>检查并恢复登录</button><button class="button" id="manual-complete" data-command="complete" hidden>已手动完成登录，核对身份</button><button class="button" id="cancel-login" data-command="cancel" hidden>取消本次任务</button></div>
+          <p id="action-hint" class="login-hint"></p>
+          <div id="resume-choice" hidden><label class="field"><span>登录成功后</span><select id="resume-task"><option value="">只恢复登录，不启动采集</option></select></label></div>
+          <div id="phone-test-message" class="login-test" hidden><strong>手机连接测试</strong><p>在 iPhone 上手动运行已配置的转发快捷指令，输入下方测试文字：</p><output id="test-message"></output><small>这是连接测试，不会向抖音请求验证码。</small></div>
+        </div>
+      </section>
+      <ol class="login-steps" aria-label="连接准备进度">
+        <li><i data-lucide="cloud"></i><div><strong>1. 中转连接</strong><span id="relay-step">等待检查</span></div></li>
+        <li><i data-lucide="smartphone"></i><div><strong>2. 手机转发</strong><span id="phone-step">等待检查</span></div></li>
+        <li><i data-lucide="shield-check"></i><div><strong>3. 登录状态</strong><span id="session-step">等待检查</span></div></li>
+      </ol>
+      <div class="login-grid">
+        <section class="card" aria-labelledby="login-config-title">
+          <div class="card-head"><h2 id="login-config-title">恢复设置</h2></div>
+          <form id="recovery-form" class="card-body">
+            <label class="field"><span>登录账号标识</span><input id="login-account" name="account" autocomplete="off" pattern="[A-Za-z0-9_.\-]{2,64}" minlength="2" maxlength="64" required aria-describedby="account-help"></label>
+            <small id="account-help">登录后会独立核对该账号，防止保存错账号的会话。</small>
+            <label class="login-toggle"><input id="auto-recover" name="auto_recover" type="checkbox"><span><strong>登录失效时自动恢复</strong><small id="auto-help">完成中转检查和手机连接测试后可开启。</small></span></label>
+            <p id="config-status" class="login-hint" role="status">保存设置不会启动登录或采集。</p>
+            <div class="login-actions"><button class="button primary small" id="save-config" type="submit" disabled>保存设置</button><button class="button small" type="button" data-command="reset">还原修改</button></div>
+          </form>
+        </section>
+        <section class="card" aria-labelledby="pairing-title">
+          <div class="card-head"><h2 id="pairing-title">连接手机</h2><span id="pairing-badge" class="badge">待连接</span></div>
+          <div class="card-body">
+            <p id="pairing-description">通过固定 HTTPS 中转，手机使用蜂窝网络也能转发本次登录验证码。</p>
+            <div class="login-actions"><button class="button small" id="check-relay" data-command="check" disabled>检查中转连接</button><button class="button small" id="test-phone" data-command="phone-test" disabled>测试手机转发</button></div>
+            <details id="pairing-details" class="login-details"><summary>首次连接与快捷指令</summary>
+              <ol class="login-guide"><li>在自己的 Cloudflare 账号部署短信中转，完成下方地址绑定。</li><li>显示手机配置，在 iPhone 的 Scriptable 中粘贴配置，再关联短信快捷指令。</li><li>先用蜂窝网络测试转发，成功后再开启自动恢复。</li></ol>
+              <button class="button small" id="show-phone" data-command="show-phone" disabled>显示手机配置</button>
+              <div id="phone-credentials" hidden><label class="field"><span>Scriptable 配置 JSON · 完整复制到手机</span><textarea id="phone-scriptable" readonly rows="7" spellcheck="false"></textarea></label><label class="field"><span>中转地址</span><input id="phone-origin" readonly></label><label class="field"><span>Authorization 请求头</span><textarea id="phone-authorization" readonly rows="3" spellcheck="false"></textarea></label><small>仅用于自己的 iPhone，含手机专用凭证，60 秒后自动清空。</small><button class="button small" type="button" data-command="hide-phone">隐藏配置</button></div>
+              <a class="login-guide-link" href="/login-guide">查看 iPhone 配置步骤 <i data-lucide="arrow-right"></i></a>
+            </details>
+            <details id="deployment-details" class="login-details"><summary>中转部署与地址</summary>
+              <p class="login-hint">先生成本机配对，再部署同一套中转凭证。绑定后不自动更换地址。</p>
+              <button class="button small" id="provision-relay" data-command="provision" disabled>生成本机配对</button>
+              <form id="relay-form"><label class="field"><span>已部署的 HTTPS 地址</span><input id="relay-origin" type="url" placeholder="https://你的中转.workers.dev" required autocomplete="off" maxlength="250"></label><button class="button small" id="bind-relay" type="submit" disabled>绑定地址</button></form>
+            </details>
+          </div>
+        </section>
+      </div>
+      <section class="card section-gap" aria-labelledby="history-title"><div class="card-head"><h2 id="history-title">最近恢复记录</h2><small>保留状态，不保存验证码</small></div><div id="login-history" class="card-body"><p class="muted">正在读取…</p></div></section>
+      <p class="login-footnote">短信登录用于恢复账号会话。关键词搜索要求的滑块、点选等验证会单独提示；登录成功后仍需确认相应读取恢复。</p>
+    </main>
+  </div>
+</body>
+</html>

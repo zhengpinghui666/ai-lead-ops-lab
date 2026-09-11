@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>iPhone 转发设置 · ClubOps</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/login.css"></head>
+<body><main class="login-main" style="max-width:900px"><div class="page-head"><h1>iPhone 短信转发</h1><a class="button small" href="/login">返回账号登录</a></div>
+<section class="card"><div class="card-body">
+<p>使用系统快捷指令接收短信，由 Scriptable 在手机上提取验证码并转发给自己的中转。电脑在当前登录页填写，再核对抖音账号身份。</p>
+<p class="notice">先在电脑“账号登录”中确认中转连接可用，再配对手机并测试蜂窝网络。Cloudflare 首次部署需要先完成注册邮箱验证。</p>
+<h2 style="margin-top:24px">1. 安装手机脚本</h2>
+<ol class="login-guide"><li>在 iPhone 安装 <a href="https://scriptable.app/" target="_blank" rel="noopener">Scriptable</a>。</li><li><a href="/iphone-script" download="ClubOps-Login.js">下载 ClubOps 登录转发脚本</a>，转存到自己的 iPhone。在 Scriptable 新建脚本，将文件的全部内容粘贴进去，命名为 <strong>ClubOps 登录转发</strong>。这是 JavaScript 脚本，不是苹果 .shortcut 安装文件，不需要 Mac 签名。</li><li>云端部署后，手机也可从自己的中转地址加 <code>/iphone-script</code> 下载相同脚本；下载内容不包含配对凭证。</li></ol>
+<h2 style="margin-top:24px">2. 配对手机</h2>
+<ol class="login-guide"><li>电脑进入“账号登录”，完成中转地址绑定和连接检查，点击“显示手机配置”。</li><li>在手机运行刚创建的 Scriptable 脚本，将电脑显示的完整 <strong>Scriptable 配置 JSON</strong> 粘贴到配置框，选择“检查并保存”。只有地址鉴权检查成功后才保存。</li><li>配对信息保存在 Scriptable 的 Keychain 中。无需把凭证写到代码或快捷指令动作中；也不要把配置放进公开分享链接。</li></ol>
+<h2 style="margin-top:24px">3. 先测蜂窝网络</h2>
+<ol class="login-guide"><li>电脑点击“测试手机转发”。这只创建合成连接测试，不向抖音请求短信。</li><li>iPhone 关闭 Wi-Fi、保持蜂窝数据，在 Scriptable 运行脚本，选“手动连接测试”，输入电脑显示的完整测试文字。</li><li>手机出现“验证码已转发”，电脑出现“手机连接测试通过”，两边才算这一项测试通过。只看到“手机已连接中转”还没有验证提交与取回。</li></ol>
+<h2 style="margin-top:24px">4. 绑定短信自动化</h2>
+<ol class="login-guide"><li>在系统“快捷指令”中新建 <strong>ClubOps 登录转发</strong>：添加“从输入中获取文本”，输入选择“快捷指令输入”。</li><li>添加 Scriptable 提供的 <strong>Run Script／运行脚本</strong> 动作，选择同名脚本，把上一步文本设为该动作的 Parameter／参数。保持“在 App 中运行”关闭，以便后台执行。首次访问中转域名时先完成设备提示的许可。</li><li>在“自动化”里创建“信息”触发：按自己的抖音短信设置发送人或内容包含“抖音”的条件，选择系统提供的立即运行方式。</li><li>动作设置为“运行快捷指令：ClubOps 登录转发”，并把收到的信息正文传给快捷指令输入。不要把通知标题或空内容作为输入。</li><li>脚本在手机上检查品牌及唯一的 4–8 位验证码，再核对电脑正在等待的账号、任务和期限。不要增加“显示输入／显示结果”动作，以免短信或验证码出现在屏幕上。脚本输出只有状态与说明。</li></ol>
+<p><a href="https://support.apple.com/zh-cn/guide/shortcuts/apdd711f9dff/ios" target="_blank" rel="noopener">Apple 信息触发说明</a> · <a href="https://support.apple.com/zh-cn/guide/shortcuts/apd602971e63/ios" target="_blank" rel="noopener">Apple 自动运行说明</a> · <a href="https://docs.scriptable.app/args/" target="_blank" rel="noopener">Scriptable 参数说明</a></p>
+<h2 style="margin-top:24px">日常状态怎么看</h2>
+<div class="table-scroll"><table><thead><tr><th>手机结果</th><th>含义与下一步</th></tr></thead><tbody><tr><td>验证码已转发</td><td>中转已接收；继续看电脑是否填写并完成身份核对。</td></tr><tr><td>没有等待任务</td><td>电脑未在等待本次验证码，短信不上传。</td></tr><tr><td>账号不一致／已过期</td><td>停止转发，在电脑检查本次登录；保持手机时间自动设置。</td></tr><tr><td>已尝试／结果尚未确认</td><td>不重复提交。在原登录页手动处理，或结束任务后再开始。</td></tr></tbody></table></div>
+<p class="login-footnote">3 分钟是中转任务期限。脚本记录开始处理输入的时间，不等同于运营商短信送达时间；请让短信自动化立即执行，不要重放旧短信。任务编号与期限用于重复提交保护，完整短信与验证码不写入 Keychain 或日志。</p>
+<p class="login-footnote">iPhone 安装、首次许可、锁屏触发和真实短信自动登录还需要实机验收。保留有效登录态，等自然需要重新登录时验证完整流程。保存配置不会启动采集或发送私信。</p>
+</div></section></main></body></html>

@@ -1,0 +1,16 @@
+{
+  "name": "clubops-login-relay",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test relay.test.mjs relay.runtime.test.mjs pages-entry.test.mjs",
+    "check": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "miniflare": "5.20260908.0-alpha",
+    "wrangler": "4.130.0"
+  },
+  "engines": {"node": ">=22"}
+}

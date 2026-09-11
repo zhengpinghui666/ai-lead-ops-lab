@@ -1,0 +1,21 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {OrderedResponseQueue}=require('./collector_queue.cjs');
+const nextTurn=()=>new Promise(resolve=>setImmediate(resolve));
+(async()=>{
+  const release=[],committed=[],errors=[];
+  const queue=new OrderedResponseQueue({concurrency:2,capacity:3,onError:e=>errors.push(e.message)});
+  const read=i=>new Promise(resolve=>{release[i]=()=>resolve(i);});
+  for(let i=0;i<3;i++)assert.equal(queue.submit(()=>read(i),v=>committed.push(v)),true);
+  assert.equal(queue.submit(()=>{throw Error('must not read rejected task')},()=>{}),false);
+  await nextTurn();assert.equal(queue.active,2);assert.equal(release[2],undefined);
+  release[1]();await nextTurn();assert.deepEqual(committed,[]);assert.ok(release[2]);
+  release[2]();await nextTurn();assert.deepEqual(committed,[]);
+  release[0]();await queue.drain();assert.deepEqual(committed,[0,1,2]);assert.equal(queue.pending,0);assert.equal(queue.highWater,3);
+  assert.ok(queue.submit(()=>{throw Error('read failure')},()=>{}));
+  assert.ok(queue.submit(()=>4,()=>{throw Error('commit failure')}));
+  assert.ok(queue.submit(()=>5,v=>committed.push(v)));
+  await queue.drain();assert.deepEqual(errors,['read failure','commit failure']);assert.deepEqual(committed,[0,1,2,5]);
+  assert.equal(queue.pending,0);assert.equal(queue.active,0);
+  console.log('PASS: bounded concurrency, admission cap, ordered commits, read/commit failure release. Local synthetic queue only.');
+})().catch(error=>{console.error(error);process.exitCode=1;});

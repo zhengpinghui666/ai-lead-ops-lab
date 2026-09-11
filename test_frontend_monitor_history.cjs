@@ -1,0 +1,32 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const requests=[];
+const dummy={innerHTML:'',open:false,addEventListener(){},classList:{remove(){}},setAttribute(){}};
+const context=vm.createContext({document:{querySelector:()=>dummy,querySelectorAll:()=>[],addEventListener(){},body:dummy},location:{hash:'#monitor'},window:{addEventListener(){},scrollTo(){},lucide:{createIcons(){}}},console,crypto:globalThis.crypto,setTimeout:()=>1,clearTimeout(){},fetch:url=>{
+ if(url.startsWith('/api/state'))return Promise.resolve({ok:true,json:async()=>({collector:{tasks:[]}})});
+ return new Promise(resolve=>requests.push({url,resolve}));
+}});
+const run=s=>vm.runInContext(s,context);
+vm.runInContext(fs.readFileSync('static/app.js','utf8'),context);
+run("render=()=>{};syncFreshnessHint=()=>{};redrawMonitorResults=()=>{};redrawWorkPool=()=>{};");
+const reply=(request,value)=>request.resolve({ok:true,json:async()=>value});
+const result=(video,page=1)=>({rows:[{text:video,video_url:video}],counts:{observed:28,accepted:28,filtered:0},page,pages:2,total:28,scope:'all_local_comment_history'});
+(async()=>{
+ await new Promise(r=>setImmediate(r));
+ const first=run("changeMonitorSelection('video-A')"),second=run("changeMonitorSelection('video-B')");
+ reply(requests[1],result('video-B'));await second;
+ reply(requests[0],result('video-A'));await first;
+ assert.equal(run('monitorResults().rows[0].text'),'video-B','Late work A cannot replace selected work B');
+ run('redrawMonitorResults=()=>monitorResultsPanel();');
+ const next=run("handleAction({dataset:{action:'monitor-result-page',step:'1'}})");
+ assert.match(requests[2].url,/page=2/,'Loading state must not clamp a requested next page back to 1');
+ reply(requests[2],result('video-B',2));await next;
+ assert.equal(run('monitorResultPage'),2);
+ const all=run("handleAction({dataset:{action:'work-clear'}})");
+ assert.match(requests[3].url,/video=&/);reply(requests[3],result('all'));await all;
+ assert.equal(run('monitorResultVideo'),'');assert.equal(run('monitorResultPage'),1);
+ const stale=run("changeMonitorSelection('video-C')");run("mode='demo'");
+ reply(requests[4],result('video-C'));await stale;
+ assert.equal(run('monitorHistory.rows[0].text'),'all','Late response must not cross workspace');
+ console.log('PASS: work selection races, remote page 2, all-comments reset and workspace isolation. Local fixtures only.');
+})().catch(e=>{console.error(e);process.exitCode=1;});
