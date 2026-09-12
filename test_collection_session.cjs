@@ -15,6 +15,26 @@ function fixture(body,status=200){
   assert.equal(result.status,'session_ready');assert.equal(result.browser_closed_before_http,true);
   assert.equal(result.browser_used_for_collection,false);assert.deepEqual(ok.trace,['navigate','closed','http']);
   assert.ok(!JSON.stringify(result).includes('TEST_ONLY_SECRET'));
+  const unnamed=fixture({status_code:0,user:{unique_id:'1267597446'}});
+  const saved=[];
+  const originalLaunch=unnamed.options.launchContext;
+  unnamed.options.launchContext=async()=>{
+    const context=await originalLaunch();
+    const read=context.cookies;
+    context.cookies=async url=>[...await read(url),{name:'',value:'UNNAMED_TEST_ONLY_SECRET',domain:'.douyin.com',path:'/',expires:-1}];
+    return context;
+  };
+  unnamed.options.verify=async input=>{
+    assert.equal(unnamed.trace.at(-1),'closed');
+    for(const values of Object.values(input.cookies)){
+      assert.equal(values.length,1);assert.equal(values[0].name,'sessionid');
+      assert.equal(values[0].value,'TEST_ONLY_SECRET');
+    }
+    saved.push(input);return {status:'session_ready',credential_file_created:true};
+  };
+  const cleaned=await prepare('1267597446','',unnamed.options);
+  assert.equal(cleaned.status,'session_ready');assert.equal(cleaned.ignored_unnamed_cookie_records,4);
+  assert.equal(saved.length,1);assert.ok(!JSON.stringify(cleaned).includes('TEST_ONLY_SECRET'));
   for(const [body,status,expected] of [[{status_code:0,user:{unique_id:'different'}},200,'account_mismatch'],[{status_code:8},200,'needs_login_or_verification'],[{},403,'browser_identity_unverified']]){
     const test=fixture(body,status);const value=await prepare('1267597446','',test.options);
     assert.equal(value.status,expected);assert.equal(value.credential_file_created,false);

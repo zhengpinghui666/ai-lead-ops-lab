@@ -104,3 +104,11 @@ python scripts/verify-cloud-login-relay.py --verify --expiry --out artifacts/clo
 `test_login_relay.py` 覆盖 DPAPI、地址绑定和 HTTP 边界；`test_login_recovery.py` 覆盖控制流程、延迟输出、取消、失联、期限、原任务范围与循环限制；`test_login_recovery_http.py` 验证真实本机 HTTP 的凭证隔离和 CSRF；`test_login_recovery.cjs` 验证浏览器助手模拟场景；`test_login_frontend.cjs` 验证后台刷新、表单与敏感配置清空。
 
 部署后只在自然需要登录时做真实短信联调。新会话成功不自动改变 IM 发送凭证；搜索验证及私信连接各自保留独立状态。损坏的恢复记录不能让整个工作台不可用，修复前暂停此模块操作；不要直接删除现用会话文件。
+
+## 2026-09-13 自然到期后的登录态复用
+
+任务898因本地采集会话期限到达返回 session_expired。首次正式恢复已确认浏览器账号一致，但URL作用域快照中的空名称Cookie导致 invalid_metadata。scripts/prepare-collection-session.cjs 现在仅在浏览器边界剔除名称为空字符串的记录，并计入 ignored_unnamed_cookie_records；其余记录原样进入严格Python校验，保留原有身份、作用域及期限要求。
+
+第二次正式恢复在约7秒内完成：复用原 data/browser-profile 登录目录，浏览器关闭后HTTP独立核对身份成功，保存加密采集会话，将898按原目标、过滤、时间截止值、预算和通道恢复为899；899及后续自动900完成。sms_step_used=false、code_filled=false，没有请求短信。这是实际会话到期后复用有效浏览器登录态的证据，不是iPhone真实短信登录验收；自动恢复仍关闭。53项Python专项及两个Node入口通过，详见 artifacts/natural-session-recovery-20260913/REPORT.md。
+
+用户明确要求私信验证沿用原浏览器及登录态。日常通过已保存的后端会话核对；仅在需要页面交互时使用同一项目目录和账号。不得因另一个任务占用标签，就另建需要用户重新登录的浏览器环境。

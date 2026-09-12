@@ -254,5 +254,7 @@
   "scripts/monitor-health.py",
   "test_monitor_health.py",
   "SUCCESSOR_HANDOFF.md",
-  "scripts/run-background-service.py"
+  "scripts/run-background-service.py",
+  "freshness_audit.py",
+  "test_freshness_audit.py"
 ]

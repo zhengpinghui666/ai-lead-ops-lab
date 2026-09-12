@@ -38,8 +38,8 @@
     },
     {
       "name": "COLLECTION_FRESHNESS.md",
-      "sha256": "e2f5213a1ef69a341121d46098e13b19001f6774d4359cd17d5bed4ffb02daf6",
-      "bytes": 20657
+      "sha256": "20f5eb2ca8dd374bed1169a669e1017327f4656a3e9425dc1eeb9e2cf346338b",
+      "bytes": 22970
     },
     {
       "name": "COLLECTION_HTTP.md",
@@ -63,8 +63,8 @@
     },
     {
       "name": "GITHUB_BACKUP.md",
-      "sha256": "82c2da5a1314b6e3edadddeb6cf817fb83c91896d985ea92169455b5254791fc",
-      "bytes": 3802
+      "sha256": "c5efb9d0c8f9e24833d34344fcedff1de920ac89232072a39ee8926d38b29dc3",
+      "bytes": 4219
     },
     {
       "name": "GOAL.md",
@@ -103,8 +103,8 @@
     },
     {
       "name": "LOGIN_RECOVERY.md",
-      "sha256": "7a583eaf4fb77702191409caaccc212859540a79765d774355157922c9356b61",
-      "bytes": 14654
+      "sha256": "792352bc191e90c0e1b98249f6baa4f62a048692308980bf82a90a15b1a1cdfd",
+      "bytes": 15975
     },
     {
       "name": "MODEL_API.md",
@@ -148,8 +148,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "811353778ab72c160d158de46f22983fbadcfd01484619c43939e30d336e51c5",
-      "bytes": 7793
+      "sha256": "9521c9d28bd87d3da0dcfef318c11414ea6c52eefa65125465b6fe42a6d72e1e",
+      "bytes": 10544
     },
     {
       "name": "UID_HTTP.md",
@@ -375,6 +375,11 @@
       "name": "evaluation/intent-regression-v3.json",
       "sha256": "e83e04e34550d2bf970243a51664fbbc32faff4d31c648fbc3d301472136d302",
       "bytes": 15261
+    },
+    {
+      "name": "freshness_audit.py",
+      "sha256": "3962a1c608552c1dfa187667edba753594040d99a1d0a903c509526b1f1b2f06",
+      "bytes": 10584
     },
     {
       "name": "github_backup.py",
@@ -673,8 +678,8 @@
     },
     {
       "name": "scripts/prepare-collection-session.cjs",
-      "sha256": "312ced6fd7c5028ff55fc81479a9f2f6db76b31c85128d952d08a57997919098",
-      "bytes": 6805
+      "sha256": "8866dd94908fcb1703da3d412261312dbc64bf407b575f63d2128ddba32b38a9",
+      "bytes": 7376
     },
     {
       "name": "scripts/probe-collection-http.py",
@@ -748,8 +753,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "6553907c1422f37cc5afb9df9351221ce72282a1b35e56546a7d15b4812a4554",
-      "bytes": 7585
+      "sha256": "eb27b0b5e0a170b3827ec517c8de23bd96ba939927e7e484ebe0428ecc1aaf30",
+      "bytes": 7637
     },
     {
       "name": "start.ps1",
@@ -883,8 +888,8 @@
     },
     {
       "name": "test_collection_session.cjs",
-      "sha256": "2fc59e0e03071288371906e477c70f82c37720631045489e620be904b40a7554",
-      "bytes": 3551
+      "sha256": "723fc874a103cf37dfa0fe2b4208f070e512f7dc11734551abd6bdafb30083bd",
+      "bytes": 4611
     },
     {
       "name": "test_collector.cjs",
@@ -915,6 +920,11 @@
       "name": "test_discovery_tracking.py",
       "sha256": "3cc147fce59612dd4b3dc441ca2923a03e28117c20092bc1e33cc796d342a97b",
       "bytes": 32638
+    },
+    {
+      "name": "test_freshness_audit.py",
+      "sha256": "ff5a47bc0023b910861b09c2efb8186f3cbba0141b7b6a754c95b8501c0db572",
+      "bytes": 7965
     },
     {
       "name": "test_frontend.cjs",

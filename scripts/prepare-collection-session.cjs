@@ -70,16 +70,25 @@ async function prepare(account,verifySearch='',{refreshSession=false,resumeSaved
     const metadata=await page.evaluate(()=>({user_agent:navigator.userAgent,context:{platform:navigator.platform,
       width:screen.width,height:screen.height,cores:navigator.hardwareConcurrency||1,memory:navigator.deviceMemory||8}}));
     const cookies={};
-    for(const [key,url] of Object.entries(paths))cookies[key]=(await context.cookies('https://www.douyin.com'+url))
-      .map(({name,value,domain,path,expires})=>({name,value,domain,path,expires}));
+    // Chromium can retain an unnamed cookie. It cannot identify an auth cookie
+    // and our HTTP serializer rejects it; exclude that record at the browser
+    // boundary instead of rejecting every valid URL-scoped login cookie.
+    // Other malformed metadata still reaches the strict Python validator.
+    let ignored_unnamed_cookie_records=0;
+    for(const [key,url] of Object.entries(paths)){
+      const scoped=await context.cookies('https://www.douyin.com'+url);
+      ignored_unnamed_cookie_records+=scoped.filter(cookie=>cookie.name==='').length;
+      cookies[key]=scoped.filter(cookie=>cookie.name!=='')
+        .map(({name,value,domain,path,expires})=>({name,value,domain,path,expires}));
+    }
     const input={format:'clubops-collection-session-1',account,captured_at:Date.now()/1000,...metadata,cookies};
     await context.close();context=null;
-    if(verify)return {...await verify(input),browser_closed_before_http:true,browser_used_for_collection:false,browser_refreshed:refreshSession};
+    if(verify)return {...await verify(input),browser_closed_before_http:true,browser_used_for_collection:false,browser_refreshed:refreshSession,ignored_unnamed_cookie_records};
     return await new Promise(resolve=>{
       const child=spawn(process.env.CLUBOPS_PYTHON||'python',[path.join(BASE,'collector_http_session.py')],
         {cwd:BASE,windowsHide:true,stdio:['pipe','pipe','ignore'],env:{...process.env,PYTHONIOENCODING:'utf-8'}});
       let raw='',done=false;
-      const finish=x=>{if(done)return;done=true;clearTimeout(timer);resolve({...x,browser_closed_before_http:true,browser_used_for_collection:false,browser_refreshed:refreshSession});};
+      const finish=x=>{if(done)return;done=true;clearTimeout(timer);resolve({...x,browser_closed_before_http:true,browser_used_for_collection:false,browser_refreshed:refreshSession,ignored_unnamed_cookie_records});};
       const timer=setTimeout(()=>{child.kill();finish({status:'bootstrap_result_unknown'});},25000);
       child.stdout.setEncoding('utf8');child.stdout.on('data',s=>{raw+=s;if(raw.length>8192){child.kill();finish({status:'invalid_result'});}});
       child.on('error',()=>finish({status:'dependency_missing'}));child.stdin.on('error',()=>finish({status:'bootstrap_failed'}));
