@@ -501,6 +501,13 @@ def run(task_id, control):
                   'resolve_video_titles': True, 'known_video_titles': known_titles,
                   'refresh_video_metrics': True, 'known_video_metrics': known_metrics,
                   'captcha': captcha_runtime.configuration()}
+        paging_tag=None
+        if task['transport']=='http':
+            import comment_paging
+            import collector_http_session
+            try:paging_tag=comment_paging.session_tag(collector_http_session.load())
+            except (OSError,ValueError):pass  # The worker reports the actual session gate.
+            config.update(paging_source_id=control['source_id'],paging_session_tag=paging_tag)
         process.stdin.write(json.dumps(config, ensure_ascii=False) + '\n')
         process.stdin.flush()
         if control['cancel']:
@@ -552,6 +559,10 @@ def run(task_id, control):
             elif typ in ('video', 'comment'):
                 if not control['cancel']:
                     observe(task_id, control['source_id'], message)
+            elif typ=='comment_paging':
+                if not control['cancel'] and task['transport']=='http':
+                    with app.LOCKS['live'],app.db() as c:
+                        comment_paging.save(c,task_id,control['source_id'],message,paging_tag)
             elif typ == 'status':
                 status = message.get('status')
                 if status not in WAITING | {'running'} | TERMINAL:
@@ -571,7 +582,7 @@ def run(task_id, control):
                 encoded = json.dumps(snapshot, ensure_ascii=False)
                 if len(encoded) <= 20000:
                     with app.db() as c:
-                        n = c.execute('SELECT COUNT(*) FROM collection_diagnostics WHERE task_id=?', (task_id,)).fetchone()[0]
+                        n = c.execute("SELECT COUNT(*) FROM collection_diagnostics WHERE task_id=? AND stage!='comment_paging'", (task_id,)).fetchone()[0]
                         if n < 25:
                             c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)', (task_id, app.clean(message.get('stage'), 80), encoded, app.now()))
         process.wait(timeout=10)

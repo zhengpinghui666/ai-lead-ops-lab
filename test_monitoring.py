@@ -149,6 +149,17 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(mon.state()['next_run_at'],(datetime.fromisoformat(finished)+timedelta(seconds=60)).isoformat())
         mon.command('stop');self.assertIsNone(self.at('2026-09-10T10:00:00+00:00'))
 
+    def test_page_progress_receipts_do_not_hide_http_retry_evidence(self):
+        self.http_baseline();task=sch.tick(NOW);self.reply_failure(task)
+        with app.db() as c:
+            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                (task,'comment_paging',json.dumps({'processing':{'version':'comment-page-rotation-v1','revision':1}}),NOW))
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            self.assertEqual(sch.transient_reply_wait(c,row),0)
+            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                (task,'needs_verification','{}',NOW))
+            self.assertIsNone(sch.transient_reply_wait(c,row))
+
     def test_discovery_reply_retry_keeps_http_job_in_browser_search_monitor(self):
         import discovery_tracking as discovery
         self.baseline();mon.save({});discovery.save({'enabled':True});mon.command('start')

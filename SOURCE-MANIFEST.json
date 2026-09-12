@@ -38,8 +38,8 @@
     },
     {
       "name": "COLLECTION_FRESHNESS.md",
-      "sha256": "e289a0982d16742bca6009b9ecd120916331ace7263043bbb9920748f6b49499",
-      "bytes": 18606
+      "sha256": "e2f5213a1ef69a341121d46098e13b19001f6774d4359cd17d5bed4ffb02daf6",
+      "bytes": 20657
     },
     {
       "name": "COLLECTION_HTTP.md",
@@ -48,8 +48,8 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "d7cf9120175a48b9c4c2b199e0894518b48bc5b90477af0626d48e4c4421c5ec",
-      "bytes": 127508
+      "sha256": "025b8a0c2aec64171a946d73db4db9a5c65d0d2a3652a2c642d82fb9bbf93f45",
+      "bytes": 129559
     },
     {
       "name": "DISCOVERY_TRACKING.md",
@@ -68,8 +68,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "ad1d160eb3d8096b17b368c51b7148128617823f1143677283bd69aab5df8018",
-      "bytes": 168924
+      "sha256": "e3a69081ab59916fc2e3564550edcc8b47f589aa96009dea7ab105aedad91ca5",
+      "bytes": 170975
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -253,18 +253,18 @@
     },
     {
       "name": "clubops.py",
-      "sha256": "300dc722fc14319fca0672403fc0156d06eee97be9473362db7aa80c62410b70",
-      "bytes": 54233
+      "sha256": "0d867297482fd35b77e18fa940a456330c61f018ddc0d2b71aeb35a1bc6a48da",
+      "bytes": 54513
     },
     {
       "name": "collection_scheduler.py",
-      "sha256": "07b61f199338745e04c635c622dafcff57d307b408c064978922e58e8b83b68d",
-      "bytes": 31648
+      "sha256": "5441a05429b838eeb1ed0fdb9fc7327c723a47004ada1187c4187ed140241ce1",
+      "bytes": 31789
     },
     {
       "name": "collector.py",
-      "sha256": "430e2b0bab54a5ceab63fed12fa0bf3996e3c14185f126174858510bebf8ac4a",
-      "bytes": 39635
+      "sha256": "4878c80c6e2600413be541911941f7e93fd737481c672fc51f8a38edd5bea8c4",
+      "bytes": 40338
     },
     {
       "name": "collector_http.py",
@@ -278,8 +278,8 @@
     },
     {
       "name": "collector_http_worker.py",
-      "sha256": "fdf1c2a9b11824bc1398d2cfe5e529af42e1a092edb27b73b9d07769fb0d7a8f",
-      "bytes": 18767
+      "sha256": "4b3ff92da6c85897689555281e3e3c5b1033bd9f0ee8c178d1a8525774ea3182",
+      "bytes": 18626
     },
     {
       "name": "collector_parser.cjs",
@@ -325,6 +325,11 @@
       "name": "comment_keywords.py",
       "sha256": "068d447dd508e3aab6fcd911054eb9c80fdbce1cdf3067cdd64e7bc25dc91636",
       "bytes": 4140
+    },
+    {
+      "name": "comment_paging.py",
+      "sha256": "378fc59ef9ee382908cdbefd61551e9fa4a2244170093b64c201c9840e0ac955",
+      "bytes": 7558
     },
     {
       "name": "config/collection-http-requirements.txt",
@@ -723,8 +728,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "32fc5a9f1188f625f144fff7b3c2629e123ebdbf9e46276f6c19db93c95fde56",
-      "bytes": 7345
+      "sha256": "e4b832f52e1c5e2a658f49cbf25d129449b9bc04968655a103c949d47ef22b0b",
+      "bytes": 7402
     },
     {
       "name": "start.ps1",
@@ -882,6 +887,11 @@
       "bytes": 7991
     },
     {
+      "name": "test_comment_paging.py",
+      "sha256": "3065bb96931033a58476ca9580e7090cc3e16f8f1f33ceafc82c3f198000fb1a",
+      "bytes": 10091
+    },
+    {
       "name": "test_discovery_tracking.py",
       "sha256": "d762e3ee58c91a9f33f89ce6cf04a6022c566f6f219295981297cfa310b94061",
       "bytes": 25319
@@ -1028,8 +1038,8 @@
     },
     {
       "name": "test_monitoring.py",
-      "sha256": "1b0e79a84d8d4ab870e1ab282d910c208afd068ec456d28a027516ff0b028a76",
-      "bytes": 53653
+      "sha256": "39d3813e58822b600e1d4babf3528334dae4684ddedc5a1e9b747bf46397ec97",
+      "bytes": 54447
     },
     {
       "name": "test_parallel_worker.cjs",

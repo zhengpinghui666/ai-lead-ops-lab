@@ -1,6 +1,5 @@
 """JSON-line worker for the existing collector ledger; never launches a browser."""
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from collections import deque
 import json
 import sys
 import threading
@@ -8,6 +7,8 @@ import traceback
 import video_metadata
 import video_discovery
 import candidate_pool
+import comment_paging
+import clubops as app
 from pathlib import Path
 
 import collector_http as http
@@ -182,40 +183,32 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                         if row['comment_id'] not in seen and remaining():
                             emit({'type': 'comment', 'record': row})
                             seen.add(row['comment_id'])
-                main_cursor, main_visited = 0, set()
-                reply_queue, queued_parents = deque(), set()
-                reply_turn = False
-                while remaining() and (main_cursor is not None or reply_queue):
-                    is_reply = bool(reply_queue) and (reply_turn or main_cursor is None)
-                    if is_reply:
-                        parent, cursor, visited = reply_queue.popleft()
+                revision,state,reset=0,None,'disabled'
+                tag=comment_paging.session_tag(session) if session else None
+                durable=bool(tag and config.get('paging_session_tag')==tag and type(config.get('paging_source_id')) is int)
+                if durable:
+                    with app.db() as connection:
+                        revision,state,reset=comment_paging.load(connection,config['paging_source_id'],vid,tag,app.now())
+                rotation=comment_paging.Rotation(state)
+                while remaining() and (request:=rotation.next()) is not None:
+                    operation,parent,cursor=request
+                    if operation=='replies':
                         page = client.page('replies', video=vid, parent=parent, title=title,
                             cursor=cursor, count=min(10,remaining()))
                     else:
-                        cursor, visited = main_cursor, main_visited
                         page = client.page('comments', video=vid, title=title, cursor=cursor,
                             count=min(10,remaining()))
                     read_comment_page = True
                     comment_response_seen.set()
+                    complete=len(page['rows'])+page['skipped']<=remaining() and not page.get('skipped_reasons',{}).get('invalid_record',0)
                     deliver(page)
-                    if not remaining():
-                        break
-                    if page['has_more']:
-                        if page['cursor'] == cursor or page['cursor'] in visited:
-                            raise http.ReadError('schema_changed')
-                        visited.add(cursor)
-                    if is_reply:
-                        if page['has_more']:
-                            reply_queue.append((parent, page['cursor'], visited))
-                        reply_turn = False
-                    else:
-                        main_cursor = page['cursor'] if page['has_more'] else None
-                        non_text_parents=set(page.get('non_text_reply_targets',[]))
-                        for parent in page['reply_targets']:
-                            if (parent in seen or parent in non_text_parents) and parent not in queued_parents:
-                                reply_queue.append((parent, 0, set()))
-                                queued_parents.add(parent)
-                        reply_turn = True
+                    try:receipt=rotation.accept(request,page,complete)
+                    except ValueError:raise http.ReadError('schema_changed',{'reason':'comment_cursor_not_advanced'}) from None
+                    if durable and not cancel.is_set() and not stopped.is_set():
+                        revision+=1
+                        emit(dict(type='comment_paging',video_id=vid,session_tag=tag,revision=revision,
+                                  state=rotation.snapshot(),page=receipt))
+                    if not remaining() or not complete:break
                 emit({'type': 'checkpoint', 'video_id': vid, 'status': 'partial' if unsupported else 'done',
                       'detail': '达到本批观察预算或已读取响应可见末页；无文字内容计入跳过，不代表全量评论' if not unsupported else '部分记录结构不支持，保留已读取数据'})
             except http.ReadError as exc:

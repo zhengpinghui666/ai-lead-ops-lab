@@ -246,5 +246,7 @@
   "uid_session.py",
   "uid_transport.py",
   "video_discovery.py",
-  "video_metadata.py"
+  "video_metadata.py",
+  "comment_paging.py",
+  "test_comment_paging.py"
 ]

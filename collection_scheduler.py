@@ -61,6 +61,8 @@ def transient_reply_wait(connection, task):
         main_videos = set()
         failed = []
         for row in connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=? ORDER BY id', (task['id'],)):
+            if row['stage']=='comment_paging':
+                continue  # Parent-generated cursor receipts are separate from HTTP evidence.
             if row['stage'] != 'http_read':
                 return None
             responses = json.loads(row['snapshot']).get('responses')
