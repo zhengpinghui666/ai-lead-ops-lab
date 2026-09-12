@@ -46,21 +46,27 @@ async function bootstrap(expectedAccount,{launchContext,verify=verifyAndSave}={}
     }
     stage='opening_session';context=await launchContext();
     const page=await context.newPage();
-    const pending=page.waitForRequest(r=>r.method()==='POST'&&r.url().split('?')[0]===ENDPOINT,{timeout:15000})
-      .then(request=>request,()=>null);
+    const pending=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().split('?')[0]===ENDPOINT,{timeout:15000})
+      .then(response=>response,()=>null);
     stage='observing_read_context';
     await page.goto('https://www.douyin.com/',{waitUntil:'domcontentloaded',timeout:25000});
-    const request=await pending;
-    if(!request)throw Error('read context unavailable');
+    const response=await pending;
+    if(!response)throw Error('read response unavailable');
+    const request=response.request();
     const url=new URL(request.url());
     if(url.search)throw Error('unexpected signed query');
     const headers={};
     for(const [key,value] of Object.entries(await request.allHeaders()))if(HEADER_NAMES.has(key.toLowerCase()))headers[key.toLowerCase()]=value;
     const payload=request.postDataBuffer();
     if(!payload||payload.length>16384)throw Error('invalid context');
+    // The complete response is awaited before closing the profile. Sending a
+    // request alone does not prove that session initialization has completed.
+    const responseBody=await response.body();
+    if(responseBody.length>262144)throw Error('read response exceeds bound');
+    const readResponse={http_status:response.status(),mime:await response.headerValue('content-type'),payload:responseBody.toString('base64')};
     const cookies=await context.cookies('https://www.douyin.com/aweme/v1/web/user/profile/self/');
     const input={expected_account:expectedAccount,identity_cookie:cookies.map(c=>`${c.name}=${c.value}`).join('; '),
-      headers,payload:payload.toString('base64')};
+      headers,payload:payload.toString('base64'),read_response:readResponse};
     stage='closing_session';await context.close();context=null;closed=true;
     stage='http_verification';
     return {...await verify(input),browser_closed_before_http:true,browser_used_for_http:false,

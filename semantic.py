@@ -592,6 +592,9 @@ def analyze_one(body, mode='live', *, adapter_factory=None, cancel_event=None, e
             c.execute('UPDATE intent_results SET status=?,result_json=?,detail=?,finished_at=? WHERE id=?',
                 (status, json.dumps(result, ensure_ascii=False), detail, app.now(), run_id))
             app.event(c, 'model_analysis', f'单条模型分析 #{run_id}：{detail}')
+            if mode == 'live' and kind == 'comment' and status == 'completed':
+                import comment_keywords
+                comment_keywords.observe(c, record_id, model_engine=channel['engine'])
             if on_finish:
                 on_finish(c, dict(status=status, detail=detail, id=run_id))
         return dict(status=status, detail=detail, id=run_id)

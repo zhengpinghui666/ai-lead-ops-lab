@@ -24,7 +24,9 @@ def capture():
     return dict(expected_account='synthetic_account', identity_cookie='sessionid=synthetic-identity-secret',
                 headers={'cookie': 'sessionid=synthetic-im-secret; sessionid_ss=synthetic-ss-secret; page_state=synthetic-ui-data', 'user-agent': 'Synthetic browser',
                          'origin': 'https://www.douyin.com'},
-                payload=base64.b64encode(wire.field(1, 1001) + wire.field(2, 12345) + context + wire.field(8, body)).decode())
+                payload=base64.b64encode(wire.field(1, 1001) + wire.field(2, 12345) + context + wire.field(8, body)).decode(),
+                read_response=dict(http_status=200,mime='application/x-protobuf',payload=base64.b64encode(
+                    wire.field(1,1001)+wire.field(2,12345)+wire.field(3,0)+wire.field(4,'OK')+wire.field(5,1)+wire.field(13,int(SENDER))+wire.field(6,wire.field(1000,b''))).decode()))
 
 
 def data():
@@ -34,6 +36,25 @@ def data():
 
 
 class SessionProviderTests(unittest.TestCase):
+    def test_observed_browser_response_is_bound_to_account_sequence_and_inbox(self):
+        original=capture();self.assertTrue(session.check_observed_read(original,SENDER)['browser_read_verified'])
+        root=wire.decode(base64.b64decode(original['read_response']['payload']))
+        for key,value in ((1,1002),(2,12346),(3,409),(4,'error'),(5,0),(13,int(RECEIVER)),(6,wire.field(1001,b''))):
+            changed={**root,key:[(2 if isinstance(value,(str,bytes)) else 0,value)]}
+            raw=b''.join(wire.field(k,v) for k,values in changed.items() for _,v in values)
+            candidate={**original,'read_response':{**original['read_response'],'payload':base64.b64encode(raw).decode()}}
+            self.assertFalse(session.check_observed_read(candidate,SENDER)['browser_read_verified'],key)
+        for change in ({'http_status':403},{'mime':'text/html'},{'payload':'invalid'}):
+            self.assertFalse(session.check_observed_read({**original,'read_response':{**original['read_response'],**change}},SENDER)['browser_read_verified'])
+
+    def test_failed_browser_proof_never_reaches_backend_im_or_save(self):
+        value=capture();value['read_response']['http_status']=403
+        identity=dict(status='identity_verified',sender_uid=SENDER,expected_account='synthetic_account',http_attempts=1)
+        with patch('uid_bootstrap.probe',return_value=identity),patch.object(session,'check_im') as check,patch.object(session,'save') as save:
+            result=session.bootstrap(value)
+        self.assertEqual(result['status'],'browser_im_check_failed');check.assert_not_called();save.assert_not_called()
+        self.assertFalse(result['credential_file_created'])
+
     def test_private_conversation_inbox_is_not_copied_from_stranger_read(self):
         value = data()
         original = wire.decode(base64.b64decode(value['context']))

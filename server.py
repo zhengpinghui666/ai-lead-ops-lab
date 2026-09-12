@@ -98,7 +98,7 @@ class Handler(BaseHTTPRequestHandler):
             if path in ('/api/asset-keywords','/api/asset-keyword'):
                 import asset_keywords
                 query=parse_qs(urlparse(self.path).query)
-                return self.respond(asset_keywords.state(self.mode(),query.get('q',[''])[0]) if path=='/api/asset-keywords' else asset_keywords.detail(query.get('term',[''])[0],self.mode()))
+                return self.respond(asset_keywords.state(self.mode(),query.get('q',[''])[0],query.get('scope',['all'])[0],query.get('status',['all'])[0]) if path=='/api/asset-keywords' else asset_keywords.detail(query.get('term',[''])[0],self.mode()))
             if path == '/api/login-recovery':
                 return self.respond({**login_recovery.state(self.mode()), 'csrf': CSRF})
             if path == '/api/collector':

@@ -454,13 +454,19 @@ class Client:
             if result.get('page_visibility'):
                 evidence['page_visibility'] = result['page_visibility']
             if self.real_transport:
-                sessions.record_endpoint_status(self.session, operation, 'valid_page')
+                try:
+                    sessions.record_endpoint_status(self.session, operation, 'valid_page')
+                except OSError:
+                    raise ReadError('resource_limited', {'reason':'local_status_write_failed'}) from None
             return result
         except ReadError as exc:
             evidence.update(status=exc.status, **exc.evidence)
             if self.real_transport and exc.status == 'needs_verification':
                 scope = 'search' if operation == 'search' and evidence.get('reason') == 'search_verification_required' and evidence.get('search_nil_type') == 'verify_check' else 'account'
-                sessions.record_endpoint_status(self.session, operation, 'needs_verification', verification_scope=scope)
+                try:
+                    sessions.record_endpoint_status(self.session, operation, 'needs_verification', verification_scope=scope)
+                except OSError:
+                    evidence['local_status_write_failed']=True
             raise
         finally:
             # Strictly constructed fields; never URLs, query strings, headers, tokens or raw bodies.

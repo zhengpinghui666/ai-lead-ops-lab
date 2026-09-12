@@ -127,13 +127,11 @@ def routing(c,kind,record_id,*,refresh_asset=False):
     if profile is None:
         stored=c.execute('SELECT result FROM asset_verticality WHERE kind=? AND asset_key=?',(asset_kind,row['asset_key'])).fetchone()
         profile=json.loads(stored[0]) if stored else classify(row['title'],[])
-    keyword=companion_relevance(row['raw_text'],row['title']) if kind=='live' else None
-    learned=vocabulary.literal_hits(row['raw_text'],vocabulary.active(c,'message')['service'])
-    if kind=='live' and learned:
-        keyword={**keyword,'passed':True,'learned_keywords':learned,'reason':'原文命中已评审陪玩服务词。'}
+    keyword=vocabulary.message_relevance(c,row['raw_text'],row['title'])
+    learned=keyword.get('learned_keywords',[])
     allowed=bool(profile['matched'] and not row['filter_reason'] and (kind=='comment' or keyword['passed']))
     reason=('垂直作品的新评论直接分析意图。' if kind=='comment' else '垂直直播间弹幕通过陪玩关键词匹配。') if allowed else (
         '非垂直对口资产，只做关键词匹配。' if not profile['matched'] else
         '弹幕未通过本批采集关键词配置。' if row['filter_reason'] else '垂直直播间弹幕未命中陪玩关键词。')
     return dict(version=VERSION,model_allowed=allowed,route='model' if allowed else 'keywords',reason=reason,
-                asset_kind=asset_kind,asset_key=row['asset_key'],asset=profile,keyword_match=keyword,learned_keywords=learned)
+                asset_kind=asset_kind,asset_key=row['asset_key'],asset=profile,keyword_match=keyword if kind=='live' else None,learned_keywords=learned)

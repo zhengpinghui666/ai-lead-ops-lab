@@ -46,6 +46,36 @@ class FakeSigner:
 
 
 class HTTPReadTests(unittest.TestCase):
+    def test_status_file_transient_sharing_failure_retries_only_local_rename(self):
+        with tempfile.TemporaryDirectory() as td, patch.object(sessions.runtime,'data_dir',return_value=Path(td)):
+            replace=Path.replace;calls=[]
+            def transient(source,target):
+                calls.append(1)
+                if len(calls)<3:raise PermissionError('synthetic reader holds file')
+                return replace(source,target)
+            with patch.object(Path,'replace',transient),patch.object(sessions.time,'sleep') as sleep:
+                sessions.record_endpoint_status(session(),'comments','valid_page')
+            self.assertEqual(len(calls),3);self.assertEqual(sleep.call_count,2)
+            self.assertEqual(list(Path(td).rglob('*.tmp')),[])
+            self.assertEqual(json.loads(next(Path(td).rglob('comments-status.json')).read_text())['status'],'valid_page')
+
+    def test_permanent_status_write_failure_is_bounded_and_cleans_temp(self):
+        with tempfile.TemporaryDirectory() as td, patch.object(sessions.runtime,'data_dir',return_value=Path(td)), \
+                patch.object(Path,'replace',side_effect=PermissionError('synthetic permanent lock')) as replace,patch.object(sessions.time,'sleep') as sleep:
+            with self.assertRaises(PermissionError):sessions.record_endpoint_status(session(),'comments','valid_page')
+            self.assertEqual(replace.call_count,4);self.assertEqual(sleep.call_count,3)
+            self.assertEqual(list(Path(td).rglob('*.tmp')),[])
+
+    def test_valid_http_page_with_unwritable_status_is_not_schema_change(self):
+        log=[]
+        with patch.object(http,'exchange',return_value=(200,'application/json',json.dumps(body()).encode())) as exchange, \
+                patch.object(sessions,'record_endpoint_status',side_effect=PermissionError('synthetic lock')):
+            client=http.Client(session(),signer=FakeSigner(),diagnostic=log.append)
+            with self.assertRaises(http.ReadError) as caught:client.page('comments',video=VIDEO)
+            self.assertEqual(exchange.call_count,1)
+        self.assertEqual(caught.exception.status,'resource_limited')
+        self.assertEqual(log[-1]['reason'],'local_status_write_failed')
+
     def test_image_reply_parent_requires_valid_same_video_identity(self):
         for bad in (dict(cid='invalid'),dict(aweme_id='7664994032866659999'),dict(reply_id=PARENT),dict(text=None)):
             with self.subTest(bad=bad),self.assertRaises(http.ReadError):

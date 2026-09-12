@@ -102,8 +102,8 @@ def project(c, row, *, model_engine=None):
     if model and model['status'] == 'completed' and model_engine == model['engine'] and row['analysis_method'] not in ('human', 'pending'):
         row.update(model['result'])
     if kind == 'comment':
-        from intent_rules import companion_relevance
-        relevance=companion_relevance(source['text'],source['title'],source['parent'])
+        import asset_keywords
+        relevance=asset_keywords.message_relevance(c,source['text'],source['title'],source['parent'])
         row['companion_relevance']=relevance
     import asset_verticality
     row['model_routing']=asset_verticality.routing(c,kind,row['id'])

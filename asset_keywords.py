@@ -41,6 +41,16 @@ def literal_hits(text,terms):
     folded=(text or '').casefold();return [t for t in terms if t.casefold() in folded]
 
 
+def message_relevance(c,text,title='',parent=''):
+    from intent_rules import companion_relevance
+    result=companion_relevance(text,title,parent)
+    hits=literal_hits(text,active(c,'message')['service'])
+    if not hits:return result
+    return {**result,'passed':True,'learned_keywords':hits,
+            'reason':'原文命中已评审评论初筛词；是否有客户意图仍需另行判断。',
+            'evidence':[dict(kind='reviewed_keyword',source='comment',text=term) for term in hits[:4]]}
+
+
 def backfill(c):
     import asset_references as refs
     for row in c.execute('SELECT DISTINCT external_id FROM videos').fetchall():
@@ -49,18 +59,30 @@ def backfill(c):
     for row in c.execute('SELECT room_url,title FROM live_rooms').fetchall():observe(c,'live:'+row[0],row[1])
 
 
-def state(mode='live',q=''):
+def state(mode='live',q='',scope='all',status='all'):
+    if scope not in ('all','asset','message') or status not in ('all','active','pending'):raise ValueError('词库筛选无效')
     with app.LOCKS[mode],app.db(mode) as c:
         words=active(c);messages=active(c,'message');inherited={t:k for k in ('game','service','search') for t in words[k]+messages[k]}
         # Brief summaries only. Evidence is fetched when opening a review.
         rows={r['term']:dict(r) for r in c.execute('''SELECT k.*,COUNT(s.asset_key) AS source_count,MAX(s.last_seen_at) AS last_seen_at
           FROM asset_keywords k LEFT JOIN asset_keyword_sources s ON s.term=k.term GROUP BY k.term''')}
+        for r in c.execute('''SELECT term,COUNT(*) AS total,SUM(current) AS usable,MAX(last_seen_at) AS last_seen
+                             FROM comment_keyword_sources GROUP BY term'''):
+            if r['term'] not in rows:continue
+            row=rows[r['term']];row['comment_source_count']=r['total'];row['current_comment_source_count']=r['usable']
+            row['source_count']+=r['total'];row['last_seen_at']=max(row['last_seen_at'] or '',r['last_seen'])
         for term,kind in inherited.items():
             if term not in rows:rows[term]=dict(term=term,kind=kind,scope='asset',status='reference',reason='来自已评审参考资产',revision=0,source_count=0,last_seen_at=None)
             rows[term]['active']=True;rows[term]['active_kind']=kind
+        if scope!='all':
+            active_terms={t for terms in active(c,scope).values() for t in terms}
+            rows={term:r for term,r in rows.items() if r['scope'] in (scope,'both') or
+                  term in active_terms or (scope=='message' and r.get('comment_source_count'))}
+            for term,row in rows.items():row['active']=term in active_terms
         values=sorted(rows.values(),key=lambda r:(not r.get('active'),r['status']!='pending',-r['source_count'],r['term']))
         counts=dict(total=len(values),active=sum(bool(r.get('active')) for r in values),pending=sum(r['status']=='pending' and not r.get('active') for r in values))
-    query=str(q).strip().casefold()[:80];filtered=[r for r in values if not query or query in r['term'].casefold()]
+    query=str(q).strip().casefold()[:80];filtered=[r for r in values if (not query or query in r['term'].casefold()) and
+        (status=='all' or (bool(r.get('active')) if status=='active' else r['status']=='pending' and not r.get('active')))]
     return dict(rows=filtered[:500],counts=counts,matched=len(filtered),limit=500)
 
 
@@ -72,15 +94,21 @@ def detail(term,mode='live'):
         for r in c.execute("SELECT id,rule FROM asset_references WHERE status='approved'"):
             rule=json.loads(r['rule'])
             if term in rule['game_terms']+rule['service_terms']+rule.get('queries',[]):inherited.append(r['id'])
-        return dict(**dict(row),reference_ids=inherited,sources=[dict(r) for r in c.execute('SELECT asset_key,title,last_seen_at FROM asset_keyword_sources WHERE term=? ORDER BY last_seen_at DESC LIMIT 5',(term,))])
+        return dict(**dict(row),reference_ids=inherited,
+            sources=[dict(r) for r in c.execute('SELECT asset_key,title,last_seen_at FROM asset_keyword_sources WHERE term=? ORDER BY last_seen_at DESC LIMIT 5',(term,))],
+            comment_sources=[dict(r) for r in c.execute('''SELECT s.*,x.external_id AS comment_external_id,v.url AS work_url
+              FROM comment_keyword_sources s JOIN comments x ON x.id=s.comment_id JOIN videos v ON v.id=x.video_id
+              WHERE s.term=? ORDER BY s.current DESC,s.last_seen_at DESC LIMIT 5''',(term,))])
 
 
 def propose(body,mode='live'):
-    if mode!='live' or set(body)!={'term'}:raise ValueError('词库参数无效')
+    if mode!='live' or set(body) not in ({'term'},{'term','scope'}):raise ValueError('词库参数无效')
+    scope=body.get('scope','asset')
+    if scope not in ('asset','message','both'):raise ValueError('词库用途无效')
     term=body['term'].strip() if isinstance(body['term'],str) else ''
     if not 2<=len(term)<=30:raise ValueError('关键词为 2–30 字')
     with app.LOCKS[mode],app.db(mode) as c:
-        c.execute('INSERT OR IGNORE INTO asset_keywords(term,created_at,updated_at) VALUES(?,?,?)',(term,app.now(),app.now()))
+        c.execute('INSERT OR IGNORE INTO asset_keywords(term,scope,created_at,updated_at) VALUES(?,?,?,?)',(term,scope,app.now(),app.now()))
     return detail(term,mode)
 
 

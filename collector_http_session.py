@@ -145,6 +145,17 @@ def identity_state(value, directory=None):
     return {'status': 'prepared'}
 
 
+def replace_status(temporary, file):
+    """Windows readers may briefly deny rename; never replay an HTTP request."""
+    for attempt in range(4):
+        try:
+            temporary.replace(file)
+            return
+        except PermissionError:
+            if attempt == 3:raise
+            time.sleep((0.02,0.05,0.1)[attempt])
+
+
 def record_identity_status(value, status, directory=None):
     if status not in ('identity_verified', 'identity_failed'):
         raise ValueError('身份核对状态无效')
@@ -157,7 +168,7 @@ def record_identity_status(value, status, directory=None):
     try:
         with temporary.open('x', encoding='utf-8') as stream:
             json.dump({'session_tag': tag, 'status': status, 'checked_at': time.time()}, stream)
-        temporary.replace(file)
+        replace_status(temporary, file)
     finally:
         if temporary.exists():
             temporary.unlink()
@@ -196,7 +207,7 @@ def record_endpoint_status(value, operation, status, *, verification_scope='acco
         with temporary.open('x', encoding='utf-8') as stream:
             scope = 'search' if operation == 'search' and status == 'needs_verification' and verification_scope == 'search' else 'account'
             json.dump({'session_tag':tag, 'status':status, 'checked_at':time.time(), 'verification_scope':scope}, stream)
-        temporary.replace(file)
+        replace_status(temporary, file)
     finally:
         if temporary.exists():
             temporary.unlink()

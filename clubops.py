@@ -111,13 +111,14 @@ def init(mode='live'):
         with db(mode) as source:
             known_tables = {r[0] for r in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             verticality_missing = not {'asset_verticality','asset_references','asset_keywords'} <= known_tables
+            keyword_sources_missing = 'comment_keyword_sources' not in known_tables
             inbox_missing = not {'uid_inbox_conversations','uid_inbox_messages','uid_inbox_reads'} <= known_tables
             live_columns = {r[1] for r in source.execute('PRAGMA table_info(live_messages)')}
             collection_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_tasks)')}
             plan_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_plans)')}
             observation_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_observations)')}
             activity_index_missing = not source.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_observation_published_activity'").fetchone()
-            if not {'uid_message_attempts', 'live_sessions', 'live_links', 'live_judgments', 'live_reviews', 'intent_results', 'semantic_jobs', 'video_metadata', 'live_tracks', 'live_rooms', 'live_pool_checks', 'collection_candidates', 'collection_candidate_reads', 'discovery_authors', 'discovery_works', 'discovery_jobs', 'discovery_queries'} <= known_tables or not {'outer_message_id', 'game'} <= live_columns or 'transport' not in collection_columns or 'intent_version' not in plan_columns or 'ingest_disposition' not in observation_columns or activity_index_missing or verticality_missing or inbox_missing:
+            if not {'uid_message_attempts', 'live_sessions', 'live_links', 'live_judgments', 'live_reviews', 'intent_results', 'semantic_jobs', 'video_metadata', 'live_tracks', 'live_rooms', 'live_pool_checks', 'collection_candidates', 'collection_candidate_reads', 'discovery_authors', 'discovery_works', 'discovery_jobs', 'discovery_queries'} <= known_tables or not {'outer_message_id', 'game'} <= live_columns or 'transport' not in collection_columns or 'intent_version' not in plan_columns or 'ingest_disposition' not in observation_columns or activity_index_missing or verticality_missing or inbox_missing or keyword_sources_missing:
                 backup_dir = DATA_DIR / 'backups'
                 backup_dir.mkdir(parents=True, exist_ok=True)
                 label = ('before-uid-http-' if 'uid_message_attempts' not in known_tables else
@@ -126,6 +127,7 @@ def init(mode='live'):
                 if label=='before-candidate-pool-' and activity_index_missing:label='before-work-activity-'
                 if label=='before-candidate-pool-' and verticality_missing:label='before-asset-verticality-'
                 if label=='before-candidate-pool-' and inbox_missing:label='before-uid-inbox-'
+                if label=='before-candidate-pool-' and keyword_sources_missing:label='before-comment-keywords-'
                 backup = sqlite3.connect(backup_dir / (filename + '.' + label + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f') + '.bak'))
                 try:
                     source.backup(backup)
@@ -153,6 +155,8 @@ def init(mode='live'):
         import asset_keywords
         c.executescript(asset_references.SCHEMA)
         c.executescript(asset_keywords.SCHEMA)
+        import comment_keywords
+        c.executescript(comment_keywords.SCHEMA)
         c.executescript(asset_verticality.SCHEMA)
         if 'outer_message_id' not in {r[1] for r in c.execute('PRAGMA table_info(live_messages)')}:
             c.execute('ALTER TABLE live_messages ADD COLUMN outer_message_id TEXT')
@@ -207,6 +211,9 @@ def init(mode='live'):
         if not c.execute("SELECT 1 FROM settings WHERE key='asset_keyword_corpus_v1'").fetchone():
             asset_keywords.backfill(c)
             c.execute("INSERT INTO settings VALUES('asset_keyword_corpus_v1','true')")
+        if not c.execute("SELECT 1 FROM settings WHERE key='comment_keyword_corpus_v1'").fetchone():
+            comment_keywords.backfill(c)
+            c.execute("INSERT INTO settings VALUES('comment_keyword_corpus_v1','true')")
         for query in asset_keywords.queries(c):
             c.execute('INSERT OR IGNORE INTO discovery_queries(keyword,next_check_at) VALUES(?,?)',(query,now()))
         if not c.execute('SELECT 1 FROM asset_verticality LIMIT 1').fetchone() or c.execute("SELECT 1 FROM asset_verticality WHERE json_extract(result,'$.version')!=? LIMIT 1",(asset_verticality.VERSION,)).fetchone():
@@ -253,6 +260,9 @@ def validate_review_fields(value):
 
 
 def reset_rule_context(c, source_id, external, video_id, *, include_self=False):
+    c.execute('''UPDATE comment_keyword_sources SET current=0 WHERE comment_id IN
+        (SELECT id FROM comments WHERE source_id=? AND video_id=? AND
+         (parent_external_id=? OR (? AND external_id=?)))''', (source_id, video_id, external, include_self, external))
     c.execute("""UPDATE comments SET analysis_method='pending',category='uncertain',game='',
         confidence=NULL,facts='{}',reason='',analyzed_at=NULL
         WHERE source_id=? AND video_id=? AND analysis_method='rules'
@@ -262,6 +272,7 @@ def reset_rule_context(c, source_id, external, video_id, *, include_self=False):
 
 def reset_video_rules(c, video_id):
     """A changed video title changes context, never overwrite a human decision."""
+    c.execute('UPDATE comment_keyword_sources SET current=0 WHERE comment_id IN (SELECT id FROM comments WHERE video_id=?)', (video_id,))
     c.execute("UPDATE comments SET analysis_method='pending',category='uncertain',game='',confidence=NULL,facts='{}',reason='',analyzed_at=NULL WHERE video_id=? AND analysis_method='rules'", (video_id,))
 
 
@@ -333,6 +344,8 @@ def ingest(payload, mode='live', *, allow_browser_source=False, connection=None)
                     result['duplicate'] += 1
                 else:
                     c.execute('INSERT INTO comment_revisions(comment_id,raw_text,replaced_at) VALUES(?,?,?)', (existing['id'], existing['raw_text'], t))
+                    import comment_keywords
+                    comment_keywords.invalidate(c, existing['id'])
                     c.execute("UPDATE comments SET raw_text=?,analysis_method='pending',confidence=NULL,category='uncertain',game='',facts='{}',manual_fields='{}',reason='',analyzed_at=NULL WHERE id=?", (raw, existing['id']))
                     reset_rule_context(c, source_id, external, video_id)
                     result['revised'] += 1
@@ -372,6 +385,9 @@ def analyze(mode='live', *, comment_ids=None):
                 c.execute("UPDATE comments SET category=?,game=?,confidence=?,reason=?,facts=?,analysis_method=?,analyzed_at=? WHERE id=? AND analysis_method='pending'", (r['category'], r['game'], r['confidence'], r['reason'], json.dumps(r['facts'], ensure_ascii=False), r['analysis_method'], now(), row['id']))
                 import analysis_store
                 analysis_store.capture_rule(c, 'comment', row['id'])
+                if mode == 'live':
+                    import comment_keywords
+                    comment_keywords.observe(c, row['id'])
             event(c, 'analysis', f'完成 {len(rows)} 条规则初筛；本次未调用语义模型')
         import semantic_queue
         queued = semantic_queue.enqueue('comment', [r['id'] for r in rows], mode)
@@ -534,6 +550,9 @@ def mutate(action, body, mode='live'):
             c.execute('INSERT INTO comment_reviews(comment_id,snapshot,created_at) VALUES(?,?,?)', (row['id'], json.dumps(snapshot, ensure_ascii=False), reviewed_at))
             c.execute("UPDATE comments SET category=?,analysis_method='human',reason=?,manual_fields=?,confidence=NULL,analyzed_at=? WHERE id=?", (category, reason, json.dumps(fields, ensure_ascii=False), reviewed_at, row['id']))
             event(c, 'review', f"人工确认评论 {body['id']} 为{LABELS[category]}")
+            if mode == 'live':
+                import comment_keywords
+                comment_keywords.observe(c, row['id'])
         elif action == 'lead':
             row = required(c, 'leads', body['id'])
             stage = body.get('stage', row['stage'])

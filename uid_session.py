@@ -348,11 +348,35 @@ def capture_shape(value):
         return {'capture_shape': 'unrecognized'}
 
 
+def check_observed_read(value, sender):
+    """Validate a just-observed browser response; never retain its body."""
+    result=dict(browser_read_verified=False)
+    try:
+        read=value['read_response']
+        if not isinstance(read,dict) or set(read)!={'http_status','mime','payload'}:return result
+        if type(read['http_status']) is not int or read['http_status']!=200 or not isinstance(read['mime'],str) or 'protobuf' not in read['mime'].lower():return result
+        raw=base64.b64decode(read['payload'],validate=True)
+        if not 0<len(raw)<=262144:return result
+        response=wire.decode(raw);request=wire.decode(base64.b64decode(value['payload'],validate=True))
+        result.update(browser_response_bytes=len(raw),browser_response_sha256=hashlib.sha256(raw).hexdigest(),
+            browser_platform_code=str(wire.one(response,3,0,0)),browser_sender_matches=wire.one(response,13,0,0)==int(sender),
+            browser_sequence_matches=wire.one(response,2,0)==wire.one(request,2,0))
+        if (wire.one(request,1,0)!=1001 or wire.one(response,1,0)!=1001 or not result['browser_sender_matches']
+                or not result['browser_sequence_matches'] or wire.one(response,3,0,0)!=0 or wire.text(response,4)!='OK'
+                or wire.one(response,5,0,0)!=wire.one(request,6,0)):return result
+        body=wire.decode(wire.one(response,6,2));requested=wire.decode(wire.one(wire.decode(wire.one(request,8,2)),1000,2))
+        limit=wire.one(requested,2,0);info=wire.decode(wire.one(body,1000,2))
+        if set(body)!={1000} or not 1<=limit<=20 or len(info.get(4,[]))>limit:return result
+        result['browser_read_verified']=True
+    except Exception:pass
+    return result
+
+
 def bootstrap(value):
     result = dict(status='session_not_saved', can_send=False, live_verified=False, credential_file_created=False,
                   bootstrap_phase='input_validation', identity_verified=False, http_attempts=0)
     try:
-        if not isinstance(value, dict) or set(value) != {'expected_account', 'identity_cookie', 'headers', 'payload'}:
+        if not isinstance(value, dict) or set(value) != {'expected_account', 'identity_cookie', 'headers', 'payload','read_response'}:
             return result
         result['bootstrap_phase'] = 'identity_check'
         identity = uid_bootstrap.probe(dict(expected_account=value['expected_account'], cookie=value['identity_cookie'],
@@ -361,11 +385,16 @@ def bootstrap(value):
             return dict(identity, bootstrap_phase='identity_check')
         result.update(identity_verified=True, http_attempts=identity['http_attempts'], bootstrap_phase='read_context_validation')
         data = from_capture(value, identity)
+        result['bootstrap_phase']='browser_read_check'
+        observed=check_observed_read(value,identity['sender_uid']);result.update(observed)
+        if not observed['browser_read_verified']:
+            result['status']='browser_im_check_failed'
+            return result
         result['bootstrap_phase'] = 'im_check'
         checked = check_im(Provider(memory=data), identity['sender_uid'])
         checked['http_attempts'] += identity['http_attempts']
         if checked['status'] != 'im_read_verified':
-            return dict(checked, bootstrap_phase='im_check', identity_verified=True)
+            return dict(checked, **observed, bootstrap_phase='im_check', identity_verified=True)
         result.update(http_attempts=checked['http_attempts'], bootstrap_phase='credential_save')
         path = vault_path()
         with runtime.data_lock(path.parent):
@@ -399,8 +428,8 @@ def main():
     result = dict(status='session_unavailable', can_send=False, live_verified=False)
     try:
         if sys.argv[1:] == ['bootstrap']:
-            raw = sys.stdin.buffer.read(131073)
-            result = bootstrap(json.loads(raw)) if len(raw) <= 131072 else result
+            raw = sys.stdin.buffer.read(524289)
+            result = bootstrap(json.loads(raw)) if len(raw) <= 524288 else result
         elif sys.argv[1:] == ['check']:
             provider = Provider()
             sender = provider.current()['sender_uid']
