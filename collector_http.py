@@ -5,6 +5,7 @@ with its original license and fixed-byte integrity check. Network success must b
 validated separately from local parameter calculation.
 """
 import hashlib
+from datetime import datetime
 import importlib.util
 import json
 from pathlib import Path
@@ -181,7 +182,7 @@ def parse_page(body, operation, video='', parent='', title=''):
         raise ReadError('schema_changed', {'reason': 'invalid_page_container'})
     if len(items) > 1000 or (not items and more):
         raise ReadError('schema_changed', {'reason': 'invalid_page_size' if items else 'empty_page_with_more'})
-    rows, skipped, reply_targets, seen = [], 0, [], set()
+    rows, skipped, reply_targets, non_text_reply_targets, seen = [], 0, [], [], set()
     nontext = 0
     for item in items:
         if not isinstance(item, dict):
@@ -211,9 +212,14 @@ def parse_page(body, operation, video='', parent='', title=''):
             if reference == cid:
                 skipped += 1
                 continue
+            has_replies = operation == 'comments' and type(item.get('reply_comment_total')) is int and item['reply_comment_total'] > 0
+            if has_replies and cid not in reply_targets:
+                reply_targets.append(cid)
             if not raw.strip():
                 skipped += 1
                 nontext += 1
+                if has_replies and cid not in non_text_reply_targets:
+                    non_text_reply_targets.append(cid)
                 continue
             user = item.get('user') if isinstance(item.get('user'), dict) else {}
             created = item.get('create_time')
@@ -223,8 +229,6 @@ def parse_page(body, operation, video='', parent='', title=''):
                    'nickname': str(user.get('nickname') or '')[:120], 'parent_comment_id': reference,
                    'published_at': created if type(created) is int and 0 < created < 32503680000 else None}
             identity = cid
-            if operation == 'comments' and type(item.get('reply_comment_total')) is int and item['reply_comment_total'] > 0:
-                reply_targets.append(cid)
         if identity not in seen:
             seen.add(identity)
             rows.append(row)
@@ -234,7 +238,8 @@ def parse_page(body, operation, video='', parent='', title=''):
     if operation == 'search' and more and (not isinstance(search_id, str) or not search_id):
         raise ReadError('schema_changed')
     result = {'rows': rows, 'cursor': cursor, 'has_more': bool(more), 'search_id': search_id,
-              'skipped': skipped, 'skipped_reasons': {'non_text':nontext,'invalid_record':skipped-nontext}, 'reply_targets': reply_targets}
+              'skipped': skipped, 'skipped_reasons': {'non_text':nontext,'invalid_record':skipped-nontext},
+              'reply_targets': reply_targets, 'non_text_reply_targets': non_text_reply_targets}
     if empty_replies:
         result['reply_visibility'] = {'state': 'terminal_without_visible_replies', 'declared_total': body['total'], 'returned_rows': 0}
     return result
@@ -270,9 +275,27 @@ def exchange(url, headers, cancelled):
         raise ReadError('resource_limited' if overflow else 'network_error') from None
 
 
+def comment_window(rows, since, observed):
+    """Bounded timing/source evidence, never comment text or user identifiers."""
+    stamps=[r.get('published_at') if type(r.get('published_at')) is int and 0<r['published_at']<32503680000 else None for r in rows]
+    known=[stamp for stamp in stamps if stamp is not None]
+    pairs=[(a,b) for a,b in zip(stamps,stamps[1:]) if a is not None and b is not None]
+    in_window=[r.get('comment_id') for r,stamp in zip(rows,stamps)
+               if stamp is not None and (since is None or stamp>=since) and stamp<=observed and numeric(r.get('comment_id'))]
+    return dict(version='comment-page-window-v1',observed_at=observed,since=since,
+                text_rows=len(rows),unknown_time=len(rows)-len(known),
+                oldest=min(known) if known else None,newest=max(known) if known else None,
+                in_window=sum((since is None or stamp>=since) and stamp<=observed for stamp in known),
+                before_window=sum(since is not None and stamp<since for stamp in known),
+                future=sum(stamp>observed and (since is None or stamp>=since) for stamp in known),
+                window_comment_ids=in_window[:20],window_comment_ids_truncated=len(in_window)>20,
+                comparable_pairs=len(pairs),newer_after_older=sum(a<b for a,b in pairs),
+                older_after_newer=sum(a>b for a,b in pairs))
+
+
 class Client:
     def __init__(self, session, *, signer=None, transport=None, cancelled=lambda: False, diagnostic=lambda x: None,
-                 request_limit=24):
+                 request_limit=24, comment_since=None):
         self.session = session
         self.signer = signer
         self.signers = {}  # Endpoint choice is fixed, never an automatic retry/fallback.
@@ -281,6 +304,9 @@ class Client:
         self.cancelled, self.diagnostic = cancelled, diagnostic
         self.count = 0
         self.request_limit = request_limit
+        since=datetime.fromisoformat(comment_since) if comment_since is not None else None
+        if since is not None and since.tzinfo is None:raise ValueError('评论时间下界需要明确时区')
+        self.comment_since=int(since.timestamp()) if since is not None else None
         self.deadline = time.monotonic() + 180
         self.lock = threading.Lock()
 
@@ -419,6 +445,10 @@ class Client:
                 result = parse_page(body, operation, video, parent, title)
             evidence.update(status='valid_page', rows=len(result['rows']), skipped=result['skipped'],
                             skipped_reasons=result['skipped_reasons'],has_more=result['has_more'],next_cursor=result['cursor'])
+            if operation in ('comments','replies'):
+                evidence['comment_window']=comment_window(result['rows'],self.comment_since,int(time.time()))
+                evidence['reply_targets_count']=len(result['reply_targets'])
+                evidence['non_text_reply_targets']=result['non_text_reply_targets'][:20]
             if result.get('reply_visibility'):
                 evidence['reply_visibility'] = result['reply_visibility']
             if result.get('page_visibility'):

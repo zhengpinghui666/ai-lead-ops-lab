@@ -33,18 +33,18 @@
     },
     {
       "name": "COLLECTION_FRESHNESS.md",
-      "sha256": "bba631987ba0537c31e55d50d1468ed01c10a588842719bcd436e3acd6ee28d0",
-      "bytes": 13535
+      "sha256": "8636e6df5a58ecc0b8784b02ee277f6c7617cd87575186cc2d50818beb6c3868",
+      "bytes": 14382
     },
     {
       "name": "COLLECTION_HTTP.md",
-      "sha256": "cd8d30427d83dfa54eaa98c253beb3d1c5d8e3c46707734ac5ced0cf6fb154a4",
-      "bytes": 27181
+      "sha256": "eb6b95243235cd00f3809567f0af63d489da3e0d11c15ae2b7ae790a250fa6f3",
+      "bytes": 28037
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "546e5917ba599da28b6a44faeddf1934f75bff3c22427354b5f33e14bd57c61b",
-      "bytes": 78107
+      "sha256": "d64395868ff2362c452d5dcc648dc3b5b680b8610afd5ac306cdea9137814136",
+      "bytes": 82406
     },
     {
       "name": "DISCOVERY_TRACKING.md",
@@ -63,8 +63,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "419c67de3084981c53670dc7f7a759a08976ec5403caa4dc1c84ad4c04c28aca",
-      "bytes": 119523
+      "sha256": "3f04ff40cb2baa998139c7679e321247aa97c0189a3bfce7dd71a7416a529376",
+      "bytes": 123822
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -248,8 +248,8 @@
     },
     {
       "name": "collector_http.py",
-      "sha256": "76b693238efae62cd2d374c850cec1837d7e5337e818a000889b68285b390edc",
-      "bytes": 24218
+      "sha256": "ee47a0a658b114652483c450ab4d2c44fbcb7c47c023a6eea93d6856169538b0",
+      "bytes": 26546
     },
     {
       "name": "collector_http_session.py",
@@ -258,8 +258,8 @@
     },
     {
       "name": "collector_http_worker.py",
-      "sha256": "c9341e172d39731cb48b3fb1ac561b12eacdf03fa412711f41eb491cbc8690bf",
-      "bytes": 18575
+      "sha256": "fdf1c2a9b11824bc1398d2cfe5e529af42e1a092edb27b73b9d07769fb0d7a8f",
+      "bytes": 18767
     },
     {
       "name": "collector_parser.cjs",
@@ -828,8 +828,8 @@
     },
     {
       "name": "test_collector_http.py",
-      "sha256": "58f0ff4cd5e38a4332ad7456bacba332881c5869dae93a84da454b8f25ebcc0b",
-      "bytes": 43353
+      "sha256": "6caf3c6d96de76ddb0157d33f3ec8837d600d792cb4f1e2f77f411ead6a65986",
+      "bytes": 49045
     },
     {
       "name": "test_discovery_tracking.py",

@@ -1,4 +1,5 @@
 import json
+from datetime import datetime,timezone
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
@@ -45,6 +46,81 @@ class FakeSigner:
 
 
 class HTTPReadTests(unittest.TestCase):
+    def test_image_reply_parent_requires_valid_same_video_identity(self):
+        for bad in (dict(cid='invalid'),dict(aweme_id='7664994032866659999'),dict(reply_id=PARENT),dict(text=None)):
+            with self.subTest(bad=bad),self.assertRaises(http.ReadError):
+                http.parse_page(body([record(text='',reply_comment_total=1)|bad]),'comments',VIDEO)
+        for total in (True,'1',-1,0,None):
+            parsed=http.parse_page(body([record(text='',reply_comment_total=total)]),'comments',VIDEO)
+            self.assertEqual(parsed['reply_targets'],[])
+        parsed=http.parse_page(body([record(text='',reply_comment_total=2)]),'comments',VIDEO)
+        self.assertEqual(parsed['rows'],[])
+        self.assertEqual(parsed['non_text_reply_targets'],[PARENT])
+
+    def test_page_window_counts_and_mixed_order_do_not_leak_content(self):
+        stamp=int(time.time())
+        records=[record(cid=str(int(PARENT)+i),create_time=value,text='TEST_PRIVATE_TEXT',user={'uid':'123456789','nickname':'TEST_PRIVATE_USER'})
+                 for i,value in enumerate((stamp-40,stamp-7200,stamp-20,None,stamp+3600))]
+        records.append(record(cid=str(int(PARENT)+9),text='',reply_comment_total=1))
+        since=datetime.fromtimestamp(stamp-3600,timezone.utc).isoformat()
+        log=[]
+        client=http.Client(session(),signer=FakeSigner(),diagnostic=log.append,comment_since=since,
+            transport=lambda *a:(200,'application/json',json.dumps(body(records)).encode()))
+        page=client.page('comments',video=VIDEO)
+        window=log[-1]['comment_window']
+        self.assertEqual((window['text_rows'],window['in_window'],window['before_window'],window['future'],window['unknown_time']),(5,2,1,1,1))
+        self.assertEqual((window['comparable_pairs'],window['newer_after_older'],window['older_after_newer']),(2,1,1))
+        self.assertEqual(window['window_comment_ids'],[PARENT,str(int(PARENT)+2)])
+        self.assertEqual(log[-1]['non_text_reply_targets'],[str(int(PARENT)+9)])
+        self.assertEqual(page['rows'][0]['text'],'TEST_PRIVATE_TEXT','Diagnostics do not remove accepted source text')
+        for private in ('TEST_PRIVATE_TEXT','TEST_PRIVATE_USER','TEST_ONLY_SECRET','TEST_ONLY_SIGNATURE','123456789'):
+            self.assertNotIn(private,json.dumps(log))
+        self.assertEqual(http.comment_window([],None,stamp)['newest'],None)
+        self.assertEqual(http.comment_window([{'published_at':stamp+10}],stamp+20,stamp)['before_window'],1)
+        self.assertEqual(http.comment_window([{'published_at':stamp+10}],stamp+20,stamp)['future'],0)
+        with self.assertRaises(ValueError):http.Client(session(),comment_since='2026-09-12T13:00:00')
+
+    def test_text_reply_is_archived_without_inventing_an_image_parent_comment(self):
+        with tempfile.TemporaryDirectory() as directory,patch.object(app,'DATA_DIR',Path(directory)):
+            app.init()
+            with patch('collector.threading.Thread.start'):
+                task=collector.start(dict(kind='video',target=VIDEO,transport='http',comment_limit=2,request_id='image-parent-reply'))['id']
+            try:
+                with app.db() as c:source=c.execute("SELECT id FROM sources WHERE kind='browser' ORDER BY id LIMIT 1").fetchone()[0]
+                class Client:
+                    def page(self,operation,**kw):
+                        return http.parse_page(body([record(text='',reply_comment_total=1)]) if operation=='comments' else
+                            body([record(cid=str(int(PARENT)+1),reply_id=PARENT)]),operation,VIDEO,'' if operation=='comments' else PARENT)
+                events=[]
+                worker.collect(dict(kind='video',target=VIDEO,video_limit=1,comment_limit=2,page_concurrency=1),events.append,threading.Event(),client=Client())
+                for event in events:
+                    if event['type'] in ('targets','checkpoint'):collector.checkpoint(task,event)
+                    if event['type'] in ('video','comment'):collector.observe(task,source,event)
+                with app.db() as c:
+                    archived=c.execute('SELECT external_id,parent_external_id FROM comments').fetchall()
+                    self.assertEqual([tuple(r) for r in archived],[(str(int(PARENT)+1),PARENT)])
+            finally:collector.ACTIVE.clear()
+
+    def test_non_text_parent_keeps_text_replies_within_shared_budget(self):
+        for budget,expected_calls in ((1,['comments']),(2,['comments','replies'])):
+            with self.subTest(budget=budget):
+                calls=[]
+                class Client:
+                    def page(self,operation,**kw):
+                        calls.append(operation)
+                        if operation=='comments':
+                            return http.parse_page(body([record(text='',image_list=[{}],reply_comment_total=1)]),operation,VIDEO)
+                        return http.parse_page(body([record(cid=str(int(PARENT)+1),text='现在可以找陪练吗',reply_id=PARENT)]),operation,VIDEO,PARENT)
+                events=[]
+                worker.collect(dict(kind='video',target=VIDEO,video_limit=1,comment_limit=budget,page_concurrency=1),
+                               events.append,threading.Event(),client=Client())
+                self.assertEqual(events[-1]['status'],'completed')
+                self.assertEqual(calls,expected_calls)
+                comments=[e['record'] for e in events if e['type']=='comment']
+                self.assertEqual(len(comments),budget-1)
+                self.assertEqual(sum(e['count'] for e in events if e['type']=='skipped'),1)
+                if comments:self.assertEqual(comments[0]['parent_comment_id'],PARENT)
+
     def test_request_budget_finishes_bounded_batch_without_claiming_unread_work(self):
         calls=[];log=[]
         def exchange(url, headers, cancelled):

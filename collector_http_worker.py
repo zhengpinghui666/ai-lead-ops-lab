@@ -42,7 +42,8 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                 raise http.ReadError('needs_login') from None
             except Exception:
                 raise http.ReadError('session_expired') from None
-            client = http.Client(session, cancelled=lambda: cancel.is_set() or stopped.is_set(), diagnostic=diagnostic)
+            client = http.Client(session, cancelled=lambda: cancel.is_set() or stopped.is_set(), diagnostic=diagnostic,
+                                 comment_since=config.get('comment_since'))
             operation = {'search': 'search', 'author': 'detail'}.get(config['kind'], 'comments') if not config.get('resume_targets') else 'comments'
             client.check_gate(operation)
             identity = (identity_probe or uid_bootstrap.probe)({'expected_account': session['account'],
@@ -209,8 +210,9 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                         reply_turn = False
                     else:
                         main_cursor = page['cursor'] if page['has_more'] else None
+                        non_text_parents=set(page.get('non_text_reply_targets',[]))
                         for parent in page['reply_targets']:
-                            if parent in seen and parent not in queued_parents:
+                            if (parent in seen or parent in non_text_parents) and parent not in queued_parents:
                                 reply_queue.append((parent, 0, set()))
                                 queued_parents.add(parent)
                         reply_turn = True
