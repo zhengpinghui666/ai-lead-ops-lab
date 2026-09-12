@@ -13,6 +13,7 @@ import collection_scheduler
 import messaging_http
 import monitoring
 import uid_messaging
+import uid_inbox_sync
 import live_monitor
 import live_tracking
 import live_workflow
@@ -46,6 +47,7 @@ def collection_state(mode):
     result['login_recovery'] = login_recovery.state(mode)
     import discovery_tracking
     result['discovery'] = discovery_tracking.state(mode)
+    result['inbox_sync'] = uid_inbox_sync.state(mode)
     return result
 
 
@@ -237,6 +239,10 @@ class Handler(BaseHTTPRequestHandler):
             elif action == 'uid-inbox-link-reply':
                 import uid_inbox_store
                 result = uid_inbox_store.link_reply(body,mode)
+            elif action == 'uid-inbox-sync-save':
+                result = uid_inbox_sync.save(body,mode)
+            elif action in ('uid-inbox-sync-start','uid-inbox-sync-stop'):
+                result = uid_inbox_sync.control(body,action=='uid-inbox-sync-start',mode)
             elif action == 'uid-http-probe':
                 if body:
                     raise ValueError('身份核对不接收 UID、凭证或消息参数；只使用本地配置')
@@ -323,15 +329,16 @@ class LocalHTTPServer(ThreadingHTTPServer):
     def prepare_stop(self):
         # HTTP admissions share lifecycle_lock. Scheduler admissions share the
         # collector lock. Never interrupt a collector, live session or sender.
-        with self.lifecycle_lock, collector.GUARD, live_monitor.GUARD, clubops.LOCKS['live'], clubops.db() as c:
+        with self.lifecycle_lock, collector.GUARD, live_monitor.GUARD, uid_inbox_sync.GUARD, clubops.LOCKS['live'], clubops.db() as c:
             active_plan = c.execute("SELECT 1 FROM collection_plans WHERE status='running' LIMIT 1").fetchone()
             active_model = c.execute("SELECT 1 FROM semantic_jobs WHERE status IN ('queued','running','cancelling') LIMIT 1").fetchone()
             if (self.active_writes != 1 or collector.ACTIVE or live_monitor.ACTIVE or
-                    uid_messaging.GUARD.locked() or semantic.GUARD.locked() or active_model or active_plan or login_recovery.busy()):
+                    uid_messaging.GUARD.locked() or uid_inbox_sync.ACTIVE is not None or semantic.GUARD.locked() or active_model or active_plan or login_recovery.busy()):
                 raise ValueError('仍有运行任务或写入；请先停止任务，服务未关闭')
             self.stopping = True
             collection_scheduler.STOP.set()
             live_tracking.STOP.set()
+            uid_inbox_sync.STOP.set()
 
     def server_bind(self):
         if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
@@ -348,6 +355,7 @@ def main():
             uid_messaging.recover()
             import uid_inbox_store
             uid_inbox_store.recover()
+            uid_inbox_sync.recover()
             analysis_store.recover()
             semantic_queue.recover()
             live_monitor.recover()
@@ -358,6 +366,7 @@ def main():
             collection_scheduler.start_service()
             semantic_queue.start_service()
             live_tracking.start_service()
+            uid_inbox_sync.start_service()
             team_access.start_service(httpd.server_address[1])
             print(f'ClubOps 已启动：http://{HOST}:{httpd.server_address[1]}/', flush=True)
             try:
@@ -366,6 +375,7 @@ def main():
                 pass
             finally:
                 team_access.shutdown()
+                uid_inbox_sync.shutdown()
                 live_tracking.shutdown()
                 live_monitor.shutdown()
                 collection_scheduler.shutdown()

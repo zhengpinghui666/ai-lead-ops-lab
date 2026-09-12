@@ -112,7 +112,7 @@ def init(mode='live'):
             known_tables = {r[0] for r in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             verticality_missing = not {'asset_verticality','asset_references','asset_keywords'} <= known_tables
             keyword_sources_missing = 'comment_keyword_sources' not in known_tables
-            inbox_missing = not {'uid_inbox_conversations','uid_inbox_messages','uid_inbox_reads','uid_reply_links'} <= known_tables
+            inbox_missing = not {'uid_inbox_conversations','uid_inbox_messages','uid_inbox_reads','uid_reply_links','uid_inbox_sync'} <= known_tables
             live_columns = {r[1] for r in source.execute('PRAGMA table_info(live_messages)')}
             collection_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_tasks)')}
             plan_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_plans)')}
@@ -144,6 +144,8 @@ def init(mode='live'):
         c.executescript(uid_messaging.SCHEMA)
         import uid_inbox_store
         c.executescript(uid_inbox_store.SCHEMA)
+        import uid_inbox_sync
+        c.executescript(uid_inbox_sync.SCHEMA)
         import live_monitor
         c.executescript(live_monitor.SCHEMA)
         import live_tracking

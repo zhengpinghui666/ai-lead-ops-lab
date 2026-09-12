@@ -259,3 +259,6 @@ dialog.collection-modal .modal-actions{flex-wrap:wrap}
 .monitor-workspace .result-table-scroll{min-height:0}
 @container monitor-comments (max-width:800px){.result-table tbody tr{gap:7px;padding:14px 16px}.result-table .result-outcome{display:flex;align-items:center;justify-content:space-between;gap:10px}.result-table td.result-outcome::before{content:none}.result-table .result-outcome>.button{margin:0}.result-table .result-analysis{margin-bottom:0}}
 @media(max-width:700px){.record-disclosure>summary{min-height:44px;display:flex;align-items:center}.record-metadata{grid-template-columns:76px minmax(0,1fr)}}
+
+/* Contact evidence can contain long message IDs and hashes. */
+.inbox-detail p{overflow-wrap:anywhere;}

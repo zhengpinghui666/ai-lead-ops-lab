@@ -235,10 +235,21 @@ function renderUidInbox(){
   $('#uid-inbox-content').innerHTML=`<div class="row spread"><div><h3>${esc(lead?.nickname||s.peer_uid)}</h3><small>本机账号 UID ${esc(s.account_uid)}</small></div>${button('核对已有会话','uid-inbox-scan','small',(!s.can_read||uidInboxBusy)?'disabled':'')}</div>
     <p class="muted">${esc(uidInboxBusy?'正在读取平台数据，完成后保存在本机。':s.session_detail)}</p>
     ${last?`<p class="muted">${esc(statuses[last.status]||'读取状态待核对')} · ${date(last.finished_at||last.started_at)}${last.detail.new_messages!==undefined?` · 新增 ${last.detail.new_messages} 条文字`:''}</p>`:''}
-    ${s.conversations.length?s.conversations.map(c=>`<div class="uid-inbox-conversation"><span>${c.inbox===1?'陌生人收件箱':'普通收件箱'} · 已核对会话</span><div class="actions">${button('读取最近消息','uid-inbox-read','small',`data-id="${c.id}" ${!s.can_read||uidInboxBusy?'disabled':''}`)}${c.inbox===0&&c.has_more?button('读取更早消息','uid-inbox-older','small',`data-id="${c.id}" ${!s.can_read||uidInboxBusy?'disabled':''}`):''}</div></div>`).join(''):'<p class="muted">尚未保存匹配会话；不能据此判断是否联系过。</p>'}
+    ${s.conversations.length?s.conversations.map(c=>`<div class="uid-inbox-conversation"><span>${c.inbox===1?'陌生人收件箱':'普通收件箱'} · 已核对会话</span><div class="actions">${button('读取最近消息','uid-inbox-read','small',`data-id="${c.id}" ${!s.can_read||uidInboxBusy?'disabled':''}`)}${c.inbox===0?button('同步设置','uid-inbox-sync-settings','small',`data-id="${c.id}"`):''}${c.inbox===0&&c.has_more?button('读取更早消息','uid-inbox-older','small',`data-id="${c.id}" ${!s.can_read||uidInboxBusy?'disabled':''}`):''}</div></div>`).join(''):'<p class="muted">尚未保存匹配会话；不能据此判断是否联系过。</p>'}
     <div class="uid-inbox-history">${s.messages.length?s.messages.map(m=>`<div class="bubble-wrap ${m.direction==='outbound'?'out':''}"><div class="bubble">${esc(m.content)}</div><small>${m.direction==='inbound'?'对方消息':'本账号消息'} · ${m.sent_at?'发送于 '+date(m.sent_at):'发送时间待核对'}</small>${m.reply_link?`<small>已关联任务 #${m.reply_link.job_id} 的回复</small>`:m.reply_candidates?.length?button('关联为回复','uid-inbox-link-reply','small',`data-id="${m.id}"`):''}<details><summary>来源</summary><small>平台消息编号 ${esc(m.server_message_id)}<br>会话 ${esc(m.conversation_id)}<br>首次读取 ${date(m.first_seen_at)}<br>平台原始时间 ${esc(m.created_at_raw)}${m.sent_at?'（毫秒）':'（待核对）'}${m.reply_link?'<br>关联依据：'+esc(m.reply_link.reason):''}</small></details></div>`).join(''):'<div class="empty"><h3>暂无已保存的文字消息</h3><p>核对已有会话后，可按需读取该会话。</p></div>'}</div>
     <div class="row spread"><small>历史记录单独保存；不自动认定送达、回复或联系授权。</small><div class="actions">${button('最新已存记录','uid-inbox-local','small',`data-id="${s.lead_id}"`)}${s.has_more?button('更早已存记录','uid-inbox-local','small',`data-id="${s.lead_id}" data-before="${s.next_before}"`):''}</div></div>`;
   icons();
+}
+function uidInboxSyncStatus(id){
+  const rows=(S.collector?.inbox_sync?.targets||[]).filter(t=>t.lead_id===id);
+  const enabled=rows.filter(t=>t.enabled).length,attention=rows.some(t=>t.status==='attention'),count=rows.reduce((n,t)=>n+t.new_messages,0);
+  if(!rows.length)return '<div id="uid-inbox-sync-status" hidden></div>';
+  return `<div id="uid-inbox-sync-status" class="muted" style="padding:8px 20px;font-size:.75rem">收件同步 · ${enabled?'已开启':attention?'需要处理':'已暂停'}${count?` · 累计新增 ${count} 条收件`:''}</div>`;
+}
+function uidInboxSyncDialog(cid){
+  const s=uidInboxState,c=s?.conversations.find(x=>x.id===cid);if(!c||c.inbox!==0)throw Error('需要先核对普通会话');
+  const sync=S.collector?.inbox_sync||{},t=sync.targets?.find(x=>x.conversation_id===cid&&x.account_uid===s.account_uid),active=sync.active_id===t?.id,locked=t?.enabled||active;
+  showModal('收件同步设置',`<input type="hidden" name="lead_id" value="${s.lead_id}"><input type="hidden" name="account_uid" value="${esc(s.account_uid)}"><input type="hidden" name="conversation_id" value="${cid}"><p>同步此对象已核对会话的新文字消息。</p>${field('interval_seconds','检查间隔（秒）',t?.interval_seconds||60,'number',`min="30" max="3600" required ${locked?'disabled':''}`)}<p class="muted">消息较多时分批追赶。保存不启动；服务重启后保持暂停。</p>${t?`<p>${esc(t.detail||'尚未开启')} · 累计新增 ${t.new_messages} 条收件</p><div class="actions">${button(t.enabled?'暂停同步':'开启同步',t.enabled?'uid-inbox-sync-stop':'uid-inbox-sync-start','small',`type="button" data-id="${t.id}" data-conversation="${cid}" ${active&&!t.enabled?'disabled':''}`)}</div>`:''}`,'uid-inbox-sync-form',submit('保存设置').replace('<button ',`<button ${locked?'disabled ':''}`));$('#modal').classList.add('settings-modal');
 }
 function uidInboxReplyDialog(id){
   const s=uidInboxState,m=s?.messages.find(x=>x.id===id);if(!m||!m.reply_candidates?.length)throw Error('当前消息没有可关联的发送任务');
@@ -266,7 +277,7 @@ function inbox(){
   const msgs=S.messages.filter(m=>m.lead_id===l.id),jobs=S.jobs.filter(j=>j.lead_id===l.id);
   const channel=mode==='demo'?'模拟通道':S.uid_messaging?.can_attempt?'HTTP 配置就绪 · 未验收':'HTTP 待配置';
   return top+`<div class="inbox"><div class="inbox-list"><h3>线索与会话 <span class="muted">${list.length}</span></h3>${list.map(x=>`<button class="conversation ${x.id===l.id?'active':''}" data-action="chat-select" data-id="${x.id}">${avatar(x.nickname,true)}<span class="conversation-content"><b>${esc(x.nickname)}</b><p>${esc(x.source_kind==='uid_test'?'测试对象':x.game||'游戏未识别')} · ${stages[x.stage]}</p></span></button>`).join('')}</div>
-    <section class="chat"><div class="chat-header"><div><h2>${esc(l.nickname)}</h2><small>${esc(l.external_id)}</small></div><div class="row">${mode==='live'?button('收件记录','uid-inbox','small',`data-id="${l.id}"`):''}${badge(channel,'warn')}</div></div>
+    <section class="chat"><div class="chat-header"><div><h2>${esc(l.nickname)}</h2><small>${esc(l.external_id)}</small></div><div class="row">${mode==='live'?button('收件记录','uid-inbox','small',`data-id="${l.id}"`):''}${badge(channel,'warn')}</div></div>${mode==='live'?uidInboxSyncStatus(l.id):''}
     <div class="chat-history">${msgs.length?msgs.map(m=>`<div class="bubble-wrap ${m.direction==='outbound'?'out':''}"><div class="bubble">${esc(m.content)}</div><small>${esc(m.status==='demo'?'演示消息':jobLabels[m.status]||m.status)} · ${date(m.created_at)}</small></div>`).join(''):empty('还没有私信记录','保存草稿不代表发送；服务端接受也不代表接收端送达。','','','message-square')}</div>
     <form id="composer" class="composer"><div class="row spread">${button(icon('wand-sparkles')+' 填入回复模板','suggest','subtle small','type="button"')}<span>模板辅助 · 非 AI 自动回复</span></div><textarea id="draft-content" name="content" placeholder="填写内容并保存为草稿…" maxlength="2000" required aria-label="私信草稿">${esc(draftText)}</textarea><div class="row spread"><span>保存不会自动发送</span><button class="button primary" type="submit">${icon('save')} 保存草稿</button></div></form></section>
     <aside class="inbox-detail"><div><h3>联系与跟进</h3>${badge(l.do_not_contact?'禁止联系':l.contact_basis?'已登记联系依据':'未登记联系依据',l.do_not_contact?'bad':l.contact_basis?'good':'warn')}<p class="muted">${esc(l.contact_note||'尚未记录联系依据')}</p>${button('编辑联系依据','contact','small',`data-id="${l.id}"`)}<hr class="divider">${button('更新跟进结果','follow','small',`data-id="${l.id}"`)}<hr class="divider"><h3>原始需求</h3><p>${esc(l.latest.raw_text||'无来源原文；不得据此认定付费需求')}</p>${sourceLink(l.latest)}</div>
@@ -324,6 +335,8 @@ case 'discovery-settings':discoverySettingsDialog();break;
 case 'discovery-authors':discoveryAuthorsDialog();break;
 case 'asset-keywords':await assetKeywordsDialog();break;
 case 'uid-inbox-link-reply':uidInboxReplyDialog(Number(el.dataset.id));break;
+case 'uid-inbox-sync-settings':uidInboxSyncDialog(id);break;
+case 'uid-inbox-sync-start':case 'uid-inbox-sync-stop':await save(a,{id},a.endsWith('start')?'收件同步已开启':'已停止后续读取');uidInboxSyncDialog(Number(el.dataset.conversation));break;
 case 'keyword-filter':keywordFilter=el.dataset.filter;await assetKeywordsDialog();break;
 case 'keyword-review':await keywordReviewDialog(el.dataset.term);break;
 case 'keyword-add':showModal('新增候选词',field('term','候选关键词','','text','required maxlength="30"')+select('scope','应用范围',opts(keywordScopes,keywordScope==='message'?'message':'asset'))+'<p>保存后进入待评审，不会直接用于模型初筛。</p>','keyword-propose-form',submit('保存候选'));break;
@@ -420,6 +433,7 @@ document.addEventListener('change',async e=>{
 });
 document.addEventListener('submit',async e=>{const form=e.target;const formId=form.getAttribute('id');if(!formId)return;e.preventDefault();if(busy)return;busy=true;const submitButton=$('button[type="submit"]',form);if(submitButton)submitButton.disabled=true;try{const formError=$('.form-error',form);if(formError){formError.hidden=true;formError.textContent='';}const values=Object.fromEntries(new FormData(form));
   if(formId==='composer'){draftText=values.content.trim();if(!draftText)throw Error('请先填写消息内容');draftKey=draftKey||crypto.randomUUID();stashDraft();await api('draft',{lead_id:conversation,content:draftText,request_id:draftKey});draftText='';draftKey='';stashDraft();await load();toast('草稿已保存，尚未发送');}
+  else if(formId==='uid-inbox-sync-form'){await api('uid-inbox-sync-save',{lead_id:Number(values.lead_id),account_uid:values.account_uid,conversation_id:Number(values.conversation_id),interval_seconds:Number(values.interval_seconds)});await load();uidInboxSyncDialog(Number(values.conversation_id));toast('设置已保存，尚未开启同步');}
   else if(formId==='uid-inbox-reply-form'){await api('uid-inbox-link-reply',{lead_id:Number(values.lead_id),account_uid:values.account_uid,job_id:Number(values.job_id),message_id:Number(values.message_id),reason:values.reason});await load();await uidInboxDialog(Number(values.lead_id));toast('回复已关联，未登记导流');}
   else if(formId==='keyword-search-form'){keywordQuery=values.q;keywordScope=values.scope;await assetKeywordsDialog();}
   else if(formId==='keyword-propose-form'){await api('asset-keyword-propose',{term:values.term,scope:values.scope});await keywordReviewDialog(values.term.trim());}
@@ -757,6 +771,7 @@ async function pollCollection(){
     const changed=JSON.stringify(stable(S.collector))!==JSON.stringify(stable(value));
     collectionPanelPending ||= changed;
     S.collector=value;
+    if(page==='inbox'&&$('#uid-inbox-sync-status'))$('#uid-inbox-sync-status').outerHTML=uidInboxSyncStatus(conversation);
     if(S.semantic&&value.model_queue)S.semantic.queue=value.model_queue;
     if(changed&&!value.tasks.some(t=>t.active))collectionReloadPending=true;
     const editing=busy||document.body.classList.contains?.('menu-open')||semanticDraftDirty||(page.startsWith('monitor')&&monitorDraftDirty)||(page==='live'&&liveDraftDirty)||$('#modal')?.open||document.activeElement?.matches('input,textarea,select,[contenteditable="true"]');

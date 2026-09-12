@@ -8,6 +8,9 @@ import uid_messaging
 import uid_protocol as wire
 import uid_session
 
+class InboxBusy(ValueError):
+    pass
+
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS uid_inbox_conversations (
  id INTEGER PRIMARY KEY, account_uid TEXT NOT NULL, peer_uid TEXT NOT NULL,
@@ -195,12 +198,12 @@ def _record_messages(c,account,peer,conversation,result,stamp,read_id,cursor):
     return added
 
 
-def read(body, mode='live', *, provider=None, exchange=None):
+def read(body, mode='live', *, provider=None, exchange=None, _cursor=None):
     if mode!='live' or set(body) not in ({'lead_id','account_uid','operation'}, {'lead_id','account_uid','operation','conversation_id','older'}):
         raise ValueError('收件参数无效')
     operation=body['operation']
     if operation not in ('scan','messages') or (operation=='scan')!=('older' not in body):raise ValueError('收件操作无效')
-    if not uid_messaging.GUARD.acquire(blocking=False):raise ValueError('已有私信读取或发送正在处理，请等待完成')
+    if not uid_messaging.GUARD.acquire(blocking=False):raise InboxBusy('已有私信读取或发送正在处理，请等待完成')
     read_id=None
     try:
         account=_account()
@@ -214,7 +217,10 @@ def read(body, mode='live', *, provider=None, exchange=None):
                 row=c.execute('SELECT * FROM uid_inbox_conversations WHERE id=? AND account_uid=? AND peer_uid=?',(_integer(body['conversation_id']),account,peer)).fetchone()
                 if not row:raise ValueError('请先核对该线索的已有会话')
                 conversation=dict(row)
-                if body['older']:
+                if _cursor is not None:
+                    if row['inbox']!=0 or not isinstance(_cursor,str) or not re.fullmatch(r'[0-9]{1,19}',_cursor):raise ValueError('后台收件游标无效')
+                    cursor=_cursor
+                elif body['older']:
                     if row['inbox']!=0 or not row['has_more'] or not row['next_cursor']:raise ValueError('没有可继续读取的分页')
                     cursor=row['next_cursor']
             read_id=c.execute('INSERT INTO uid_inbox_reads(account_uid,peer_uid,lead_id,operation,status,started_at) VALUES(?,?,?,?,?,?)',
@@ -228,15 +234,22 @@ def read(body, mode='live', *, provider=None, exchange=None):
             else:result=uid_inbox.messages(account,_conversation(conversation),provider=provider,exchange=exchange,limit=20,cursor=int(cursor))
         # Never persist credential envelopes. Only the existing reader's bounded diagnostics.
         detail={k:result[k] for k in ('status','error','scopes','evidence','returned_count','skipped_count','output_truncated','has_more','next_cursor') if k in result}
-        added=0;stamp=app.now()
+        added=0;new_inbound=0;stamp=app.now()
         with app.LOCKS[mode],app.db(mode) as c:
             if _account()!=account or _target(c,body['lead_id'])!=peer:raise ValueError('读取期间账号或线索改变，未保存消息')
             if operation=='scan':_record_conversations(c,account,peer,result,stamp)
             elif conversation:added=_record_messages(c,account,peer,conversation,result,stamp,read_id,cursor)
+            new_inbound=c.execute("SELECT COUNT(*) FROM uid_inbox_messages WHERE read_id=? AND direction='inbound'",(read_id,)).fetchone()[0]
             detail['new_messages']=added
             c.execute('UPDATE uid_inbox_reads SET status=?,finished_at=?,detail=? WHERE id=?',
                       (result['status'],stamp,json.dumps(detail,ensure_ascii=False),read_id))
-        return dict(read_id=read_id,status=result['status'],new_messages=added)
+        response=dict(read_id=read_id,status=result['status'],new_messages=added,new_inbound=new_inbound)
+        if result['status']=='messages_observed':
+            indices=[int(r['index']) for r in result['messages']]
+            response.update(minimum_index=str(min(indices)) if indices else None,maximum_index=str(max(indices)) if indices else None,
+                has_more=result.get('has_more'),next_cursor=result.get('next_cursor'),output_truncated=result.get('output_truncated',False))
+        else:response['error']=result.get('error','read_failed')
+        return response
     except Exception:
         if read_id:
             with app.LOCKS[mode],app.db(mode) as c:
