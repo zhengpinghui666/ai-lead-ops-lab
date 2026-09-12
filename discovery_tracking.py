@@ -198,12 +198,14 @@ def select_work_targets(c,plan,instant,focused,paused):
       AND (w.next_check_at IS NULL OR julianday(w.next_check_at)<=julianday(?))
     ), ranked AS (
       SELECT *,ROW_NUMBER() OVER(PARTITION BY vertical,selection_group ORDER BY
+        CASE WHEN vertical=1 AND selection_group='rotation' AND ?%9 IN (2,5)
+          THEN last_checked_at IS NULL ELSE 0 END,
         CASE WHEN vertical=1 AND last_checked_at IS NULL AND ?%3!=2
           THEN julianday(published_at) END DESC,
         julianday(COALESCE(next_check_at,first_seen_at)),julianday(published_at) DESC,video_id) AS selection_rank
       FROM eligible
     ) SELECT * FROM ranked WHERE selection_rank<=? ORDER BY selection_group,selection_rank''',
-      (instant,instant,instant,*focused,*paused,instant,turn,limit)).fetchall()
+      (instant,instant,instant,*focused,*paused,instant,turn,turn,limit)).fetchall()
     def select_pool(pool,budget,*,reserve_exploration=True):
         queues={name:deque(r for r in pool if r['selection_group']==name) for name in ('active','focused_new','rotation')}
         selected=[]
@@ -239,9 +241,13 @@ def select_work_targets(c,plan,instant,focused,paused):
         selected+=select_pool(remaining,limit-len(selected))
     else:
         selected=select_pool(vertical or ordinary,limit)
-    audit=dict(version='work-vertical-priority-v4',turn=turn,activity_window_seconds=3600,
+    # Two of three rotation reservations revisit already checked work. The
+    # third retains oldest-due exploration so an old unseen backlog also moves.
+    audit=dict(version='work-vertical-priority-v5',turn=turn,activity_window_seconds=3600,
+               exploration_phase='revisit_due' if turn%9 in (2,5) else 'oldest_due' if turn%3==2 else 'newer_first_coverage',
                slots=[dict(video_id=r['video_id'],group=r['selection_group'],
                            vertical=bool(r['vertical']),
+                           previously_checked=r['last_checked_at'] is not None,
                            latest_comment_at=r['latest_comment_at']) for r in selected])
     return selected,audit
 

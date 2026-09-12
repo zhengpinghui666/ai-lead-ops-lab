@@ -273,13 +273,33 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
         emit({'type': 'status', 'status': 'failed', 'detail': 'HTTP 采集器异常，已保留数据；错误类型：' + type(exc).__name__})
 
 
+MAX_CONFIG_BYTES = 1024*1024
+
+
+def read_configuration(stream):
+    # The supported candidate snapshot can contain 10,000 IDs and 500 history
+    # rows. Read a complete bounded frame, not a truncated 30 KB JSON prefix.
+    raw = stream.readline(MAX_CONFIG_BYTES+1)
+    if len(raw)>MAX_CONFIG_BYTES or not raw.endswith(b'\n'):
+        raise ValueError('Invalid configuration frame')
+    config = json.loads(raw.decode('utf-8'))
+    if not isinstance(config,dict):
+        raise ValueError('Invalid configuration object')
+    return config
+
+
 def main():
-    config = json.loads(sys.stdin.readline(30001))
-    cancel = threading.Event()
     output_lock = threading.Lock()
     def emit(message):
         with output_lock:
             print(json.dumps(message, ensure_ascii=False), flush=True)
+    try:
+        config = read_configuration(sys.stdin.buffer)
+    except (ValueError, UnicodeError):
+        emit({'type':'status','status':'failed',
+              'detail':'采集配置无效、未完整传入或超过 1 MiB 上限；未开始读取平台数据。'})
+        return
+    cancel = threading.Event()
     def commands():
         for raw in sys.stdin:
             try:

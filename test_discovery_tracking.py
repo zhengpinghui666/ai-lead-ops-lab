@@ -440,6 +440,53 @@ class DiscoveryTrackingTests(unittest.TestCase):
         _,job=self.choose(instant=discovery.future(NOW,180))
         self.assertTrue(set(job['target'].splitlines())-{newest})
 
+    def revisit_fixture(self):
+        self.save()
+        author='MS4wLjABAAAA_UNFOCUSED_BACKLOG'
+        for start in range(0,300,50):self.record([work(i,author=author) for i in range(start,start+50)],source='search')
+        checked=work(1000,author=author)['video_id'];active=work(1001,author=author)['video_id']
+        ordinary={**work(1002,author=author),'video_title':'无畏契约普通游戏作品'}
+        self.record([work(1000,author=author),work(1001,author=author),ordinary],source='search')
+        with app.db() as c:
+            c.execute('UPDATE discovery_works SET first_seen_at=?,next_check_at=?',
+                      (discovery.future(NOW,-21600),discovery.future(NOW,-21600)))
+            c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=? WHERE video_id IN (?,?)',
+                      (discovery.future(NOW,-3600),discovery.future(NOW,-1800),checked,active))
+        self.activity(active,discovery.future(NOW,-120))
+        return checked,active,ordinary['video_id']
+
+    def selection_at_round(self,c,turn,paused=()):
+        class Round:
+            def execute(inner,sql,params=()):
+                if sql=="SELECT COUNT(*) FROM discovery_jobs WHERE kind='work' AND settled=1":
+                    return c.execute('SELECT ?',(turn,))
+                return c.execute(sql,params)
+        return discovery.select_work_targets(Round(),self.plan(),NOW,set(),set(paused))
+
+    def test_revisit_rounds_cannot_be_filled_only_by_older_unchecked_backlog(self):
+        checked,active,ordinary=self.revisit_fixture()
+        with app.db() as c:
+            for turn in (2,5):
+                rows,audit=self.selection_at_round(c,turn)
+                self.assertEqual({r['video_id'] for r in rows},{checked,active,ordinary})
+            # The third exploration round still gives the oldest unseen work a
+            # turn; recent-first phases are also retained with the same budget.
+            for turn in (0,1,8):
+                rows,_=self.selection_at_round(c,turn)
+                self.assertNotIn(checked,{r['video_id'] for r in rows})
+                self.assertEqual(len(rows),3)
+                self.assertIn(active,{r['video_id'] for r in rows})
+
+    def test_revisit_priority_does_not_override_future_disabled_or_paused_work(self):
+        checked,_,_=self.revisit_fixture()
+        with app.db() as c:
+            c.execute('UPDATE discovery_works SET next_check_at=? WHERE video_id=?',(discovery.future(NOW,60),checked))
+            self.assertNotIn(checked,{r['video_id'] for r in self.selection_at_round(c,2)[0]})
+            c.execute('UPDATE discovery_works SET next_check_at=?,enabled=0 WHERE video_id=?',(discovery.future(NOW,-60),checked))
+            self.assertNotIn(checked,{r['video_id'] for r in self.selection_at_round(c,2)[0]})
+            c.execute('UPDATE discovery_works SET enabled=1 WHERE video_id=?',(checked,))
+            self.assertNotIn(checked,{r['video_id'] for r in self.selection_at_round(c,2,[checked])[0]})
+
     def test_single_slot_keeps_ordinary_monitoring_and_prefers_vertical(self):
         self.save();self.record([work(i) for i in range(12)])
         for i in range(100,112):

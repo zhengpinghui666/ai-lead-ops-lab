@@ -256,5 +256,6 @@
   "SUCCESSOR_HANDOFF.md",
   "scripts/run-background-service.py",
   "freshness_audit.py",
-  "test_freshness_audit.py"
+  "test_freshness_audit.py",
+  "test_collector_config.py"
 ]

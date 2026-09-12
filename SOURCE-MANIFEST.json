@@ -38,13 +38,13 @@
     },
     {
       "name": "COLLECTION_FRESHNESS.md",
-      "sha256": "20f5eb2ca8dd374bed1169a669e1017327f4656a3e9425dc1eeb9e2cf346338b",
-      "bytes": 22970
+      "sha256": "7a2ded7f3131db4c7287cfef139d68e462ee3ec9c816600a08f8e38920ab1cb7",
+      "bytes": 24256
     },
     {
       "name": "COLLECTION_HTTP.md",
-      "sha256": "eb6b95243235cd00f3809567f0af63d489da3e0d11c15ae2b7ae790a250fa6f3",
-      "bytes": 28037
+      "sha256": "f4fa24750d14c20132a8a1fa419cb4bcbb236df05e692beba89292c1d7145da9",
+      "bytes": 28667
     },
     {
       "name": "DELIVERY.md",
@@ -53,8 +53,8 @@
     },
     {
       "name": "DISCOVERY_TRACKING.md",
-      "sha256": "371c9691c00a24c9690b7b92f1ffb2fed5dcb748a4b83a804d535c195464fbff",
-      "bytes": 9014
+      "sha256": "000c747bfd1f754b14691cd8dbfd46dc87e394aa67dc4ba041375a31936805c4",
+      "bytes": 10131
     },
     {
       "name": "EXTERNAL_ACCESS.md",
@@ -148,8 +148,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "f7792083683ab1909ef3b173a1b82387adc64df11344bef9b9f18c6cbd09c5a8",
-      "bytes": 12696
+      "sha256": "a7c1ce2f27eb66fd2c6c4ae65a9c8537d48c83b096a8c46adb943dd221335d2d",
+      "bytes": 14558
     },
     {
       "name": "UID_HTTP.md",
@@ -283,8 +283,8 @@
     },
     {
       "name": "collector_http_worker.py",
-      "sha256": "8e9f036e7d9dc4f17da72b1de148a9888b9753fe8ef2c4aa4f6070699803e400",
-      "bytes": 19006
+      "sha256": "869f5fb605523478ef5fbb72803a15c768cbeabff3c358398e928bb43b014313",
+      "bytes": 19780
     },
     {
       "name": "collector_parser.cjs",
@@ -363,8 +363,8 @@
     },
     {
       "name": "discovery_tracking.py",
-      "sha256": "bc526dc8761f6b1ae7b01ab1e13c86d48526a9e7455c6621d6fc1385a4ec2a99",
-      "bytes": 27341
+      "sha256": "b330e9915f8e18a64439909b23e05bd34fb08888b2ecd9e9038b959b192a8805",
+      "bytes": 27835
     },
     {
       "name": "evaluation/intent-development-v1.json",
@@ -753,8 +753,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "eb27b0b5e0a170b3827ec517c8de23bd96ba939927e7e484ebe0428ecc1aaf30",
-      "bytes": 7637
+      "sha256": "e01e22fc0c29aa29026c84afa07764811af21178713c4c8233a928e4142b5aab",
+      "bytes": 7667
     },
     {
       "name": "start.ps1",
@@ -902,6 +902,11 @@
       "bytes": 17478
     },
     {
+      "name": "test_collector_config.py",
+      "sha256": "342e37383a68b6bc295cefdc5f535d7181b31e61cd7f71eac8642e32ac809a75",
+      "bytes": 2692
+    },
+    {
       "name": "test_collector_http.py",
       "sha256": "4240c789c19bd32ef0764a743c580d6c791a083f90ac989142069c5ffcc36b23",
       "bytes": 51776
@@ -918,8 +923,8 @@
     },
     {
       "name": "test_discovery_tracking.py",
-      "sha256": "3cc147fce59612dd4b3dc441ca2923a03e28117c20092bc1e33cc796d342a97b",
-      "bytes": 32638
+      "sha256": "40bfc97c8337e6cd99e560f42acdf348940c74692285c61ec6266ef4e8ac6009",
+      "bytes": 35635
     },
     {
       "name": "test_freshness_audit.py",
