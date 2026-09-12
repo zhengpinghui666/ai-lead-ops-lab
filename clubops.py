@@ -112,7 +112,7 @@ def init(mode='live'):
             known_tables = {r[0] for r in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             verticality_missing = not {'asset_verticality','asset_references','asset_keywords'} <= known_tables
             keyword_sources_missing = 'comment_keyword_sources' not in known_tables
-            inbox_missing = not {'uid_inbox_conversations','uid_inbox_messages','uid_inbox_reads'} <= known_tables
+            inbox_missing = not {'uid_inbox_conversations','uid_inbox_messages','uid_inbox_reads','uid_reply_links'} <= known_tables
             live_columns = {r[1] for r in source.execute('PRAGMA table_info(live_messages)')}
             collection_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_tasks)')}
             plan_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_plans)')}

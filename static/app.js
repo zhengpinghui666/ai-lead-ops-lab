@@ -11,7 +11,7 @@ const labels={buyer:'客户需求',seller:'陪玩接单',recruit:'招募需求',
 const evidenceName=c=>c.evidence_type==='live'?'弹幕':'评论';
 const evidenceCount=l=>[l.comment_count?`${l.comment_count} 条评论`:'',l.live_count?`${l.live_count} 条弹幕`:''].filter(Boolean).join(' · ')||'暂无来源记录';
 const stages={new:'待联系',reviewed:'已核对',following:'沟通中',referred:'已导流',won:'已成交（历史）',lost:'已结束'};
-const jobLabels={draft:'草稿 · 未发送',blocked:'拦截 · 未发送',not_connected:'通道未接 · 未发送',demo_sent:'演示已执行',submitting:'提交中',unknown:'提交结果未知',failed:'失败 · 不自动重发',accepted:'服务端接受 · 未确认送达',delivered:'已送达',replied:'已回复'};
+const jobLabels={draft:'草稿 · 未发送',blocked:'拦截 · 未发送',not_connected:'通道未接 · 未发送',demo_sent:'演示已执行',submitting:'提交中',unknown:'提交结果未知',failed:'失败 · 不自动重发',accepted:'服务端接受 · 未确认送达',delivered:'已送达',replied:'已回复',observed:'已收件'};
 const TARGET_GAME='无畏契约';
 const games=[TARGET_GAME];
 const serviceTypes=['娱乐开黑','排位组队','新手陪练','对局复盘'];
@@ -236,9 +236,14 @@ function renderUidInbox(){
     <p class="muted">${esc(uidInboxBusy?'正在读取平台数据，完成后保存在本机。':s.session_detail)}</p>
     ${last?`<p class="muted">${esc(statuses[last.status]||'读取状态待核对')} · ${date(last.finished_at||last.started_at)}${last.detail.new_messages!==undefined?` · 新增 ${last.detail.new_messages} 条文字`:''}</p>`:''}
     ${s.conversations.length?s.conversations.map(c=>`<div class="uid-inbox-conversation"><span>${c.inbox===1?'陌生人收件箱':'普通收件箱'} · 已核对会话</span><div class="actions">${button('读取最近消息','uid-inbox-read','small',`data-id="${c.id}" ${!s.can_read||uidInboxBusy?'disabled':''}`)}${c.inbox===0&&c.has_more?button('读取更早消息','uid-inbox-older','small',`data-id="${c.id}" ${!s.can_read||uidInboxBusy?'disabled':''}`):''}</div></div>`).join(''):'<p class="muted">尚未保存匹配会话；不能据此判断是否联系过。</p>'}
-    <div class="uid-inbox-history">${s.messages.length?s.messages.map(m=>`<div class="bubble-wrap ${m.direction==='outbound'?'out':''}"><div class="bubble">${esc(m.content)}</div><small>${m.direction==='inbound'?'对方消息':'本账号消息'} · 首次读取 ${date(m.first_seen_at)}</small><details><summary>来源</summary><small>平台消息编号 ${esc(m.server_message_id)}<br>会话 ${esc(m.conversation_id)}<br>平台原始时间 ${esc(m.created_at_raw)}（单位未核对）</small></details></div>`).join(''):'<div class="empty"><h3>暂无已保存的文字消息</h3><p>核对已有会话后，可按需读取该会话。</p></div>'}</div>
+    <div class="uid-inbox-history">${s.messages.length?s.messages.map(m=>`<div class="bubble-wrap ${m.direction==='outbound'?'out':''}"><div class="bubble">${esc(m.content)}</div><small>${m.direction==='inbound'?'对方消息':'本账号消息'} · ${m.sent_at?'发送于 '+date(m.sent_at):'发送时间待核对'}</small>${m.reply_link?`<small>已关联任务 #${m.reply_link.job_id} 的回复</small>`:m.reply_candidates?.length?button('关联为回复','uid-inbox-link-reply','small',`data-id="${m.id}"`):''}<details><summary>来源</summary><small>平台消息编号 ${esc(m.server_message_id)}<br>会话 ${esc(m.conversation_id)}<br>首次读取 ${date(m.first_seen_at)}<br>平台原始时间 ${esc(m.created_at_raw)}${m.sent_at?'（毫秒）':'（待核对）'}${m.reply_link?'<br>关联依据：'+esc(m.reply_link.reason):''}</small></details></div>`).join(''):'<div class="empty"><h3>暂无已保存的文字消息</h3><p>核对已有会话后，可按需读取该会话。</p></div>'}</div>
     <div class="row spread"><small>历史记录单独保存；不自动认定送达、回复或联系授权。</small><div class="actions">${button('最新已存记录','uid-inbox-local','small',`data-id="${s.lead_id}"`)}${s.has_more?button('更早已存记录','uid-inbox-local','small',`data-id="${s.lead_id}" data-before="${s.next_before}"`):''}</div></div>`;
   icons();
+}
+function uidInboxReplyDialog(id){
+  const s=uidInboxState,m=s?.messages.find(x=>x.id===id);if(!m||!m.reply_candidates?.length)throw Error('当前消息没有可关联的发送任务');
+  const choices=Object.fromEntries(s.reply_jobs.filter(j=>m.reply_candidates.includes(j.id)).map(j=>[j.id,`#${j.id} · ${j.content}`]));
+  showModal('核对并关联回复',`<input type="hidden" name="lead_id" value="${s.lead_id}"><input type="hidden" name="account_uid" value="${esc(s.account_uid)}"><input type="hidden" name="message_id" value="${m.id}"><p class="comment-text">${esc(m.content)}</p><small>对方发送于 ${date(m.sent_at)}</small>${select('job_id','关联的发送任务',opts(choices,m.reply_candidates[0]))}${area('reason','回复关联依据','','required minlength="4" maxlength="1000"')}<p class="muted">核对原文是否回应所选任务。关联保留平台消息证据，不登记导流或新增联系授权。</p>`,'uid-inbox-reply-form',submit('确认关联'));$('#modal').classList.add('settings-modal');
 }
 async function uidInboxRead(operation,conversationId=null,older=false){
   if(uidInboxBusy||!uidInboxState)return;
@@ -260,7 +265,7 @@ function inbox(){
   conversation=l.id;
   const msgs=S.messages.filter(m=>m.lead_id===l.id),jobs=S.jobs.filter(j=>j.lead_id===l.id);
   const channel=mode==='demo'?'模拟通道':S.uid_messaging?.can_attempt?'HTTP 配置就绪 · 未验收':'HTTP 待配置';
-  return top+`<div class="inbox"><div class="inbox-list"><h3>线索与会话 <span class="muted">${list.length}</span></h3>${list.map(x=>`<button class="conversation ${x.id===l.id?'active':''}" data-action="chat-select" data-id="${x.id}">${avatar(x.nickname,true)}<span class="conversation-content"><b>${esc(x.nickname)}</b><p>${esc(x.source_kind==='uid_test'?'授权测试对象':x.game||'游戏未识别')} · ${stages[x.stage]}</p></span></button>`).join('')}</div>
+  return top+`<div class="inbox"><div class="inbox-list"><h3>线索与会话 <span class="muted">${list.length}</span></h3>${list.map(x=>`<button class="conversation ${x.id===l.id?'active':''}" data-action="chat-select" data-id="${x.id}">${avatar(x.nickname,true)}<span class="conversation-content"><b>${esc(x.nickname)}</b><p>${esc(x.source_kind==='uid_test'?'测试对象':x.game||'游戏未识别')} · ${stages[x.stage]}</p></span></button>`).join('')}</div>
     <section class="chat"><div class="chat-header"><div><h2>${esc(l.nickname)}</h2><small>${esc(l.external_id)}</small></div><div class="row">${mode==='live'?button('收件记录','uid-inbox','small',`data-id="${l.id}"`):''}${badge(channel,'warn')}</div></div>
     <div class="chat-history">${msgs.length?msgs.map(m=>`<div class="bubble-wrap ${m.direction==='outbound'?'out':''}"><div class="bubble">${esc(m.content)}</div><small>${esc(m.status==='demo'?'演示消息':jobLabels[m.status]||m.status)} · ${date(m.created_at)}</small></div>`).join(''):empty('还没有私信记录','保存草稿不代表发送；服务端接受也不代表接收端送达。','','','message-square')}</div>
     <form id="composer" class="composer"><div class="row spread">${button(icon('wand-sparkles')+' 填入回复模板','suggest','subtle small','type="button"')}<span>模板辅助 · 非 AI 自动回复</span></div><textarea id="draft-content" name="content" placeholder="填写内容并保存为草稿…" maxlength="2000" required aria-label="私信草稿">${esc(draftText)}</textarea><div class="row spread"><span>保存不会自动发送</span><button class="button primary" type="submit">${icon('save')} 保存草稿</button></div></form></section>
@@ -318,6 +323,7 @@ case 'analyze': {const r=await save('analyze',{},'');toast(`已完成 ${r.analyz
 case 'discovery-settings':discoverySettingsDialog();break;
 case 'discovery-authors':discoveryAuthorsDialog();break;
 case 'asset-keywords':await assetKeywordsDialog();break;
+case 'uid-inbox-link-reply':uidInboxReplyDialog(Number(el.dataset.id));break;
 case 'keyword-filter':keywordFilter=el.dataset.filter;await assetKeywordsDialog();break;
 case 'keyword-review':await keywordReviewDialog(el.dataset.term);break;
 case 'keyword-add':showModal('新增候选词',field('term','候选关键词','','text','required maxlength="30"')+select('scope','应用范围',opts(keywordScopes,keywordScope==='message'?'message':'asset'))+'<p>保存后进入待评审，不会直接用于模型初筛。</p>','keyword-propose-form',submit('保存候选'));break;
@@ -414,6 +420,7 @@ document.addEventListener('change',async e=>{
 });
 document.addEventListener('submit',async e=>{const form=e.target;const formId=form.getAttribute('id');if(!formId)return;e.preventDefault();if(busy)return;busy=true;const submitButton=$('button[type="submit"]',form);if(submitButton)submitButton.disabled=true;try{const formError=$('.form-error',form);if(formError){formError.hidden=true;formError.textContent='';}const values=Object.fromEntries(new FormData(form));
   if(formId==='composer'){draftText=values.content.trim();if(!draftText)throw Error('请先填写消息内容');draftKey=draftKey||crypto.randomUUID();stashDraft();await api('draft',{lead_id:conversation,content:draftText,request_id:draftKey});draftText='';draftKey='';stashDraft();await load();toast('草稿已保存，尚未发送');}
+  else if(formId==='uid-inbox-reply-form'){await api('uid-inbox-link-reply',{lead_id:Number(values.lead_id),account_uid:values.account_uid,job_id:Number(values.job_id),message_id:Number(values.message_id),reason:values.reason});await load();await uidInboxDialog(Number(values.lead_id));toast('回复已关联，未登记导流');}
   else if(formId==='keyword-search-form'){keywordQuery=values.q;keywordScope=values.scope;await assetKeywordsDialog();}
   else if(formId==='keyword-propose-form'){await api('asset-keyword-propose',{term:values.term,scope:values.scope});await keywordReviewDialog(values.term.trim());}
   else if(formId==='keyword-review-form'){await api('asset-keyword-review',{term:values.term,revision:Number(values.revision),status:values.status,kind:values.kind,scope:values.scope,reason:values.reason});await load();await assetKeywordsDialog();toast('词库评审已保存');}

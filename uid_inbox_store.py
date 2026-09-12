@@ -1,6 +1,7 @@
-"""Selected-lead HTTP inbox history. Never grants contact or advances send jobs."""
+"""Selected-lead HTTP inbox history and explicit reply links; no contact grants."""
 import json
 import re
+from datetime import datetime, timezone
 import clubops as app
 import uid_inbox
 import uid_messaging
@@ -27,6 +28,12 @@ CREATE TABLE IF NOT EXISTS uid_inbox_reads (
  id INTEGER PRIMARY KEY, account_uid TEXT NOT NULL, peer_uid TEXT NOT NULL,
  lead_id INTEGER NOT NULL REFERENCES leads(id), operation TEXT NOT NULL,
  status TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, detail TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS uid_reply_links (
+ inbox_message_id INTEGER PRIMARY KEY REFERENCES uid_inbox_messages(id),
+ job_id INTEGER NOT NULL REFERENCES message_jobs(id),
+ business_message_id INTEGER NOT NULL UNIQUE REFERENCES messages(id),
+ account_uid TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL
 );
 '''
 
@@ -57,6 +64,59 @@ def _session(account, provider):
         raise ValueError('IM 会话身份尚未核对')
 
 
+def message_timestamp(raw):
+    # The observed web SDK constructs Date(message.create_time.toNumber()),
+    # i.e. milliseconds. Keep missing/legacy second-shaped values unconverted.
+    if not isinstance(raw,str) or not re.fullmatch(r'[1-9][0-9]{12}',raw):return None
+    return datetime.fromtimestamp(int(raw)/1000,timezone.utc).isoformat(timespec='milliseconds')
+
+
+def _reply_pair(c,account,peer,job_id,message):
+    row=c.execute('''SELECT j.*,a.sender_uid,a.recipient_uid,a.evidence,a.status AS attempt_status
+      FROM message_jobs j JOIN uid_message_attempts a ON a.job_id=j.id
+      JOIN leads l ON l.id=j.lead_id JOIN people p ON p.id=l.person_id
+      WHERE j.id=? AND p.external_id=?''',(job_id,peer)).fetchone()
+    if not row or row['sender_uid']!=account or row['recipient_uid']!=peer or row['attempt_status']!='accepted' or row['status'] not in ('accepted','delivered','replied'):
+        raise ValueError('只能关联当前账号向该对象成功提交的消息任务')
+    evidence=json.loads(row['evidence'])
+    if message['direction']!='inbound' or message['sender_uid']!=peer or message['peer_uid']!=peer or message['account_uid']!=account or message['conversation_id']!=evidence.get('conversation_id'):
+        raise ValueError('回复账号、对方或会话与发送任务不一致')
+    outbound=c.execute('''SELECT * FROM uid_inbox_messages WHERE account_uid=? AND conversation_id=?
+      AND server_message_id=? AND sender_uid=? AND direction='outbound' ''',
+      (account,message['conversation_id'],evidence.get('server_message_id'),account)).fetchone()
+    if not outbound or outbound['content']!=row['content'] or not message_timestamp(outbound['created_at_raw']) or not message_timestamp(message['created_at_raw']):
+        raise ValueError('请先读取并核对原发送消息和平台时间')
+    if int(message['created_at_raw'])<int(outbound['created_at_raw']) or int(message['platform_index'])<=int(outbound['platform_index']):
+        raise ValueError('该入站消息早于发送任务，不能作为本次回复')
+    return row
+
+
+def link_reply(body, mode='live'):
+    if mode!='live' or set(body)!={'lead_id','account_uid','job_id','message_id','reason'}:raise ValueError('回复关联参数无效')
+    account=_account()
+    if account!=body['account_uid']:raise ValueError('当前账号已改变，请重新打开收件记录')
+    reason=body['reason'].strip() if isinstance(body['reason'],str) else ''
+    if not 4<=len(reason)<=1000:raise ValueError('请填写 4–1000 字的回复关联依据')
+    with app.LOCKS[mode],app.db(mode) as c:
+        if _account()!=account:raise ValueError('当前账号已改变，请重新打开收件记录')
+        peer=_target(c,body['lead_id'])
+        message=c.execute('SELECT * FROM uid_inbox_messages WHERE id=?',(_integer(body['message_id']),)).fetchone()
+        if not message:raise ValueError('请先读取并保存该回复原文')
+        job=_reply_pair(c,account,peer,_integer(body['job_id']),message)
+        if job['lead_id']!=body['lead_id']:raise ValueError('发送任务与选定线索不一致')
+        prior=c.execute('SELECT * FROM uid_reply_links WHERE inbox_message_id=?',(message['id'],)).fetchone()
+        if prior:
+            if prior['job_id']!=job['id']:raise ValueError('该回复已关联其他任务，请先核对原关联')
+            return dict(status='replied',job_id=job['id'],message_id=message['id'],already_linked=True)
+        stamp=app.now()
+        mid=c.execute("INSERT INTO messages(lead_id,job_id,direction,content,status,created_at) VALUES(?,NULL,'inbound',?,'observed',?)",
+                      (job['lead_id'],message['content'],message_timestamp(message['created_at_raw']))).lastrowid
+        c.execute('INSERT INTO uid_reply_links VALUES(?,?,?,?,?,?)',(message['id'],job['id'],mid,account,reason,stamp))
+        c.execute("UPDATE message_jobs SET status='replied',detail='已核对并关联对方回复；未登记导流',updated_at=? WHERE id=?",(stamp,job['id']))
+        app.event(c,'uid_reply',f'消息任务 #{job["id"]} 已关联收件 #{message["id"]}，依据：{reason}')
+        return dict(status='replied',job_id=job['id'],message_id=message['id'],already_linked=False)
+
+
 def history(lead_id, mode='live', before=0):
     if mode!='live':raise ValueError('演示区不读取平台私信')
     account=_account();before=_integer(before,0)
@@ -66,13 +126,26 @@ def history(lead_id, mode='live', before=0):
           WHERE account_uid=? AND peer_uid=? AND (?=0 OR id<?) ORDER BY id DESC LIMIT 51''',(account,peer,before,before))]
         conversations=[dict(r) for r in c.execute('SELECT * FROM uid_inbox_conversations WHERE account_uid=? AND peer_uid=? ORDER BY id',(account,peer))]
         last=c.execute('SELECT * FROM uid_inbox_reads WHERE account_uid=? AND peer_uid=? ORDER BY id DESC LIMIT 1',(account,peer)).fetchone()
+        jobs=[dict(r) for r in c.execute('''SELECT j.id,j.content FROM message_jobs j JOIN uid_message_attempts a ON a.job_id=j.id
+          WHERE j.lead_id=? AND j.status IN ('accepted','delivered','replied') AND a.sender_uid=? AND a.recipient_uid=?
+          ORDER BY j.id DESC LIMIT 30''',(lead_id,account,peer))]
+        for message in rows:
+            message['sent_at']=message_timestamp(message['created_at_raw'])
+            linked=c.execute('SELECT job_id,reason,created_at FROM uid_reply_links WHERE inbox_message_id=?',(message['id'],)).fetchone()
+            message['reply_link']=dict(linked) if linked else None
+            message['reply_candidates']=[]
+            if message['direction']=='inbound' and not linked:
+                for job in jobs:
+                    try:_reply_pair(c,account,peer,job['id'],message)
+                    except ValueError:continue
+                    message['reply_candidates'].append(job['id'])
     ready=True
     try:_session(account,uid_session.Provider())
     except Exception:ready=False
     return dict(account_uid=account,peer_uid=peer,lead_id=lead_id,can_read=ready,
         session_detail='每次读取会重新核对登录身份' if ready else '本机 IM 会话需要重新准备，已保存记录仍可查看',
         messages=rows[:50],has_more=len(rows)>50,next_before=rows[49]['id'] if len(rows)>50 else None,
-        conversations=conversations,last_read={**dict(last),'detail':json.loads(last['detail'])} if last else None)
+        conversations=conversations,reply_jobs=jobs,last_read={**dict(last),'detail':json.loads(last['detail'])} if last else None)
 
 
 def _conversation(row):

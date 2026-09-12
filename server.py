@@ -234,6 +234,9 @@ class Handler(BaseHTTPRequestHandler):
             elif action == 'uid-inbox-read':
                 import uid_inbox_store
                 result = uid_inbox_store.read(body,mode)
+            elif action == 'uid-inbox-link-reply':
+                import uid_inbox_store
+                result = uid_inbox_store.link_reply(body,mode)
             elif action == 'uid-http-probe':
                 if body:
                     raise ValueError('身份核对不接收 UID、凭证或消息参数；只使用本地配置')

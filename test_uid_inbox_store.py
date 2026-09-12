@@ -47,6 +47,62 @@ class InboxStoreTests(unittest.TestCase):
     def protected(self):
         with app.db() as c:return {table:[tuple(r) for r in c.execute('SELECT * FROM '+table)] for table in ('people','leads','messages','message_jobs','uid_message_attempts')}
 
+    def reply_fixture(self):
+        self.scan()
+        outbound={**self.message('9007199254741100','合成发送内容'),'sender_uid':SENDER,'direction':'outbound','index':'100','created_at_raw':'1789214400000'}
+        inbound={**self.message('9007199254741101','合成回复内容'),'index':'101','created_at_raw':'1789214460000'}
+        self.read([outbound,inbound])
+        with app.db() as c:
+            job=c.execute("INSERT INTO message_jobs(lead_id,request_id,content,status,created_at,updated_at) VALUES(?,'reply-fixture',?,'accepted',?,?)",(self.lead,outbound['content'],app.now(),app.now())).lastrowid
+            proof=json.dumps({'server_message_id':outbound['server_message_id'],'conversation_id':CONVERSATION['conversation_id']})
+            c.execute("INSERT INTO uid_message_attempts VALUES(?,?,?,?,'test-client','accepted','send','',?,?,?)",(job,'dedupe-fixture',SENDER,RECEIVER,proof,app.now(),app.now()))
+            c.execute("INSERT INTO messages(lead_id,job_id,direction,content,status,created_at) VALUES(?,?,'outbound',?,'accepted',?)",(self.lead,job,outbound['content'],app.now()))
+            message=c.execute('SELECT id FROM uid_inbox_messages WHERE server_message_id=?',(inbound['server_message_id'],)).fetchone()[0]
+        return dict(lead_id=self.lead,account_uid=SENDER,job_id=job,message_id=message,reason='合成核对：入站原文明确回应已发送内容。')
+
+    def test_verified_platform_milliseconds_are_separate_from_first_read_time(self):
+        self.assertEqual(store.message_timestamp('1789214400000'),'2026-09-12T12:00:00.000+00:00')
+        for raw in ('0','1789214400','',None,'not-a-time','9999999999999999999'):self.assertIsNone(store.message_timestamp(raw))
+        self.reply_fixture();history=store.history(self.lead)
+        self.assertEqual(history['messages'][0]['sent_at'],'2026-09-12T12:01:00.000+00:00')
+        self.assertNotEqual(history['messages'][0]['sent_at'],history['messages'][0]['first_seen_at'])
+
+    def test_reply_needs_explicit_link_and_is_idempotent_without_contact_or_conversion_changes(self):
+        body=self.reply_fixture();before=self.protected();state=store.history(self.lead)
+        self.assertIn(body['job_id'],state['messages'][0]['reply_candidates'])
+        self.assertEqual(self.protected(),before)
+        self.assertFalse(store.link_reply(body)['already_linked']);self.assertTrue(store.link_reply(body)['already_linked'])
+        after=self.protected()
+        self.assertEqual(after['people'],before['people']);self.assertEqual(after['leads'],before['leads'])
+        self.assertEqual(after['uid_message_attempts'],before['uid_message_attempts'])
+        self.assertEqual(len(after['messages']),2)
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT status FROM message_jobs').fetchone()[0],'replied')
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM uid_reply_links').fetchone()[0],1)
+        self.assertEqual(store.history(self.lead)['messages'][0]['reply_link']['reason'],body['reason'])
+
+    def test_earlier_wrong_author_wrong_conversation_or_unverified_time_cannot_be_reply(self):
+        body=self.reply_fixture()
+        with app.db() as c:original=dict(c.execute('SELECT * FROM uid_inbox_messages WHERE id=?',(body['message_id'],)).fetchone())
+        for field,value in (('created_at_raw','1789214300000'),('created_at_raw','0'),('platform_index','100'),('direction','outbound'),('sender_uid',SENDER),('conversation_id','0:1:11:22'),('account_uid','11'),('peer_uid','22')):
+            with self.subTest(field=field,value=value):
+                with app.db() as c:c.execute('UPDATE uid_inbox_messages SET '+field+'=? WHERE id=?',(value,body['message_id']))
+                before=self.protected()
+                with self.assertRaises(ValueError):store.link_reply(body)
+                self.assertEqual(self.protected(),before)
+                with app.db() as c:c.execute('UPDATE uid_inbox_messages SET '+field+'=? WHERE id=?',(original[field],body['message_id']))
+
+    def test_missing_outbound_wrong_account_or_unaccepted_job_cannot_link(self):
+        body=self.reply_fixture()
+        with self.assertRaises(ValueError):store.link_reply({**body,'account_uid':'99'})
+        with self.assertRaises(ValueError):store.link_reply({**body,'content':'caller-supplied raw text'})
+        with app.db() as c:c.execute("UPDATE message_jobs SET status='unknown'")
+        with self.assertRaises(ValueError):store.link_reply(body)
+        with app.db() as c:
+            c.execute("UPDATE message_jobs SET status='accepted'")
+            c.execute("DELETE FROM uid_inbox_messages WHERE direction='outbound'")
+        with self.assertRaises(ValueError):store.link_reply(body)
+
     def test_history_deduplicates_without_authorizing_or_advancing_send_jobs(self):
         before=self.protected();self.scan();first,_=self.read();second,_=self.read()
         self.assertEqual(first['new_messages'],1);self.assertEqual(second['new_messages'],0)
@@ -145,7 +201,36 @@ class InboxStoreTests(unittest.TestCase):
                 self.assertEqual(request('/api/uid-inbox-read',body,server.CSRF)[1]['result']['status'],'checked')
                 self.assertEqual(scan.call_count,1)
                 self.assertEqual(request('/api/uid-inbox-read?mode=demo',body,server.CSRF)[0],400)
+            reply=self.reply_fixture();before=self.protected()
+            self.assertEqual(request('/api/uid-inbox-link-reply',reply)[0],403)
+            self.assertEqual(self.protected(),before)
+            self.assertEqual(request('/api/uid-inbox-link-reply?mode=demo',reply,server.CSRF)[0],400)
+            self.assertEqual(self.protected(),before)
+            status,result=request('/api/uid-inbox-link-reply',reply,server.CSRF)
+            self.assertEqual(status,200);self.assertFalse(result['result']['already_linked'])
+            self.assertTrue(request('/api/uid-inbox-link-reply',reply,server.CSRF)[1]['result']['already_linked'])
         finally:httpd.shutdown();thread.join(3);httpd.server_close()
+
+    def test_reply_table_migration_preserves_existing_inbox_and_send_evidence(self):
+        self.reply_fixture();before=self.protected()
+        with app.db() as c:
+            inbox=[tuple(r) for r in c.execute('SELECT * FROM uid_inbox_messages')]
+            c.execute('DROP TABLE uid_reply_links')
+        app.init();self.assertEqual(self.protected(),before)
+        with app.db() as c:
+            self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM uid_inbox_messages')],inbox)
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM uid_reply_links').fetchone()[0],0)
+        backups=list((app.DATA_DIR/'backups').glob('*before-uid-inbox-*'))
+        self.assertEqual(len(backups),1)
+        with closing(sqlite3.connect(backups[0])) as c:
+            self.assertIsNone(c.execute("SELECT name FROM sqlite_master WHERE name='uid_reply_links'").fetchone())
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM uid_inbox_messages').fetchone()[0],2)
+
+    def test_account_change_before_link_transaction_is_rejected(self):
+        body=self.reply_fixture();before=self.protected()
+        self.config_mock.side_effect=[({'sender_uid':SENDER},[]),({'sender_uid':'99'},[])]
+        with self.assertRaises(ValueError):store.link_reply(body)
+        self.assertEqual(self.protected(),before)
 
 
 if __name__=='__main__':unittest.main()
