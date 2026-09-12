@@ -148,8 +148,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "8e6bdcea826be621f2a4312be7b5b8fc9d8779cab8e9727af4e20abac78986a7",
-      "bytes": 5084
+      "sha256": "811353778ab72c160d158de46f22983fbadcfd01484619c43939e30d336e51c5",
+      "bytes": 7793
     },
     {
       "name": "UID_HTTP.md",
@@ -703,8 +703,8 @@
     },
     {
       "name": "scripts/run-background-service.py",
-      "sha256": "0a3b74a93336ec00062cd2d9c8e892723025fa88b96882fd83c2901877376856",
-      "bytes": 582
+      "sha256": "c046c204b757c0a3505e51e8f7fddedc449afc42d8a143d0028f4ffc821cf076",
+      "bytes": 976
     },
     {
       "name": "scripts/setup-collection-http.py",
