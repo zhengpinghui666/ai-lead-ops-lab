@@ -85,7 +85,8 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
             if config.get('candidate_policy') and not result['failures']:
                 candidates=video_discovery.author_candidates(result)
                 targets=candidate_pool.select(candidates,config['video_limit'],config['candidate_policy'])
-                audit['selection']=candidate_pool.VERSION
+                audit['selection']=config['candidate_policy']['version']
+                audit.update(candidate_pool.selection_evidence(candidates,targets,config['candidate_policy']))
                 selected_ids={r['video_id'] for r in targets}
                 for item in audit['candidates']:item['selected']=item['video_id'] in selected_ids
             emit({'type': 'diagnostic', 'stage': 'author_discovery', 'snapshot': {
@@ -96,8 +97,9 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
             if config.get('candidate_policy'):
                 if cancel.is_set():raise http.ReadError('cancelled')
                 if candidates:emit({'type':'candidates','records':[{**r,'video_title':r['video_title'][:300]} for r in candidates]})
-                diagnostic({'operation':'candidate_selection','policy':candidate_pool.VERSION,'scope':'current_author_response',
-                            'candidate_count':len(candidates),'selected':[r['video_id'] for r in targets]})
+                diagnostic({'operation':'candidate_selection','policy':config['candidate_policy']['version'],'scope':'current_author_response',
+                            'candidate_count':len(candidates),'selected':[r['video_id'] for r in targets],
+                            **candidate_pool.selection_evidence(candidates,targets,config['candidate_policy'])})
         if not targets and config['kind'] == 'search':
             cursor, search_id, seen_cursors, excluded = 0, '', set(), set()
             while len(targets) < config['video_limit']:
@@ -128,8 +130,9 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                 targets=candidate_pool.select(candidates,config['video_limit'],config['candidate_policy'])
                 if cancel.is_set():raise http.ReadError('cancelled')
                 emit({'type':'candidates','records':[{**r,'video_title':r['video_title'][:300]} for r in candidates]})
-                diagnostic({'operation':'candidate_selection','policy':candidate_pool.VERSION,'scope':'current_search_response',
-                            'candidate_count':len(candidates),'selected':[r['video_id'] for r in targets]})
+                diagnostic({'operation':'candidate_selection','policy':config['candidate_policy']['version'],'scope':'current_search_response',
+                            'candidate_count':len(candidates),'selected':[r['video_id'] for r in targets],
+                            **candidate_pool.selection_evidence(candidates,targets,config['candidate_policy'])})
         if not targets:
             healthy_empty=config['kind']=='author' and bool(config.get('discovery_job')) and result['status']=='completed'
             emit({'type': 'status', 'status': 'completed' if healthy_empty else 'no_data', 'detail': '作者作品检查完成，本次没有文案匹配的作品，等待下次检查' if healthy_empty else '本次有限发现未找到可读取的相关视频；未扩大范围或切换入口'})

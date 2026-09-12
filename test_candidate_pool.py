@@ -144,12 +144,57 @@ class CandidateTests(unittest.TestCase):
             rows=rng.sample(ROWS,rng.randint(1,10))
             policy={'version':pool.VERSION,'as_of_ms':100000,'round':i,'history':[
                 {'video_id':vid,'last_selected_ms':rng.randrange(90000),'priority_ms':rng.randrange(150000)} for vid in rng.sample(IDS,7)]}
+            policy['vertical_ids']=rng.sample(IDS,rng.randint(0,len(IDS)))
             cases.append({'rows':rows,'limit':i%5+1,'policy':policy})
         script="let s='';process.stdin.on('data',c=>s+=c);process.stdin.on('end',()=>console.log(JSON.stringify(JSON.parse(s).map(c=>require('./candidate_select.cjs').select(c.rows,c.limit,c.policy).map(r=>r.video_id)))));"
         result=subprocess.run(['node','-e',script],input=json.dumps(cases),text=True,capture_output=True,
                               cwd=col.BASE,check=True,timeout=10,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         expected=[[r['video_id'] for r in pool.select(c['rows'],c['limit'],c['policy'])] for c in cases]
         self.assertEqual(json.loads(result.stdout),expected)
+
+    def test_vertical_reservation_keeps_ordinary_and_returns_unused_slots(self):
+        policy=dict(version=pool.VERSION,as_of_ms=100000,round=0,history=[],vertical_ids=IDS[5:])
+        chosen=pool.select(ROWS,3,policy)
+        self.assertEqual([r['video_id'] for r in chosen],[IDS[5],IDS[6],IDS[0]])
+        self.assertEqual(len(pool.select(ROWS,5,{**policy,'vertical_ids':[IDS[5]]})),5)
+        self.assertEqual(len(pool.select(ROWS[:2],5,policy)),2)
+        self.assertEqual(pool.select([],3,policy),[])
+        # An absent known vertical asset is never inserted into a response.
+        self.assertEqual([r['video_id'] for r in pool.select(ROWS[:3],3,policy)],IDS[:3])
+        evidence=pool.selection_evidence(ROWS,chosen,policy)
+        self.assertEqual((evidence['vertical_candidates'],evidence['selected_vertical']),(5,2))
+
+    def test_single_slot_vertical_and_ordinary_rotation_preserves_both_pools(self):
+        policy=dict(version=pool.VERSION,as_of_ms=100000,round=0,history=[],vertical_ids=[IDS[5]])
+        chosen=[pool.select(ROWS,1,{**policy,'round':i})[0]['video_id'] for i in range(6)]
+        self.assertEqual(chosen,[IDS[5],IDS[5],IDS[0],IDS[5],IDS[5],IDS[0]])
+        self.assertEqual(pool.select(ROWS,1,{**policy,'version':pool.LEGACY_VERSION})[0]['video_id'],IDS[0])
+
+    def test_fair_slots_visit_all_returned_vertical_and_ordinary_candidates(self):
+        history={};seen=set()
+        for i in range(15):
+            policy=dict(version=pool.VERSION,as_of_ms=100000+i,round=i,history=list(history.values()),vertical_ids=IDS[5:])
+            chosen=pool.select(ROWS,3,policy)
+            self.assertEqual(len({r['video_id'] for r in chosen}),3)
+            self.assertEqual(sum(r['video_id'] in IDS[5:] for r in chosen),2)
+            for row in chosen:
+                seen.add(row['video_id'])
+                history[row['video_id']]=dict(video_id=row['video_id'],last_selected_ms=100000+i,priority_ms=200000+i)
+        self.assertEqual(seen,set(IDS))
+
+    def test_configuration_freezes_only_matched_work_asset_ids_without_writing(self):
+        tid=self.task()
+        with app.db() as c:
+            for kind,key,matched in [('work',IDS[1],True),('work',IDS[2],False),('live','synthetic-room',True)]:
+                c.execute('INSERT INTO asset_verticality VALUES(?,?,?,?,?,?)',
+                    (kind,key,'synthetic','synthetic',json.dumps({'matched':matched}),NOW))
+            before=c.total_changes
+            policy=pool.configuration(c,self.row(c,tid))
+            self.assertEqual(c.total_changes,before)
+            self.assertEqual(policy['vertical_ids'],[IDS[1]])
+            c.execute("UPDATE asset_verticality SET result='{}'")
+            self.assertEqual(policy['vertical_ids'],[IDS[1]])
+            self.assertEqual(pool.configuration(c,self.row(c,tid))['vertical_ids'],[])
 
     def test_migration_backup_preserves_previous_database(self):
         with app.db() as c:
@@ -231,6 +276,28 @@ class CandidateTests(unittest.TestCase):
                 self.assertEqual(selected,set(IDS[4:7]))
                 audit=next(e['snapshot']['responses'][0] for e in events if e.get('stage')=='author_discovery')
                 self.assertEqual({r['video_id'] for r in audit['candidates'] if r['selected']},selected)
+
+    def test_http_discovery_vertical_priority_uses_original_request_budget(self):
+        self.threads.stop()
+        policy=dict(version=pool.VERSION,as_of_ms=100000,round=0,history=[],vertical_ids=IDS[7:]+['7999999999999999999'])
+        for kind in ('author','search'):
+            calls=[];events=[]
+            class Client:
+                def page(self,operation,**kw):
+                    calls.append((operation,kw))
+                    if operation=='search':return dict(rows=ROWS,skipped=0,has_more=False,cursor=0,search_id='')
+                    return dict(rows=[],skipped=0,has_more=False,cursor=0,reply_targets=[],skipped_reasons={})
+            response=dict(candidates=ROWS,seed_details=[],scope='bounded_author_candidates',status='completed',failures=[])
+            with patch('video_discovery.discover',return_value=response):
+                worker.collect(dict(kind=kind,target=IDS[0],video_limit=3,comment_limit=10,page_concurrency=1,
+                                    candidate_policy=policy),events.append,threading.Event(),client=Client())
+            self.assertEqual(events[-1]['status'],'completed')
+            self.assertEqual([r['video_id'] for r in next(e['records'] for e in events if e['type']=='targets')],
+                             [IDS[9],IDS[8],IDS[6]] if kind=='author' else [IDS[7],IDS[8],IDS[0]])
+            self.assertEqual(len([op for op,_ in calls if op=='comments']),3)
+            receipt=next(e['snapshot']['responses'][0] for e in events if e.get('stage')=='http_read'
+                         and e['snapshot']['responses'][0].get('operation')=='candidate_selection')
+            self.assertEqual((receipt['vertical_candidates'],receipt['selected_vertical']),(3,2))
 
 
 if __name__=='__main__':unittest.main()

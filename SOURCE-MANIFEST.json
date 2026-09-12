@@ -53,8 +53,8 @@
     },
     {
       "name": "DISCOVERY_TRACKING.md",
-      "sha256": "45b196e5e91e590f205f70eb99a4b078f252c4d1e35cbb4937d9a6fc96483e12",
-      "bytes": 7401
+      "sha256": "371c9691c00a24c9690b7b92f1ffb2fed5dcb748a4b83a804d535c195464fbff",
+      "bytes": 9014
     },
     {
       "name": "EXTERNAL_ACCESS.md",
@@ -148,8 +148,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "9521c9d28bd87d3da0dcfef318c11414ea6c52eefa65125465b6fe42a6d72e1e",
-      "bytes": 10544
+      "sha256": "f7792083683ab1909ef3b173a1b82387adc64df11344bef9b9f18c6cbd09c5a8",
+      "bytes": 12696
     },
     {
       "name": "UID_HTTP.md",
@@ -198,13 +198,13 @@
     },
     {
       "name": "candidate_pool.py",
-      "sha256": "3b98cd2d47480ab0d935f5dc7e6fbb821633f98ed6861536658250904305900a",
-      "bytes": 8840
+      "sha256": "faa35cbace8f76e7eab3239099b4fc673211207d4f4c796d7eb2450eaa5c76b0",
+      "bytes": 10644
     },
     {
       "name": "candidate_select.cjs",
-      "sha256": "b894cc4ba66ab4d9201118a1d4be5b8ae2c6011ccc8ca537fe246a0845a03a15",
-      "bytes": 1007
+      "sha256": "a02778667e6c79f043af2845e82611a966dc96cc16c6c1e18ae8c5a7d4506aaf",
+      "bytes": 2304
     },
     {
       "name": "captcha_browser.cjs",
@@ -283,8 +283,8 @@
     },
     {
       "name": "collector_http_worker.py",
-      "sha256": "4b3ff92da6c85897689555281e3e3c5b1033bd9f0ee8c178d1a8525774ea3182",
-      "bytes": 18626
+      "sha256": "8e9f036e7d9dc4f17da72b1de148a9888b9753fe8ef2c4aa4f6070699803e400",
+      "bytes": 19006
     },
     {
       "name": "collector_parser.cjs",
@@ -303,8 +303,8 @@
     },
     {
       "name": "collector_reader.cjs",
-      "sha256": "23fe59aab0b778a12098099a9bbdc42ea056268e95092ef7602cc92de79324db",
-      "bytes": 20434
+      "sha256": "ed6ae5fb2f057030cb68e37c823b4e32973f399915c52ff48207087bb51d8f28",
+      "bytes": 20644
     },
     {
       "name": "collector_runner.cjs",
@@ -838,8 +838,8 @@
     },
     {
       "name": "test_candidate_pool.py",
-      "sha256": "81c4abafe5095efe81f78e7dfff16bbb46972170b6e5e32f3faebd388a504a61",
-      "bytes": 14013
+      "sha256": "b5d6d329ffaae0372f3dbdcf6e1c3b90470974f8a51a5ced60a74f6e7c347694",
+      "bytes": 18641
     },
     {
       "name": "test_captcha_browser.cjs",
@@ -1208,8 +1208,8 @@
     },
     {
       "name": "test_worker.cjs",
-      "sha256": "4b9ff24842611fd87140940aa65477df2f992dbe91c0fde9d4dcf828f447cc19",
-      "bytes": 13358
+      "sha256": "ca2f3f50599a2be3fd92b563d94ec4760650ed1a7a2341504f60f0bf47c6a99f",
+      "bytes": 14033
     },
     {
       "name": "tests/fixtures/captcha/background.png",

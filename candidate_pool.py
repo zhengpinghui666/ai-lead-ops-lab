@@ -8,7 +8,8 @@ import json
 import re
 from datetime import datetime
 
-VERSION = 'candidate-rotation-v1'
+VERSION = 'candidate-vertical-rotation-v2'
+LEGACY_VERSION = 'candidate-rotation-v1'
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS collection_candidates (
  scope_key TEXT NOT NULL, video_id TEXT NOT NULL, kind TEXT NOT NULL, target TEXT NOT NULL,
@@ -62,29 +63,54 @@ def configuration(c, task):
         delay = interval * 1000 * 2**min(row['quiet_streak'], 5)
         history.append({'video_id': row['video_id'], 'last_selected_ms': selected, 'priority_ms': finished+delay})
     rounds = c.execute('SELECT COUNT(DISTINCT task_id) FROM collection_candidate_reads WHERE scope_key=?', (key,)).fetchone()[0]
-    return {'version': VERSION, 'as_of_ms': millis(task['created_at']), 'round': rounds, 'history': history}
+    # Freeze already classified assets with this dispatch. Membership only ranks
+    # candidates returned by this request; it never adds a saved work to its scope.
+    vertical = [r[0] for r in c.execute("""SELECT asset_key FROM asset_verticality
+        WHERE kind='work' AND json_extract(result,'$.matched')=1 ORDER BY updated_at DESC,asset_key LIMIT 10001""")]
+    return {'version': VERSION, 'as_of_ms': millis(task['created_at']), 'round': rounds, 'history': history,
+            'vertical_ids': vertical[:10000], 'vertical_snapshot_truncated': len(vertical)>10000}
 
 
 def select(rows, limit, policy):
-    """Reserve a fair slot; use the rest for recent activity/quiet-streak ranking.
+    """Prefer known vertical assets and retain fair slots within both pools.
 
     Priority times rank candidates; they are not promises of exact polling time.
     A single-video batch uses the fair slot every third round.
     """
     if not policy:
         return rows[:limit]
-    if policy.get('version') != VERSION or type(limit) is not int or not 1 <= limit <= 5 or len(rows)>50:
+    if policy.get('version') not in (VERSION, LEGACY_VERSION) or type(limit) is not int or not 1 <= limit <= 5 or len(rows)>50:
         raise ValueError('候选轮换配置无效')
     history = {r['video_id']: r for r in policy['history']}
     candidates = list(enumerate(rows))
-    selected = []
-    if candidates and (limit > 1 or policy['round'] % 3 == 0):
-        fair = min(candidates, key=lambda item: (history.get(item[1]['video_id'], {}).get('last_selected_ms', -1), item[0]))
-        selected.append(fair)
-        candidates.remove(fair)
-    candidates.sort(key=lambda item: (history.get(item[1]['video_id'], {}).get('priority_ms', policy['as_of_ms']), item[0]))
-    selected.extend(candidates[:limit-len(selected)])
+    def take(pool, budget):
+        remaining = list(pool)
+        chosen = []
+        if budget and remaining and (budget > 1 or policy['round'] % 3 == 0):
+            fair = min(remaining, key=lambda item: (history.get(item[1]['video_id'], {}).get('last_selected_ms', -1), item[0]))
+            chosen.append(fair)
+            remaining.remove(fair)
+        remaining.sort(key=lambda item: (history.get(item[1]['video_id'], {}).get('priority_ms', policy['as_of_ms']), item[0]))
+        return chosen + remaining[:budget-len(chosen)]
+    known = set(policy.get('vertical_ids', [])) if policy['version'] == VERSION else set()
+    vertical = [item for item in candidates if item[1]['video_id'] in known]
+    ordinary = [item for item in candidates if item[1]['video_id'] not in known]
+    if vertical and ordinary:
+        vertical_budget = int(policy['round'] % 3 != 2) if limit == 1 else min(limit-1, (limit*2+2)//3)
+        selected = take(vertical, vertical_budget) + take(ordinary, limit-vertical_budget)
+        used = {item[0] for item in selected}
+        selected += take([item for item in candidates if item[0] not in used], limit-len(selected))
+    else:
+        selected = take(candidates, limit)
     return [row for _, row in selected]
+
+
+def selection_evidence(rows, selected, policy):
+    known = set(policy.get('vertical_ids', [])) if policy['version'] == VERSION else set()
+    return dict(priority_basis='dispatch_asset_snapshot' if policy['version']==VERSION else 'read_history_only',
+                vertical_candidates=sum(r['video_id'] in known for r in rows),
+                selected_vertical=sum(r['video_id'] in known for r in selected),
+                vertical_snapshot_truncated=bool(policy.get('vertical_snapshot_truncated', False)))
 
 
 def record(c, task, records):

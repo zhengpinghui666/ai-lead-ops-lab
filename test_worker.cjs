@@ -46,6 +46,13 @@ const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
   assert.equal(rotated.find(m=>m.type==='comment').record.video_id,'7600000000000000009');
   assert.ok(rotated.some(m=>m.type==='diagnostic'&&m.stage==='candidate_selection'));
   assert.equal(terminal(gatedPool),'network_error');assert.ok(!gatedPool.some(m=>m.type==='targets'||m.type==='candidates'));
+  const verticalPool=await run('candidate-rotation',{candidatePolicy:{...candidatePolicy,
+    version:'candidate-vertical-rotation-v2',vertical_ids:['7600000000000000010','7600000000000009999']}});
+  assert.equal(terminal(verticalPool),'completed');
+  assert.equal(verticalPool.find(m=>m.type==='targets').records[0].video_id,'7600000000000000010');
+  assert.equal(verticalPool.find(m=>m.type==='comment').record.video_id,'7600000000000000010');
+  const priorityReceipt=verticalPool.find(m=>m.type==='diagnostic'&&m.stage==='candidate_selection').snapshot.responses[0];
+  assert.equal(priorityReceipt.vertical_candidates,1);assert.equal(priorityReceipt.selected_vertical,1);
   const upstream=await Promise.all(['navigation-502','search-503','comment-503','gateway-title-only'].map(s=>run(s)));
   for(const messages of upstream.slice(0,3)){
     assert.equal(terminal(messages),'network_error');

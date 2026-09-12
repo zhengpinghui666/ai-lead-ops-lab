@@ -169,8 +169,9 @@ function createReader(page,shared){
     if(candidates.length&&config.candidate_policy){
       check();await emit({type:'candidates',records:candidates.map(row=>({...row,video_title:row.video_title.slice(0,300)}))});
       await emit({type:'diagnostic',stage:'candidate_selection',snapshot:{title:'搜索候选轮换',
-        visible_text:`本次搜索返回 ${candidates.length} 个候选，按读取历史轮换 ${selected.length} 个作品；保留探索位置，其余优先复查出现新近期评论的作品。`,
-        responses:[{policy:config.candidate_policy.version,candidate_count:candidates.length,selected:selected.map(r=>r.video_id),scope:'current_search_response',all_douyin:false}]}});
+        visible_text:`本次搜索返回 ${candidates.length} 个候选，选择 ${selected.length} 个作品；${config.candidate_policy.version==='candidate-vertical-rotation-v2'?'优先安排已确认对口的作品，保留普通作品与探索位置。':'按读取历史轮换并保留探索位置。'}`,
+        responses:[{policy:config.candidate_policy.version,candidate_count:candidates.length,selected:selected.map(r=>r.video_id),scope:'current_search_response',all_douyin:false,
+          ...require('./candidate_select.cjs').evidence(candidates,selected,config.candidate_policy)}]}});
     }
     return selected;
   }
