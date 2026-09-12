@@ -22,6 +22,12 @@ def predict(raw):
     if result.get('reason')=='point_fragmented_segmentation':
         result['reason']='point_segmentation_ambiguous'
     if result.get('reason') == 'point_character_uncertain':
+        # Tight crops can cause CTC to emit blank or confuse a small r with c.
+        # A bounded padding-only route keeps every original colour pixel. Both
+        # local models must agree on two margins and the silhouette rendering.
+        padded = _predict(raw, thresholds, colour_padding=True)
+        if padded.get('status') == 'predicted' and padded.get('matching_route') == 'padded_character_agreement':
+            return padded
         # A muted object may share the hue of an overlapping vivid object. Keep
         # both saturation populations, and retain all the OCR/shape gates. This
         # image-only fallback never refreshes a challenge or submits an answer.
@@ -36,7 +42,7 @@ def predict(raw):
     return result
 
 
-def _predict(raw, thresholds, split_saturation=False):
+def _predict(raw, thresholds, split_saturation=False, colour_padding=False):
     import cv2
     import ddddocr
     import numpy as np
@@ -173,8 +179,16 @@ def _predict(raw, thresholds, split_saturation=False):
         flat = Image.fromarray(255-obj['mask']).convert('RGB')
         padded = Image.new('RGB', (w+12, h+12), 'white')
         padded.paste(flat, (6, 6))
+        renderings = [(colour, .80), (padded, .95)]
+        if colour_padding:
+            renderings = []
+            for margin in (6, 12):
+                bordered = Image.new('RGB', (colour.width+2*margin, colour.height+2*margin), 'white')
+                bordered.paste(colour, (margin, margin))
+                renderings.append((bordered, .95))
+            renderings.append((padded, .95))
         votes = []
-        for image, threshold in ((colour, .80), (padded, .95)):
+        for image, threshold in renderings:
             encoded = io.BytesIO()
             image.save(encoded, format='PNG')
             result = ocr.classification(encoded.getvalue(), probability=True)
@@ -182,7 +196,7 @@ def _predict(raw, thresholds, split_saturation=False):
             if not re.fullmatch(r'[A-Za-z0-9]', text) or result.get('confidence', 0) < threshold:
                 return None
             votes.append(text.casefold())
-        return votes[0] if votes[0] == votes[1] else None
+        return votes[0] if len(set(votes)) == 1 else None
 
     if geometric:
         pair_score = min(c[2] for c in choices)
@@ -201,7 +215,8 @@ def _predict(raw, thresholds, split_saturation=False):
         fused=[]
         for i in range(len(objects)):
             labels={row[i] for row in identities if row[i]}
-            fused.append(next(iter(labels)) if len(labels)==1 else None)
+            agrees=len(labels)==1 and (not colour_padding or all(row[i] for row in identities))
+            fused.append(next(iter(labels)) if agrees else None)
         compatible = [(a,b) for a,b in itertools.combinations(range(len(objects)),2)
                       if fused[a] and fused[a]==fused[b]]
         if not compatible:
@@ -213,7 +228,7 @@ def _predict(raw, thresholds, split_saturation=False):
         ranked.sort(reverse=True)
         pair_score,a,b = ranked[0]
         pair_margin = pair_score - (ranked[1][0] if len(ranked)>1 else 0)
-        if pair_score < .65:
+        if pair_score < (.85 if colour_padding else .65):
             return decline('point_weak_shape_match')
         if pair_margin < .12:
             return decline('point_ambiguous_pair')
@@ -237,7 +252,8 @@ def _predict(raw, thresholds, split_saturation=False):
         points.append([int(x+xx), int(y+yy)])
     return {'status': 'predicted', 'result': {'points': points},
             'coordinate_type': 'xy_in_image_pixels', 'image_size': [width, height],
-            'object_count': len(objects), 'matching_route': 'solid_geometry' if geometric else 'character_agreement',
+            'object_count': len(objects), 'matching_route': 'solid_geometry' if geometric else 'padded_character_agreement' if colour_padding else 'character_agreement',
+            'solver_version': 'point-padding-v1',
             'pair_score': pair_score, 'pair_margin': pair_margin, 'score_is_probability': False,
             'segmentation_thresholds': list(thresholds),
             'palette_split': 'hue_saturation' if split_saturation else 'hue'}

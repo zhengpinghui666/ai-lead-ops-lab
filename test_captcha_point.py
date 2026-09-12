@@ -86,6 +86,22 @@ def touching_sample(second='7', extra_muted_pair=False, same_colour=False):
     return stream.getvalue(),regions
 
 
+def compact_letter_sample(second='r', ambiguous=False):
+    from PIL import Image, ImageDraw, ImageFont
+    image=Image.new('RGB',(340,212),'#f4f4f4');draw=ImageDraw.Draw(image)
+    rows=[('r',(38,145),37,'#bd88c3'),(second,(205,87),37,'#bd88c3'),
+          ('8',(120,42),40,'#72acdf'),('C',(45,8),52,'#fd9d7c'),
+          ('C' if ambiguous else 'g',(215,143),52,'#fd9d7c')]
+    regions=[]
+    for index,(letter,position,size,colour) in enumerate(rows):
+        font=ImageFont.load_default(size=size)
+        draw.text(position,letter,font=font,fill=colour)
+        if index<2:regions.append(draw.textbbox(position,letter,font=font))
+    draw.rectangle((222,20,254,50),fill='#72acdf')
+    stream=io.BytesIO();image.save(stream,format='PNG')
+    return stream.getvalue(),regions
+
+
 @unittest.skipUnless(PYTHON.is_file(), 'Local ddddocr runtime required')
 class PointTests(unittest.TestCase):
     def solve(self, raw, **extra):
@@ -212,6 +228,42 @@ class PointTests(unittest.TestCase):
 
     def test_same_colour_overlap_is_not_split_into_guessed_letters(self):
         self.assertEqual(self.solve(touching_sample(same_colour=True)[0])['status'],'needs_review')
+
+    def padded_candidate(self,raw,one_model_empty=False):
+        script='''import sys,json,base64,ddddocr
+from captcha_point import _predict
+payload=json.loads(sys.stdin.read())
+original=ddddocr.DdddOcr
+class Empty:
+    def classification(self,*args,**kwargs):return {'text':'','confidence':1.0}
+if payload['one_model_empty']:
+    ddddocr.DdddOcr=lambda **kwargs:Empty() if kwargs.get('beta') is False else original(**kwargs)
+print(json.dumps(_predict(base64.b64decode(payload['image']),(20,24,28),colour_padding=True)))
+'''
+        result=subprocess.run([str(PYTHON),'-c',script],cwd=BASE,
+            input=json.dumps({'image':base64.b64encode(raw).decode(),'one_model_empty':one_model_empty}),
+            capture_output=True,text=True,timeout=15,
+            env={**os.environ,'PYTHONIOENCODING':'utf-8','OMP_NUM_THREADS':'1'})
+        self.assertEqual(result.returncode,0)
+        return json.loads(result.stdout)
+
+    def test_padding_preserves_original_image_coordinates(self):
+        raw,regions=compact_letter_sample()
+        result=self.padded_candidate(raw)
+        self.assertEqual(result['status'],'predicted',result)
+        self.assertEqual(result['matching_route'],'padded_character_agreement')
+        for x1,y1,x2,y2 in regions:
+            self.assertEqual(sum(x1<=x<x2 and y1<=y<y2 for x,y in result['result']['points']),1)
+
+    def test_padding_does_not_merge_r_with_c_or_n(self):
+        for letter in ('c','n'):
+            self.assertEqual(self.padded_candidate(compact_letter_sample(letter)[0])['status'],'needs_review')
+
+    def test_padding_preserves_second_pair_ambiguity(self):
+        self.assertEqual(self.padded_candidate(compact_letter_sample(ambiguous=True)[0])['reason'],'point_ambiguous_pair')
+
+    def test_padding_requires_both_local_models(self):
+        self.assertEqual(self.padded_candidate(compact_letter_sample()[0],one_model_empty=True)['status'],'needs_review')
 
 
 if __name__ == '__main__':

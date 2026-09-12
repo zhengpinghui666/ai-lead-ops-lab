@@ -23,13 +23,13 @@
     },
     {
       "name": "CAPTCHA_PROJECT_RESEARCH.md",
-      "sha256": "e7a0a4d2cb36f067c952d922b0e16e3db3b5d2079383944071d21da50c827262",
-      "bytes": 13250
+      "sha256": "192a5eb7589de169cf333ece31ee877b531c7f0c42b71d9de71cd8bfd2527af2",
+      "bytes": 14297
     },
     {
       "name": "CAPTCHA_WORKFLOW.md",
-      "sha256": "57c389097d1a2e73330fa5490316de167f08ec8ff9bcc2b6dd8b8af76091949d",
-      "bytes": 20134
+      "sha256": "cae9edd72a7afe71d5af85cbe3aea65305883080ff6a419d5b7fadb1d9ec28bc",
+      "bytes": 23344
     },
     {
       "name": "COLLECTION_FRESHNESS.md",
@@ -43,8 +43,8 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "bfaf73f7eba78a8fd0f6149440ceda1cd1115f63d67dedd7f7542902daa504f8",
-      "bytes": 92427
+      "sha256": "af0b83a319e6d8bf06ebaf1c55906b057e3e4d58c371954622047ba7aeafe4c7",
+      "bytes": 95604
     },
     {
       "name": "DISCOVERY_TRACKING.md",
@@ -63,8 +63,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "c03b96734a052f61e6253591ad45da3e8bbe2a094a8420c72c0a65a7d9c1042c",
-      "bytes": 133843
+      "sha256": "bad3f90c5e82bb648a2d8c1aad868aa80a78c06e9953b63fda576caeed34b152",
+      "bytes": 137020
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -198,8 +198,8 @@
     },
     {
       "name": "captcha_point.py",
-      "sha256": "37629f9118c9fde59cf948b36d3a909419c8872b1df6f74f52130f2609587d16",
-      "bytes": 13219
+      "sha256": "301ac2c96c51cb303e594fbfa28fa5555540ede324156c20db5e20c1ce272727",
+      "bytes": 14277
     },
     {
       "name": "captcha_point_browser.cjs",
@@ -783,13 +783,13 @@
     },
     {
       "name": "test_captcha_point.py",
-      "sha256": "edf533996a740e87ec6a6eb1297789567f51baa67bace16cb816f9066945b53c",
-      "bytes": 10238
+      "sha256": "739d136ef7887b2df3c9db6553a1dffd8e879beb11df227b5c983100da52c767",
+      "bytes": 12930
     },
     {
       "name": "test_captcha_point_browser.cjs",
-      "sha256": "833fca62bece22ef75c0aa10331ac1e8b82ae62f4d0dd0f6954a07abb451384d",
-      "bytes": 11841
+      "sha256": "381fb1d4d5075bec2bd8a4606b3a4fcb0d2217e9074cdc9b2b86455aadeb0588",
+      "bytes": 12085
     },
     {
       "name": "test_captcha_samples.cjs",
