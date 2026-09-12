@@ -43,6 +43,93 @@ class DiscoveryTrackingTests(unittest.TestCase):
     def choose(self,plan=None,instant=NOW):
         with app.db() as c:return discovery.choose(c,plan or self.plan(),instant)
 
+    def activity(self,vid,published=None,*,observed=NOW,suffix='',text='合成近期评论',reason=''):
+        with app.db() as c:
+            c.execute('''INSERT INTO collection_observations
+              (task_id,kind,external_id,page_url,observed_at,payload_hash,comment_text,published_at,filter_reason)
+              VALUES(?,'comment',?,?,?,?,?,?,?)''',
+              (self.base,'activity-'+vid+suffix,'https://www.douyin.com/video/'+vid,observed,'synthetic',text,published,reason))
+
+    def test_recent_comment_keeps_priority_after_many_quiet_checks(self):
+        self.save()
+        for start in range(0,600,50):self.record([work(i) for i in range(start,start+50)])
+        active=work(599)['video_id']
+        with app.db() as c:c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=?,quiet_streak=5 WHERE video_id=?',
+                                      (discovery.future(NOW,-300),discovery.future(NOW,-60),active))
+        self.activity(active,discovery.future(NOW,-900))
+        _,job=self.choose()
+        self.assertIn(active,job['target'].splitlines())
+        slot=next(r for r in job['work_selection']['slots'] if r['video_id']==active)
+        self.assertEqual(slot['group'],'active')
+        self.assertEqual(slot['latest_comment_at'],discovery.future(NOW,-900))
+        self.assertEqual(len(job['work_selection']['slots']),3)
+        self.assertTrue(any(r['group']!='active' for r in job['work_selection']['slots']))
+
+    def test_old_counts_and_invalid_times_do_not_prove_recent_activity(self):
+        self.save();self.record([work(i) for i in range(6)])
+        with app.db() as c:c.execute('UPDATE discovery_works SET last_checked_at=?,new_recent_comments=100,quiet_streak=0',
+                                      (discovery.future(NOW,-120),))
+        self.activity(VID,discovery.future(NOW,-3601))
+        self.activity(work(1)['video_id'],None)
+        self.activity(work(2)['video_id'],discovery.future(NOW,10))
+        self.activity(work(3)['video_id'],discovery.future(NOW,-10),observed=discovery.future(NOW,10))
+        self.activity(work(4)['video_id'],discovery.future(NOW,-10),observed=discovery.future(NOW,-20))
+        self.activity(work(5)['video_id'],discovery.future(NOW,-10),text='  ')
+        _,job=self.choose(self.plan(video_limit=5))
+        self.assertTrue(all(r['group']=='rotation' for r in job['work_selection']['slots']))
+
+    def test_repeated_read_does_not_extend_publication_activity_window(self):
+        self.save();self.record([work()])
+        published=discovery.future(NOW,-3500)
+        self.activity(VID,published,observed=discovery.future(NOW,-3000))
+        self.activity(VID,published,suffix='-read-again')
+        self.assertEqual(self.choose()[1]['work_selection']['slots'][0]['group'],'active')
+        later=discovery.future(NOW,101)
+        self.activity(VID,published,observed=later,suffix='-expired-read')
+        self.assertNotEqual(self.choose(instant=later)[1]['work_selection']['slots'][0]['group'],'active')
+
+    def test_activity_window_respects_timezone_and_exact_boundary(self):
+        self.save();self.record([work()])
+        self.activity(VID,'2026-09-12T09:00:00+08:00')
+        self.assertEqual(self.choose()[1]['work_selection']['slots'][0]['group'],'active')
+        self.assertNotEqual(self.choose(instant=discovery.future(NOW,1))[1]['work_selection']['slots'][0]['group'],'active')
+
+    def test_keyword_filtered_comment_is_activity_without_becoming_a_lead(self):
+        self.save();self.record([work()])
+        with app.db() as c:before=c.execute('SELECT COUNT(*) FROM comments').fetchone()[0]
+        self.activity(VID,discovery.future(NOW,-30),reason='filtered_keyword')
+        self.assertEqual(self.choose()[1]['work_selection']['slots'][0]['group'],'active')
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM comments').fetchone()[0],before)
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM semantic_jobs').fetchone()[0],0)
+
+    def test_quiet_check_retains_base_interval_until_activity_expires(self):
+        self.save();self.record([work()])
+        with app.db() as c:c.execute('UPDATE discovery_works SET quiet_streak=4,new_recent_comments=7 WHERE video_id=?',(VID,))
+        self.activity(VID,discovery.future(NOW,-3500))
+        _,job=self.choose();self.finish_work_job(job,'still-active')
+        with app.db() as c:row=c.execute('SELECT * FROM discovery_works WHERE video_id=?',(VID,)).fetchone()
+        self.assertEqual(row['next_check_at'],discovery.future(NOW,60))
+        self.assertEqual((row['quiet_streak'],row['new_recent_comments']),(5,7))
+        later=discovery.future(NOW,120)
+        _,job=self.choose(instant=later);self.finish_work_job(job,'expired',later)
+        with app.db() as c:row=c.execute('SELECT * FROM discovery_works WHERE video_id=?',(VID,)).fetchone()
+        self.assertEqual(row['next_check_at'],discovery.future(later,60*32))
+
+    def test_activity_index_upgrade_backs_up_and_preserves_observations(self):
+        self.save();self.record([work()]);self.activity(VID,discovery.future(NOW,-10))
+        with app.db() as c:
+            before=[tuple(r) for r in c.execute('SELECT * FROM collection_observations ORDER BY task_id,kind,external_id')]
+            c.execute('DROP INDEX idx_observation_published_activity')
+        app.init()
+        backups=list((app.DATA_DIR/'backups').glob('*before-work-activity-*'))
+        self.assertEqual(len(backups),1)
+        app.init()
+        self.assertEqual(len(list((app.DATA_DIR/'backups').glob('*before-work-activity-*'))),1)
+        with app.db() as c:
+            self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM collection_observations ORDER BY task_id,kind,external_id')],before)
+            self.assertIsNotNone(c.execute("SELECT 1 FROM sqlite_master WHERE name='idx_observation_published_activity'").fetchone())
+
     def test_durable_unique_library_and_unbiased_author_ratio(self):
         self.save()
         rows=[work(i,related=i<8) for i in range(10)]
@@ -121,6 +208,7 @@ class DiscoveryTrackingTests(unittest.TestCase):
         self.save()
         for start in range(0,600,50):self.record([work(i) for i in range(start,start+50)])
         active=work(599)['video_id']
+        self.activity(active,discovery.future(NOW,-120))
         with app.db() as c:c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=?,new_recent_comments=3 WHERE video_id=?',
                                       (discovery.future(NOW,-120),discovery.future(NOW,-60),active))
         _,job=self.choose()
@@ -132,6 +220,7 @@ class DiscoveryTrackingTests(unittest.TestCase):
         quiet=work(1000,author='MS4wLjABAAAA_NORMAL_AUTHOR')
         self.record([quiet])
         active=[work(i)['video_id'] for i in (18,19)]
+        for vid in active:self.activity(vid,discovery.future(NOW,-120))
         with app.db() as c:c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=? WHERE video_id=?',
                                       (discovery.future(NOW,-3600),discovery.future(NOW,-1800),quiet['video_id']))
         selected=[]
@@ -150,6 +239,7 @@ class DiscoveryTrackingTests(unittest.TestCase):
         self.save();self.record([work(i) for i in range(12)])
         quiet=work(1000,author='MS4wLjABAAAA_NORMAL_AUTHOR');self.record([quiet])
         active=work(11)['video_id'];groups=[]
+        self.activity(active,discovery.future(NOW,-120))
         for turn in range(4):
             instant=discovery.future(NOW,turn*180)
             with app.db() as c:
@@ -167,6 +257,7 @@ class DiscoveryTrackingTests(unittest.TestCase):
 
     def test_reserved_slots_fill_without_selecting_future_or_disabled_work(self):
         self.save();self.record([work(i) for i in range(12)])
+        for i in range(12):self.activity(work(i)['video_id'],discovery.future(NOW,-120))
         with app.db() as c:
             c.execute('UPDATE discovery_works SET last_checked_at=?,new_recent_comments=2',(discovery.future(NOW,-120),))
             c.execute('UPDATE discovery_works SET next_check_at=? WHERE video_id=?',(discovery.future(NOW,60),VID))

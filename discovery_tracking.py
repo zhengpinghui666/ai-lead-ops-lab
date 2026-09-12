@@ -36,6 +36,17 @@ DEFAULT = dict(enabled=False,keywords=['无畏契约陪玩','无畏契约陪练'
     seed_videos=[],search_interval=300,author_interval=600,focus_interval=90,work_interval=60,
     focus_min_related=8,focus_ratio=80,initial_author_pages=3)
 
+# Executed after the observation columns are migrated. Range access keeps old
+# observations from making every scheduling turn scan the entire archive.
+ACTIVITY_INDEX = '''CREATE INDEX IF NOT EXISTS idx_observation_published_activity
+  ON collection_observations(julianday(published_at),page_url) WHERE kind='comment' '''
+RECENT_ACTIVITY = '''SELECT page_url,
+  strftime('%Y-%m-%dT%H:%M:%S+00:00',MAX(julianday(published_at))) AS latest_comment_at
+  FROM collection_observations WHERE kind='comment'
+  AND julianday(published_at)>=julianday(?,'-1 hour') AND julianday(published_at)<=julianday(?)
+  AND julianday(published_at)<=julianday(observed_at) AND julianday(observed_at)<=julianday(?)
+  AND trim(comment_text)!='' GROUP BY page_url'''
+
 
 def config(c):
     row=c.execute("SELECT value FROM settings WHERE key='discovery_tracking'").fetchone()
@@ -161,12 +172,13 @@ def select_work_targets(c,plan,instant,focused,paused):
     focused_sql=','.join('?' for _ in focused) or "''"
     limit=plan['video_limit']
     # Only return at most limit rows per group, even for a large durable library.
-    rows=c.execute(f'''WITH eligible AS (
-      SELECT DISTINCT w.*,CASE
-        WHEN w.last_checked_at IS NOT NULL AND w.new_recent_comments>0 AND w.quiet_streak<2 THEN 'active'
+    rows=c.execute(f'''WITH activity AS ({RECENT_ACTIVITY}), eligible AS (
+      SELECT DISTINCT w.*,activity.latest_comment_at,CASE
+        WHEN activity.latest_comment_at IS NOT NULL THEN 'active'
         WHEN w.last_checked_at IS NULL AND w.author_sec_uid IN ({focused_sql}) THEN 'focused_new'
         ELSE 'rotation' END AS selection_group
       FROM discovery_works w JOIN videos v ON v.external_id=w.video_id
+      LEFT JOIN activity ON activity.page_url='https://www.douyin.com/video/'||w.video_id
       WHERE w.relevant=1 AND w.enabled=1 AND v.enabled=1 AND (w.author_sec_uid IS NULL OR NOT EXISTS
         (SELECT 1 FROM discovery_authors a WHERE a.sec_uid=w.author_sec_uid AND a.enabled=0))
       AND w.video_id NOT IN ({blocked_sql})
@@ -176,7 +188,7 @@ def select_work_targets(c,plan,instant,focused,paused):
         julianday(COALESCE(next_check_at,first_seen_at)),julianday(published_at) DESC,video_id) AS selection_rank
       FROM eligible
     ) SELECT * FROM ranked WHERE selection_rank<=? ORDER BY selection_group,selection_rank''',
-      (*focused,*paused,instant,limit)).fetchall()
+      (instant,instant,instant,*focused,*paused,instant,limit)).fetchall()
     queues={name:deque(r for r in rows if r['selection_group']==name) for name in ('active','focused_new','rotation')}
     # Count settled work batches, independent of intervening author/search turns.
     turn=c.execute("SELECT COUNT(*) FROM discovery_jobs WHERE kind='work' AND settled=1").fetchone()[0]
@@ -197,8 +209,9 @@ def select_work_targets(c,plan,instant,focused,paused):
             if not take(preferred):take('focused_new' if preferred=='rotation' else 'rotation')
             exploration+=1
         while len(selected)<limit and take('active'):pass
-    audit=dict(version='work-fair-rotation-v1',turn=turn,
-               slots=[dict(video_id=r['video_id'],group=r['selection_group']) for r in selected])
+    audit=dict(version='work-activity-window-v2',turn=turn,activity_window_seconds=3600,
+               slots=[dict(video_id=r['video_id'],group=r['selection_group'],
+                           latest_comment_at=r['latest_comment_at']) for r in selected])
     return selected,audit
 
 
@@ -264,6 +277,7 @@ def settle(c,task):
             if a:c.execute('UPDATE discovery_authors SET last_checked_at=?,next_check_at=? WHERE sec_uid=?',
                 (stamp,future(stamp,cfg['focus_interval'] if a['focused'] else cfg['author_interval']),sec))
     # Even in a partial batch, completed work checkpoints remain verifiable.
+    recent=dict(c.execute(RECENT_ACTIVITY,(stamp,stamp,stamp)).fetchall())
     for cp in c.execute("SELECT video_id FROM collection_checkpoints WHERE task_id=? AND status='done'",(task['id'],)).fetchall():
         vid=cp[0];row=c.execute('SELECT quiet_streak FROM discovery_works WHERE video_id=?',(vid,)).fetchone()
         if not row:continue
@@ -272,6 +286,9 @@ def settle(c,task):
           AND NOT EXISTS(SELECT 1 FROM collection_observations p WHERE p.kind='comment' AND p.page_url=o.page_url AND p.external_id=o.external_id AND p.task_id<o.task_id)''',
           (task['id'],f'https://www.douyin.com/video/{vid}',task['created_at'])).fetchone()[0]
         quiet=0 if new else min(row[0]+1,5)
+        # A quiet read is still recorded, but cannot immediately demote work
+        # with genuinely recent comments. Re-reading old text never extends it.
+        interval=cfg['work_interval']*(1 if f'https://www.douyin.com/video/{vid}' in recent else 2**quiet)
         c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=?,quiet_streak=?,new_recent_comments=new_recent_comments+? WHERE video_id=?',
-            (stamp,future(stamp,cfg['work_interval']*2**quiet),quiet,new,vid))
+            (stamp,future(stamp,interval),quiet,new,vid))
     c.execute('UPDATE discovery_jobs SET settled=1 WHERE task_id=?',(task['id'],))

@@ -33,8 +33,8 @@
     },
     {
       "name": "COLLECTION_FRESHNESS.md",
-      "sha256": "8636e6df5a58ecc0b8784b02ee277f6c7617cd87575186cc2d50818beb6c3868",
-      "bytes": 14382
+      "sha256": "e289a0982d16742bca6009b9ecd120916331ace7263043bbb9920748f6b49499",
+      "bytes": 18606
     },
     {
       "name": "COLLECTION_HTTP.md",
@@ -43,13 +43,13 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "af0b83a319e6d8bf06ebaf1c55906b057e3e4d58c371954622047ba7aeafe4c7",
-      "bytes": 95604
+      "sha256": "5c9728e80c2fb60a713147c6b6925420bdb1c9ed11f311443ee8c994e6fe8986",
+      "bytes": 99826
     },
     {
       "name": "DISCOVERY_TRACKING.md",
-      "sha256": "b06792d1f6a7895e1a5c8a107a9e7cade6d62d692969ac2511ecf6f63cf07d02",
-      "bytes": 6477
+      "sha256": "45b196e5e91e590f205f70eb99a4b078f252c4d1e35cbb4937d9a6fc96483e12",
+      "bytes": 7401
     },
     {
       "name": "EXTERNAL_ACCESS.md",
@@ -63,8 +63,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "bad3f90c5e82bb648a2d8c1aad868aa80a78c06e9953b63fda576caeed34b152",
-      "bytes": 137020
+      "sha256": "235ec0dd8917570acac47b5d9861df6e7a41bc141c167102fed535f928ed28d0",
+      "bytes": 141242
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -233,8 +233,8 @@
     },
     {
       "name": "clubops.py",
-      "sha256": "7c4c249072c76c1ef058510616ee32a4fd74f2c9d5d7120647ea7c036295011e",
-      "bytes": 50896
+      "sha256": "7fa795316c00daf996fba21c9a0fe333dfe9b1a3a8709ad3aa8991c470dbf0f3",
+      "bytes": 51242
     },
     {
       "name": "collection_scheduler.py",
@@ -328,8 +328,8 @@
     },
     {
       "name": "discovery_tracking.py",
-      "sha256": "ce2080be3deda26d5fce28e4a0fa495ff72da7f7a83b01f6152aa8f58655a939",
-      "bytes": 19474
+      "sha256": "ebbf735d99fb08a784ea20f84b1ae44a86d6feaab4c820034bdaf956c60ca6c0",
+      "bytes": 20762
     },
     {
       "name": "evaluation/intent-development-v1.json",
@@ -838,8 +838,8 @@
     },
     {
       "name": "test_discovery_tracking.py",
-      "sha256": "ef7c336a330d7aa5a94cc6920e0c23359216aca0e298330cbc092f76a1d29d58",
-      "bytes": 15065
+      "sha256": "fe18aa0901be957862ec7d82edbc8f5008e981be7c4df4446fa1aede22bc60e2",
+      "bytes": 21224
     },
     {
       "name": "test_frontend.cjs",
