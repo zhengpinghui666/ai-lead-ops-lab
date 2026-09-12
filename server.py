@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import gzip
 import os
 import secrets
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -50,10 +51,19 @@ def collection_state(mode):
 
 class Handler(BaseHTTPRequestHandler):
     server_version = 'ClubOps/2.0'
+    protocol_version = 'HTTP/1.1'
 
     def respond(self, data, status=200, mime='application/json; charset=utf-8'):
         raw = json.dumps(data, ensure_ascii=False).encode() if mime.startswith('application/json') else data
+        compressed = False
+        encodings = [v.strip().lower() for v in self.headers.get('Accept-Encoding','').split(',')]
+        if mime.startswith('application/json') and len(raw) >= 1024 and 'gzip' in encodings:
+            raw = gzip.compress(raw, compresslevel=1, mtime=0)
+            compressed = True
         self.send_response(status)
+        self.send_header('Vary','Accept-Encoding')
+        if compressed:
+            self.send_header('Content-Encoding','gzip')
         for key, value in {'Content-Type': mime, 'Content-Length': str(len(raw)), 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"}.items():
             self.send_header(key, value)
         self.end_headers()

@@ -358,7 +358,9 @@ class Client:
             if self.cancelled():
                 raise ReadError('cancelled')
             if self.count >= self.request_limit:
-                raise ReadError('resource_limited')
+                budget = {'reason': 'request_budget', 'requests_used': self.count, 'request_limit': self.request_limit}
+                self.diagnostic({'operation':operation,'transport':'http','status':'resource_limited',**budget})
+                raise ReadError('resource_limited', budget)
             if self.signer is None and operation not in self.signers:
                 self.signers[operation] = Signer(agent) if operation == 'comments' else F2Signer(self.session)
             signer = self.signer or self.signers[operation]

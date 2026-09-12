@@ -72,7 +72,16 @@ def token(row):
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
-def project(c, row, *, history=True):
+_UNSET_ENGINE = object()
+
+
+def connection_engine(c):
+    import semantic
+    filename = c.execute('PRAGMA database_list').fetchone()[2]
+    return semantic.state()['engine'] if filename.endswith('clubops-live.db') else None
+
+
+def project(c, row, *, history=True, model_engine=_UNSET_ENGINE):
     result = dict(row)
     result['review_token'] = token(row)
     result['rule_facts'] = json.loads(row['facts'])
@@ -90,16 +99,16 @@ def project(c, row, *, history=True):
     result['review_history'] = [dict(id=r['id'], created_at=r['created_at'], **json.loads(r['snapshot'])) for r in
         c.execute('SELECT * FROM live_reviews WHERE message_id=? ORDER BY id DESC LIMIT 10', (row['id'],))] if history else []
     import analysis_store
-    import semantic
     # Determine workspace from this connection, never apply real configuration to demo.
-    filename = c.execute('PRAGMA database_list').fetchone()[2]
-    model_engine = semantic.state()['engine'] if filename.endswith('clubops-live.db') else None
+    if model_engine is _UNSET_ENGINE:
+        model_engine = connection_engine(c)
     analysis_store.project(c, result, model_engine=model_engine)
     return result
 
 
 def records(c, where='', args=(), *, limit=500, history=True):
-    return [project(c, r, history=history) for r in c.execute(SELECT + ' ' + where + ' ORDER BY m.id DESC LIMIT ?', (*args, limit)).fetchall()]
+    engine = connection_engine(c)
+    return [project(c, r, history=history, model_engine=engine) for r in c.execute(SELECT + ' ' + where + ' ORDER BY m.id DESC LIMIT ?', (*args, limit)).fetchall()]
 
 
 def detail(message_id, mode='live'):
@@ -118,7 +127,8 @@ def latest_by_person(c):
         FROM live_messages x JOIN live_links k ON k.message_id=x.id) WHERE position=1)
       ORDER BY m.id DESC''').fetchall()
     counts = {r[0]: r[1] for r in c.execute('SELECT person_id,COUNT(*) FROM live_links GROUP BY person_id')}
-    return [project(c, r) for r in rows], counts
+    engine = connection_engine(c)
+    return [project(c, r, model_engine=engine) for r in rows], counts
 
 
 def history(lead_id, offset=0, mode='live'):
@@ -130,7 +140,8 @@ def history(lead_id, offset=0, mode='live'):
         lead = app.required(c, 'leads', lead_id)
         total = c.execute('SELECT COUNT(*) FROM live_links WHERE person_id=?', (lead['person_id'],)).fetchone()[0]
         rows = c.execute(SELECT + ' WHERE k.person_id=? ORDER BY m.id DESC LIMIT ? OFFSET ?', (lead['person_id'], limit, offset)).fetchall()
-        return dict(rows=[project(c, r) for r in rows], total=total, offset=offset, limit=limit)
+        engine = connection_engine(c)
+        return dict(rows=[project(c, r, model_engine=engine) for r in rows], total=total, offset=offset, limit=limit)
 
 
 def review(body, mode='live'):

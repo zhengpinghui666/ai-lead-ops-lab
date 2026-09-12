@@ -15,6 +15,40 @@ BASE = Path(__file__).resolve().parent
 
 
 class ServiceLifecycleTests(unittest.TestCase):
+    def test_json_compression_negotiation_preserves_payload_and_headers(self):
+        import gzip
+        import threading
+        from http.server import ThreadingHTTPServer
+        from server import Handler
+        payload={'rows':['中文测试内容'*100]*20}
+        class FixtureHandler(Handler):
+            def do_GET(self):self.respond(payload)
+            def log_message(self,*args):pass
+        httpd=ThreadingHTTPServer(('127.0.0.1',0),FixtureHandler)
+        thread=threading.Thread(target=httpd.serve_forever,daemon=True);thread.start()
+        try:
+            url='http://127.0.0.1:'+str(httpd.server_port)
+            for encoding in ('identity','gzip, deflate','gzip;q=0'):
+                with urllib.request.urlopen(urllib.request.Request(url,headers={'Accept-Encoding':encoding}),timeout=3) as response:
+                    raw=response.read()
+                    self.assertEqual(len(raw),int(response.headers['Content-Length']))
+                    self.assertEqual(response.headers['Vary'],'Accept-Encoding')
+                    if encoding=='gzip, deflate':
+                        self.assertEqual(response.headers['Content-Encoding'],'gzip')
+                        self.assertLess(len(raw),len(json.dumps(payload).encode())//10)
+                        raw=gzip.decompress(raw)
+                    else:self.assertIsNone(response.headers.get('Content-Encoding'))
+                    self.assertEqual(json.loads(raw),payload)
+            # Node fetch negotiates compression and keeps connections alive,
+            # unlike urllib. Exercise both actual clients against the handler.
+            result=subprocess.run(['node','-e',
+                "fetch(process.argv[1]).then(async r=>{let data=await r.json();console.log(JSON.stringify({encoding:r.headers.get('content-encoding'),rows:data.rows.length}));}).catch(e=>{console.error(e.name);process.exitCode=1;});",url],
+                capture_output=True,text=True,timeout=12,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(json.loads(result.stdout),{'encoding':'gzip','rows':20})
+        finally:
+            httpd.shutdown();thread.join(timeout=3);httpd.server_close()
+
     def test_authenticated_idle_shutdown_and_lock_release(self):
         with tempfile.TemporaryDirectory(prefix='clubops-lifecycle-') as directory:
             root=Path(directory)

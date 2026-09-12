@@ -13,12 +13,12 @@ HISTORY = """WITH raw AS (
  FROM collection_observations o JOIN collection_tasks t ON t.id=o.task_id
  LEFT JOIN comments x ON x.source_id=:source AND x.external_id=o.external_id
  LEFT JOIN videos v ON v.source_id=:source AND v.url=o.page_url
- WHERE o.kind='comment' AND trim(o.comment_text)!=''
+ WHERE o.kind='comment' AND trim(o.comment_text)!='' AND (:video='' OR o.page_url=:video)
  UNION ALL
  SELECT x.external_id,v.url,x.raw_text,x.observed_nickname,p.external_id,x.published_at,
  x.discovered_at,'',NULL,'','','','archive',x.id,x.discovered_at,v.title
  FROM comments x JOIN videos v ON v.id=x.video_id LEFT JOIN people p ON p.id=x.person_id
- WHERE trim(x.raw_text)!='' AND NOT EXISTS (
+ WHERE trim(x.raw_text)!='' AND (:video='' OR v.url=:video) AND NOT EXISTS (
   SELECT 1 FROM collection_observations o WHERE o.kind='comment'
   AND o.external_id=x.external_id AND o.page_url=v.url AND trim(o.comment_text)!='')
 ), latest AS (
@@ -45,18 +45,22 @@ def history(query, mode='live'):
     with app.LOCKS[mode], app.db(mode) as c:
         source = c.execute("SELECT id FROM sources WHERE kind='browser' ORDER BY id LIMIT 1").fetchone()
         params = dict(source=source[0] if source else -1,video=video,query=search,state=state)
-        counts = c.execute(HISTORY+"SELECT COUNT(*) AS observed,COALESCE(SUM(filter_reason=''),0) AS accepted,COALESCE(SUM(filter_reason!=''),0) AS filtered FROM scoped",params).fetchone()
+        # Rank the history once per response, not again for every counter, filter
+        # and page. This temporary table belongs to this connection only and does
+        # not modify the archive or cache results across analysis/config changes.
+        c.execute('CREATE TEMP TABLE monitor_comment_scope AS '+HISTORY+'SELECT * FROM scoped',params)
+        counts = c.execute("SELECT COUNT(*) AS observed,COALESCE(SUM(filter_reason=''),0) AS accepted,COALESCE(SUM(filter_reason!=''),0) AS filtered FROM monitor_comment_scope").fetchone()
         # Use the same current, input-bound projection as the visible judgment.
         # Evaluate eligibility before pagination; manual corrections take priority.
         current, valuable = {}, set()
-        for accepted in c.execute(HISTORY+"SELECT * FROM scoped WHERE filter_reason=''",params):
+        for accepted in c.execute("SELECT * FROM monitor_comment_scope WHERE filter_reason=''"):
             key = (accepted['video_url'],accepted['external_id'])
             current[key] = monitoring.observation_analysis(c,accepted['comment_id'],accepted['text'],engine)
             if current[key].get('category') == 'buyer' and current[key].get('analysis_method') in ('rules','model','human'):
                 valuable.add(key)
         where = " WHERE (:state='all' OR (:state IN ('accepted','valuable') AND filter_reason='') OR (:state='filtered' AND filter_reason!='')) AND (:query='' OR instr(lower(text || ' ' || nickname || ' ' || COALESCE(user_identifier,'') || ' ' || external_id),lower(:query))>0)"
-        total = c.execute(HISTORY+'SELECT COUNT(*) FROM scoped'+where,params).fetchone()[0]
-        ordered = HISTORY+'SELECT * FROM scoped'+where+' ORDER BY julianday(collected_at) DESC,video_url,external_id'
+        total = c.execute('SELECT COUNT(*) FROM monitor_comment_scope'+where,params).fetchone()[0]
+        ordered = 'SELECT * FROM monitor_comment_scope'+where+' ORDER BY julianday(collected_at) DESC,video_url,external_id'
         valuable_source = None
         if state == 'valuable':
             valuable_source = [r for r in c.execute(ordered,params) if (r['video_url'],r['external_id']) in valuable]

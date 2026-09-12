@@ -59,6 +59,17 @@ class LiveWorkflowTests(unittest.TestCase):
         self.assertEqual(live.state()['rows'][0]['lead_id'], lead['id'])
         self.assertEqual(flow.detail(mid)['person_id'], lead['person_id'])
 
+    def test_bulk_projection_reads_current_model_config_once_per_response(self):
+        self.receive()
+        self.receive(2,uid='10000000000000003')
+        with app.db() as c,patch('semantic.state',return_value={'engine':None}) as state:
+            rows,counts=flow.latest_by_person(c)
+            self.assertEqual(len(rows),2)
+            self.assertEqual(state.call_count,1)
+            rows2=flow.records(c)
+            self.assertEqual(len(rows2),2)
+            self.assertEqual(state.call_count,2)  # A new read sees new config, no cross-request cache.
+
     def test_numeric_uid_shared_with_browser_comment_preserves_refusal(self):
         self.receive()
         lead = app.state()['leads'][0]

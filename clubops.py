@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY,kind TEXT NOT NULL,det
 CREATE INDEX IF NOT EXISTS idx_comments_video_time ON comments(video_id,published_at);
 CREATE INDEX IF NOT EXISTS idx_comments_person ON comments(person_id,id);
 CREATE INDEX IF NOT EXISTS idx_comments_analysis ON comments(analysis_method);
+CREATE INDEX IF NOT EXISTS idx_videos_source_url ON videos(source_id,url);
 CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments(source_id,parent_external_id,video_id);
 CREATE INDEX IF NOT EXISTS idx_messages_lead ON messages(lead_id,id);
 CREATE TABLE IF NOT EXISTS collection_tasks (id INTEGER PRIMARY KEY,request_id TEXT NOT NULL UNIQUE,kind TEXT NOT NULL,target TEXT NOT NULL,video_limit INTEGER NOT NULL,comment_limit INTEGER NOT NULL,interactive INTEGER NOT NULL,status TEXT NOT NULL,detail TEXT NOT NULL DEFAULT '',videos INTEGER NOT NULL DEFAULT 0,comments INTEGER NOT NULL DEFAULT 0,inserted INTEGER NOT NULL DEFAULT 0,duplicate INTEGER NOT NULL DEFAULT 0,revised INTEGER NOT NULL DEFAULT 0,skipped INTEGER NOT NULL DEFAULT 0,page_url TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,updated_at TEXT NOT NULL,finished_at TEXT);

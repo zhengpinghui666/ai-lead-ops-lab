@@ -45,6 +45,38 @@ class FakeSigner:
 
 
 class HTTPReadTests(unittest.TestCase):
+    def test_request_budget_finishes_bounded_batch_without_claiming_unread_work(self):
+        calls=[];log=[]
+        def exchange(url, headers, cancelled):
+            query=parse_qs(urlsplit(url).query);calls.append(query)
+            cursor=int(query['cursor'][0])
+            payload=body([record(cid=str(int(PARENT)+cursor))],has_more=1,cursor=cursor+10)
+            return 200,'application/json',json.dumps(payload).encode()
+        client=http.Client(session(),signer=FakeSigner(),transport=exchange,diagnostic=log.append,request_limit=3)
+        events=[];videos=[VIDEO,'7619966169662950656','7684255202639121691']
+        worker.collect({'kind':'video','target':'\n'.join(videos),'video_limit':3,'comment_limit':30,'page_concurrency':1},
+                       events.append,threading.Event(),client=client)
+        self.assertEqual(len(calls),3)
+        self.assertEqual(events[-1]['status'],'completed')
+        self.assertIn('请求预算',events[-1]['detail'])
+        checkpoints={e['video_id']:e for e in events if e['type']=='checkpoint'}
+        self.assertEqual(checkpoints[VIDEO]['status'],'done')
+        self.assertTrue(all(checkpoints[v]['status']=='partial' for v in videos[1:]))
+        self.assertEqual(len([e for e in events if e['type']=='comment']),3)
+        self.assertTrue(any(e.get('reason')=='request_budget' and e['requests_used']==3 for e in log))
+
+    def test_zero_budget_and_response_size_limit_are_not_healthy_batches(self):
+        for limit,raw in ((0,b'{}'),(3,b'x'*(http.MAX_BODY+1))):
+            calls=[]
+            def exchange(*args):calls.append(True);return 200,'application/json',raw
+            client=http.Client(session(),signer=FakeSigner(),transport=exchange,request_limit=limit)
+            events=[]
+            worker.collect({'kind':'video','target':VIDEO,'video_limit':1,'comment_limit':30,'page_concurrency':1},
+                           events.append,threading.Event(),client=client)
+            self.assertEqual(events[-1]['status'],'resource_limited')
+            self.assertFalse(any(e.get('type')=='checkpoint' and e['status']=='done' for e in events))
+            self.assertEqual(len(calls),int(limit>0))
+
     def test_explicit_video_pool_reads_two_concurrently_without_search(self):
         videos=[VIDEO, '7619229726170732785'];barrier=threading.Barrier(2)
         gate=threading.Lock();calls=[];active=peak=0

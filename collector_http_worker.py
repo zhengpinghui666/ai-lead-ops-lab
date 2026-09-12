@@ -22,6 +22,8 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
     failure = []
     lock = threading.Lock()
     counts = {'active': 0, 'peak': 0, 'skipped': 0, 'unsupported':0}
+    budget_reached = threading.Event()
+    comment_response_seen = threading.Event()
     limit = min(int(config['page_concurrency']), int(config['video_limit']))
     def diagnostic(value):
         emit({'type': 'diagnostic', 'stage': 'http_read', 'snapshot': {'responses': [value]}})
@@ -139,6 +141,7 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
             progress(1)
             seen = set()
             skipped = unsupported = 0
+            read_comment_page = False
             def remaining():
                 return max(0, config['comment_limit'] - len(seen) - skipped)
             try:
@@ -191,6 +194,8 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                         cursor, visited = main_cursor, main_visited
                         page = client.page('comments', video=vid, title=title, cursor=cursor,
                             count=min(10,remaining()))
+                    read_comment_page = True
+                    comment_response_seen.set()
                     deliver(page)
                     if not remaining():
                         break
@@ -212,6 +217,15 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                 emit({'type': 'checkpoint', 'video_id': vid, 'status': 'partial' if unsupported else 'done',
                       'detail': '达到本批观察预算或已读取响应可见末页；无文字内容计入跳过，不代表全量评论' if not unsupported else '部分记录结构不支持，保留已读取数据'})
             except http.ReadError as exc:
+                if exc.status == 'resource_limited' and exc.evidence.get('reason') == 'request_budget':
+                    budget_reached.set()
+                    # A batch budget is not a full-history completion promise.
+                    # Only works with a valid comment response finish this batch;
+                    # untouched works keep a partial checkpoint and remain due.
+                    emit({'type':'checkpoint','video_id':vid,
+                          'status':'done' if read_comment_page and not unsupported else 'partial',
+                          'detail':'达到本批请求预算，保留已读评论；后续继续轮询，未读完全部评论' if read_comment_page else '本批请求预算已用完，该作品尚未读取评论'})
+                    return
                 with lock:
                     if not failure:
                         failure.append(exc)
@@ -243,6 +257,12 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
             raise http.ReadError('cancelled')
         if failure:
             raise failure[0]
+        if budget_reached.is_set():
+            if not comment_response_seen.is_set():
+                raise http.ReadError('resource_limited', {'reason':'request_budget'})
+            emit({'type':'status','status':'partial' if counts['unsupported'] else 'completed',
+                  'detail':'已达到本批请求预算，已读结果保留；未读作品和后续评论继续按计划轮询，不代表全量读完'})
+            return
         emit({'type': 'status', 'status': 'partial' if counts['unsupported'] else 'completed',
               'detail': 'HTTP 批次已结束；已保存来源和本批观察结果' + ('，部分结构不支持' if counts['unsupported'] else f"；跳过 {counts['skipped']} 条无文字内容" if counts['skipped'] else '')})
     except http.ReadError as exc:
