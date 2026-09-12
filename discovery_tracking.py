@@ -67,13 +67,16 @@ def author_rows(c,cfg):
     import asset_references
     reference_authors,_=asset_references.discovery_assets(c)
     rows=[dict(r) for r in c.execute('''SELECT a.*,COUNT(w.video_id) AS sampled,
-      COALESCE(SUM(w.relevant),0) AS related FROM discovery_authors a
-      LEFT JOIN discovery_works w ON w.author_sec_uid=a.sec_uid AND w.author_sample=1 GROUP BY a.sec_uid''')]
+      COALESCE(SUM(w.relevant),0) AS related,
+      COALESCE(SUM(json_extract(v.result,'$.matched')=1),0) AS vertical FROM discovery_authors a
+      LEFT JOIN discovery_works w ON w.author_sec_uid=a.sec_uid AND w.author_sample=1
+      LEFT JOIN asset_verticality v ON v.kind='work' AND v.asset_key=w.video_id GROUP BY a.sec_uid''')]
     for r in rows:
         r['reference_focused']=r['sec_uid'] in reference_authors
         r['ratio']=round(r['related']/r['sampled']*100,1) if r['sampled'] else None
-        r['focused']=r['priority']=='focus' or r['priority']=='auto' and (r['reference_focused'] or r['related']>=cfg['focus_min_related'] and r['related']*100>=r['sampled']*cfg['focus_ratio'])
-    return sorted(rows,key=lambda r:(not r['focused'],-r['related'],r['first_seen_at']))
+        r['vertical_ratio']=round(r['vertical']/r['sampled']*100,1) if r['sampled'] else None
+        r['focused']=r['priority']=='focus' or r['priority']=='auto' and (r['reference_focused'] or r['vertical']>=cfg['focus_min_related'] and r['vertical']*100>=r['sampled']*cfg['focus_ratio'])
+    return sorted(rows,key=lambda r:(not r['focused'],-r['vertical'],r['first_seen_at']))
 
 
 def state(mode='live'):
@@ -174,50 +177,67 @@ def record(c,rows,*,source,target,task=None):
 
 
 def select_work_targets(c,plan,instant,focused,paused):
-    """Reserve fresh-comment capacity and rotate exploration within the budget."""
+    """Prioritize vertical assets; retain ordinary monitoring and fair exploration."""
     blocked_sql=','.join('?' for _ in paused) or "''"
     focused_sql=','.join('?' for _ in focused) or "''"
     limit=plan['video_limit']
+    turn=c.execute("SELECT COUNT(*) FROM discovery_jobs WHERE kind='work' AND settled=1").fetchone()[0]
     # Only return at most limit rows per group, even for a large durable library.
     rows=c.execute(f'''WITH activity AS ({RECENT_ACTIVITY}), eligible AS (
-      SELECT DISTINCT w.*,activity.latest_comment_at,CASE
+      SELECT DISTINCT w.*,activity.latest_comment_at,
+        COALESCE(json_extract(a.result,'$.matched'),0) AS vertical,CASE
         WHEN activity.latest_comment_at IS NOT NULL THEN 'active'
         WHEN w.last_checked_at IS NULL AND w.author_sec_uid IN ({focused_sql}) THEN 'focused_new'
         ELSE 'rotation' END AS selection_group
       FROM discovery_works w JOIN videos v ON v.external_id=w.video_id
+      LEFT JOIN asset_verticality a ON a.kind='work' AND a.asset_key=w.video_id
       LEFT JOIN activity ON activity.page_url='https://www.douyin.com/video/'||w.video_id
       WHERE w.relevant=1 AND w.enabled=1 AND v.enabled=1 AND (w.author_sec_uid IS NULL OR NOT EXISTS
         (SELECT 1 FROM discovery_authors a WHERE a.sec_uid=w.author_sec_uid AND a.enabled=0))
       AND w.video_id NOT IN ({blocked_sql})
       AND (w.next_check_at IS NULL OR julianday(w.next_check_at)<=julianday(?))
     ), ranked AS (
-      SELECT *,ROW_NUMBER() OVER(PARTITION BY selection_group ORDER BY
+      SELECT *,ROW_NUMBER() OVER(PARTITION BY vertical,selection_group ORDER BY
+        CASE WHEN vertical=1 AND last_checked_at IS NULL AND ?%3!=2
+          THEN julianday(published_at) END DESC,
         julianday(COALESCE(next_check_at,first_seen_at)),julianday(published_at) DESC,video_id) AS selection_rank
       FROM eligible
     ) SELECT * FROM ranked WHERE selection_rank<=? ORDER BY selection_group,selection_rank''',
-      (instant,instant,instant,*focused,*paused,instant,limit)).fetchall()
-    queues={name:deque(r for r in rows if r['selection_group']==name) for name in ('active','focused_new','rotation')}
-    # Count settled work batches, independent of intervening author/search turns.
-    turn=c.execute("SELECT COUNT(*) FROM discovery_jobs WHERE kind='work' AND settled=1").fetchone()[0]
-    selected=[]
-    def take(name):
-        if queues[name]:selected.append(queues[name].popleft());return True
-        return False
-    if limit==1:
-        cycle=('active','active','focused_new','rotation')
-        for offset in range(len(cycle)):
-            if take(cycle[(turn+offset)%len(cycle)]):break
+      (instant,instant,instant,*focused,*paused,instant,turn,limit)).fetchall()
+    def select_pool(pool,budget):
+        queues={name:deque(r for r in pool if r['selection_group']==name) for name in ('active','focused_new','rotation')}
+        selected=[]
+        def take(name):
+            if queues[name]:selected.append(queues[name].popleft());return True
+            return False
+        if budget==1:
+            cycle=('active','active','focused_new','rotation')
+            for offset in range(len(cycle)):
+                if take(cycle[(turn+offset)%len(cycle)]):break
+        else:
+            reserved=int(bool(queues['focused_new'] or queues['rotation']))
+            while len(selected)<budget-reserved and take('active'):pass
+            exploration=0
+            while len(selected)<budget and (queues['focused_new'] or queues['rotation']):
+                preferred='rotation' if (turn+exploration)%3==2 else 'focused_new'
+                if not take(preferred):take('focused_new' if preferred=='rotation' else 'rotation')
+                exploration+=1
+            while len(selected)<budget and take('active'):pass
+        return selected
+    vertical=[r for r in rows if r['vertical']]
+    ordinary=[r for r in rows if not r['vertical']]
+    if vertical and ordinary:
+        vertical_budget=int(turn%3!=2) if limit==1 else min(limit-1,(limit*2+2)//3)
+        selected=select_pool(vertical,vertical_budget)+select_pool(ordinary,limit-vertical_budget)
+        # Unused reservations return to the other pool, within the same request budget.
+        selected_ids={r['video_id'] for r in selected}
+        remaining=[r for r in vertical+ordinary if r['video_id'] not in selected_ids]
+        selected+=select_pool(remaining,limit-len(selected))
     else:
-        reserved=int(bool(queues['focused_new'] or queues['rotation']))
-        while len(selected)<limit-reserved and take('active'):pass
-        exploration=0
-        while len(selected)<limit and (queues['focused_new'] or queues['rotation']):
-            preferred='rotation' if (turn+exploration)%3==2 else 'focused_new'
-            if not take(preferred):take('focused_new' if preferred=='rotation' else 'rotation')
-            exploration+=1
-        while len(selected)<limit and take('active'):pass
-    audit=dict(version='work-activity-window-v2',turn=turn,activity_window_seconds=3600,
+        selected=select_pool(vertical or ordinary,limit)
+    audit=dict(version='work-vertical-priority-v3',turn=turn,activity_window_seconds=3600,
                slots=[dict(video_id=r['video_id'],group=r['selection_group'],
+                           vertical=bool(r['vertical']),
                            latest_comment_at=r['latest_comment_at']) for r in selected])
     return selected,audit
 
@@ -237,8 +257,13 @@ def choose(c,plan,instant):
     jobs={}
     candidates=[r for r in authors if r['enabled'] and due(r['next_check_at'])]
     if candidates:
-        a=min(candidates,key=lambda r:(r['next_check_at'] or r['first_seen_at'],not r['focused'],r['sec_uid']))
+        author_turn=c.execute("SELECT COUNT(*) FROM discovery_jobs WHERE kind='author' AND settled=1").fetchone()[0]
+        focused_due=[r for r in candidates if r['focused']]
+        ordinary_due=[r for r in candidates if not r['focused']]
+        preferred=ordinary_due if author_turn%3==2 else focused_due
+        a=min(preferred or candidates,key=lambda r:(r['next_check_at'] or r['first_seen_at'],r['sec_uid']))
         jobs['author']=dict(kind='author',target=a['seed_video_id'],transport='http',key=a['sec_uid'],channel='author',
+            author_selection=dict(version='vertical-author-priority-v1',turn=author_turn,focused=bool(a['focused'])),
             author_pages=cfg['initial_author_pages'] if not a['last_checked_at'] else 1)
     else:
         for seed in cfg['seed_videos']:

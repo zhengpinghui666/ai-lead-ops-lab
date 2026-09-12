@@ -325,5 +325,79 @@ class DiscoveryTrackingTests(unittest.TestCase):
         self.assertEqual(len(board['rows']),1000)
         self.assertLess(len(queries),20,'Board SQL count must stay independent of library size')
 
+    def test_vertical_work_gets_two_slots_despite_busy_ordinary_game_videos(self):
+        self.save();self.record([work(i) for i in range(6)])
+        ordinary=[]
+        for i in range(100,120):
+            row=work(i);row['video_title']='无畏契约合成游戏集锦'
+            self.record([row]);ordinary.append(row['video_id'])
+            self.activity(row['video_id'],discovery.future(NOW,-60))
+        _,job=self.choose()
+        slots=job['work_selection']['slots']
+        self.assertEqual(len(slots),3)
+        self.assertEqual(sum(s['vertical'] for s in slots),2)
+        self.assertEqual(sum(s['video_id'] in ordinary for s in slots),1)
+
+    def test_general_game_author_does_not_become_automatically_focused(self):
+        self.save()
+        for i in range(12):
+            row=work(i);row['video_title']='无畏契约合成比赛集锦';self.record([row])
+        author=discovery.state()['authors'][0]
+        self.assertEqual((author['related'],author['sampled'],author['vertical']),(12,12,0))
+        self.assertFalse(author['focused'])
+        discovery.author_command(dict(sec_uid=AUTHOR,enabled=True,priority='focus'))
+        self.assertTrue(discovery.state()['authors'][0]['focused'])
+
+    def test_focused_author_has_reserved_turns_despite_older_normal_backlog(self):
+        self.save();self.record([work(i) for i in range(10)])
+        normal='MS4wLjABAAAA_NORMAL_AUTHOR'
+        self.record([work(100,author=normal)])
+        with app.db() as c:
+            c.execute('UPDATE discovery_authors SET next_check_at=? WHERE sec_uid=?',(discovery.future(NOW,-7200),normal))
+            c.execute('UPDATE discovery_authors SET next_check_at=? WHERE sec_uid=?',(discovery.future(NOW,-60),AUTHOR))
+        chosen=[]
+        for turn in range(3):
+            instant=discovery.future(NOW,turn*180)
+            _,job=self.choose(self.plan(run_count=1),instant)
+            chosen.append(job['key'])
+            task=col.start(dict(kind='author',target=job['target'],transport='http',request_id='focus-author-'+str(turn)),discovery_job=job)['id']
+            col.update(task,status='completed',finished_at=instant);col.ACTIVE.clear()
+            with app.db() as c:discovery.settle(c,c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone())
+        self.assertEqual(chosen,[AUTHOR,AUTHOR,normal])
+
+    def test_newer_vertical_first_reads_precede_old_assets_but_old_get_rotation(self):
+        self.save();self.record([work(i) for i in range(10)])
+        newest=work(9)['video_id']
+        with app.db() as c:
+            c.execute("UPDATE discovery_works SET published_at='2026-01-01T00:00:00+00:00'")
+            c.execute('UPDATE discovery_works SET published_at=? WHERE video_id=?',(NOW,newest))
+        _,job=self.choose()
+        self.assertIn(newest,job['target'].splitlines())
+        self.finish_work_job(job,0,NOW)
+        _,job=self.choose(instant=discovery.future(NOW,180))
+        self.assertTrue(set(job['target'].splitlines())-{newest})
+
+    def test_single_slot_keeps_ordinary_monitoring_and_prefers_vertical(self):
+        self.save();self.record([work(i) for i in range(12)])
+        for i in range(100,112):
+            row=work(i);row['video_title']='无畏契约合成普通集锦';self.record([row])
+        vertical=[]
+        for turn in range(6):
+            instant=discovery.future(NOW,turn*180)
+            _,job=self.choose(self.plan(video_limit=1),instant)
+            self.assertEqual(len(job['work_selection']['slots']),1)
+            vertical.append(job['work_selection']['slots'][0]['vertical'])
+            self.finish_work_job(job,turn,instant)
+        self.assertEqual(vertical,[True,True,False,True,True,False])
+
+    def test_insufficient_vertical_targets_return_unused_slots(self):
+        self.save();self.record([work()])
+        for i in range(100,110):
+            row=work(i);row['video_title']='无畏契约合成普通集锦';self.record([row])
+        _,job=self.choose(self.plan(video_limit=5))
+        ids=job['target'].splitlines()
+        self.assertEqual(len(set(ids)),5)
+        self.assertIn(VID,ids)
+
 
 if __name__=='__main__':unittest.main()

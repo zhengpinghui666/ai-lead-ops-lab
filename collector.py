@@ -401,20 +401,28 @@ def observe(task_id, source_id, message):
     # Commit evidence before analysis; the model queue can work while the pipe
     # continues reading. Rejected records never trigger historical analysis.
     if kind == 'comment' and not filtered:
-        analyze_observed(task_id, source_id)
+        analyze_observed(task_id, source_id, external_id=external)
 
 
-def analyze_observed(task_id, source_id):
+def analyze_observed(task_id, source_id, *, external_id=None):
     """Initial screening is local; remote inference is only queued, never awaited."""
     try:
         with app.db() as c:
-            ids = [r[0] for r in c.execute("""SELECT x.id FROM comments x
+            rows = c.execute("""SELECT DISTINCT x.id,x.analysis_method FROM comments x
                 JOIN collection_observations o ON o.external_id=x.external_id
                 WHERE o.task_id=? AND o.kind='comment' AND o.filter_reason=''
-                AND x.source_id=? AND x.analysis_method='pending' ORDER BY x.id LIMIT 1000""",
-                (task_id, source_id))]
+                AND x.source_id=? AND (x.analysis_method='pending' OR ? IS NULL OR o.external_id=?)
+                ORDER BY x.id LIMIT 1000""", (task_id, source_id,external_id,external_id)).fetchall()
+        ids=[r['id'] for r in rows if r['analysis_method']=='pending']
         if ids:
             app.analyze(comment_ids=ids)
+        # An accepted duplicate can now belong to a newly confirmed vertical
+        # asset or a new prompt version. Recheck its route without rewriting the
+        # original rules; queue fingerprints suppress duplicate model calls.
+        ready=[r['id'] for r in rows if r['analysis_method']=='rules']
+        if ready:
+            import semantic_queue
+            semantic_queue.enqueue('comment',ready)
     except Exception as exc:
         # Failure in screening must not turn a successful read into a failed
         # collection. The batch-final sweep retries local pending records only.

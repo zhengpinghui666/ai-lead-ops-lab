@@ -96,6 +96,31 @@ class FreshCollectionTests(unittest.TestCase):
             self.assertIsNone(c.execute('SELECT finished_at FROM collection_tasks').fetchone()[0])
             self.assertNotIn('do-not-log', str([tuple(r) for r in c.execute('SELECT * FROM events')]))
 
+    def test_accepted_rule_record_rechecks_model_route_without_rewriting_rules(self):
+        with patch('asset_verticality.routing',return_value={'model_allowed':False}):
+            self.comment()
+        self.assertEqual(self.jobs(),[])
+        with app.db() as c:
+            before=tuple(c.execute('SELECT category,reason,facts,analyzed_at FROM comments').fetchone())
+        collector.analyze_observed(self.task,self.source)
+        collector.analyze_observed(self.task,self.source)
+        self.assertEqual(len(self.jobs()),1)
+        with app.db() as c:
+            self.assertEqual(tuple(c.execute('SELECT category,reason,facts,analyzed_at FROM comments').fetchone()),before)
+
+    def test_new_prompt_does_not_bypass_rejected_observation_or_manual_review(self):
+        self.comment();queue.run_one(adapter_factory=SyntheticAdapter)
+        with app.db() as c:
+            c.execute("UPDATE collection_observations SET filter_reason='filtered_old' WHERE kind='comment'")
+        with patch.object(semantic,'PROMPT_VERSION','synthetic-new-version'):
+            collector.analyze_observed(self.task,self.source)
+            self.assertEqual(len(self.jobs()),1)
+            with app.db() as c:
+                c.execute("UPDATE collection_observations SET filter_reason='' WHERE kind='comment'")
+                c.execute("UPDATE comments SET analysis_method='human'")
+            collector.analyze_observed(self.task,self.source)
+            self.assertEqual(len(self.jobs()),1)
+
     def test_late_parent_invalidates_old_input_and_queues_current_context(self):
         self.comment(3, text='多少钱', parent_comment_id='7600000000000000002')
         first_hash = self.jobs()[0]['input_hash']

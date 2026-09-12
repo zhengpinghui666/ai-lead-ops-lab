@@ -48,8 +48,8 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "b9b2d957167a51d8960e8256ba33f1f23f21bebf21c60217371f9da8537bbbaa",
-      "bytes": 123735
+      "sha256": "d7cf9120175a48b9c4c2b199e0894518b48bc5b90477af0626d48e4c4421c5ec",
+      "bytes": 127508
     },
     {
       "name": "DISCOVERY_TRACKING.md",
@@ -68,8 +68,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "c6fff3d7c89e7753e98257e5b48d79c04e5566008339b980806afa7be061b0f9",
-      "bytes": 165151
+      "sha256": "ad1d160eb3d8096b17b368c51b7148128617823f1143677283bd69aab5df8018",
+      "bytes": 168924
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -263,8 +263,8 @@
     },
     {
       "name": "collector.py",
-      "sha256": "45c49e42ce5cdf8a7d1781cab161d5aa409941afc8019d23bf8f89853320ab97",
-      "bytes": 39030
+      "sha256": "430e2b0bab54a5ceab63fed12fa0bf3996e3c14185f126174858510bebf8ac4a",
+      "bytes": 39635
     },
     {
       "name": "collector_http.py",
@@ -353,8 +353,8 @@
     },
     {
       "name": "discovery_tracking.py",
-      "sha256": "7ce5c7d6be36e23ad76d1ee582d2aa8e56e1ba9b03a36dfd9b65893f041ec1be",
-      "bytes": 21259
+      "sha256": "cc5790abae76c92d0ef4964fa7332557350d25212afab5c47880c4a011907833",
+      "bytes": 22989
     },
     {
       "name": "evaluation/intent-development-v1.json",
@@ -703,8 +703,8 @@
     },
     {
       "name": "semantic.py",
-      "sha256": "e65d86584685cd623532da0933bfe61244252e62a71ee38f9b575a7bd6fceebc",
-      "bytes": 34376
+      "sha256": "bd9670a51fc3f9220c2c7069979472fa6ddba7b4e9fade33b53696d89c7787e1",
+      "bytes": 35669
     },
     {
       "name": "semantic_api.py",
@@ -743,8 +743,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "8e8670e26b26ed370214479fb667f33a828963c40b5f62ed5a87f2afdea5a482",
-      "bytes": 175183
+      "sha256": "92a70da143c495c7e8960f1aaf0a9dc64d330baecf79d0402de744528e868a67",
+      "bytes": 175232
     },
     {
       "name": "static/clubops-iphone.js",
@@ -853,8 +853,8 @@
     },
     {
       "name": "test_collection_freshness.py",
-      "sha256": "400b25b618ca5153f0c5dd9accd58316818f624b40865fd42dec83f247f8e81c",
-      "bytes": 11028
+      "sha256": "33a163e527006a921796e29639064ab72d7ef620a1de41ac1a64b3d24411968d",
+      "bytes": 12516
     },
     {
       "name": "test_collection_session.cjs",
@@ -883,8 +883,8 @@
     },
     {
       "name": "test_discovery_tracking.py",
-      "sha256": "fe18aa0901be957862ec7d82edbc8f5008e981be7c4df4446fa1aede22bc60e2",
-      "bytes": 21224
+      "sha256": "d762e3ee58c91a9f33f89ce6cf04a6022c566f6f219295981297cfa310b94061",
+      "bytes": 25319
     },
     {
       "name": "test_frontend.cjs",
