@@ -36,6 +36,48 @@ class QueueTests(unittest.TestCase):
         with app.db() as c:
             return [dict(r) for r in c.execute('SELECT * FROM semantic_jobs ORDER BY id')]
 
+    def test_match_discussion_never_enters_model_queue(self):
+        result=self.add(text='预测一手 tyloo 2:0 jdg 1:2，刚好完成所有比分')
+        self.assertEqual(result['model_queue']['queued'],0)
+        self.assertEqual(self.jobs(),[])
+        with patch.object(SyntheticAdapter,'predict') as predict:
+            self.assertFalse(queue.run_one(adapter_factory=SyntheticAdapter))
+            predict.assert_not_called()
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM comments').fetchone()[0],1)
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM intent_results WHERE method='model'").fetchone()[0],0)
+
+    def test_relevance_gate_keeps_source_and_covers_manual_and_old_queued_jobs(self):
+        text='预测一手 tyloo 2:0 jdg 1:2'
+        self.add(text=text)
+        with app.db() as c:
+            record_id=c.execute('SELECT id FROM comments').fetchone()[0]
+            source,row=store.inputs(c,'comment',record_id)
+            fingerprint=store.digest(source)
+            facts=json.loads(row['facts'])
+            self.assertFalse(facts['companion_relevance']['passed'])
+            self.assertEqual(row['raw_text'],text)
+            self.assertEqual(row['analysis_method'],'rules')
+            c.execute("INSERT INTO semantic_jobs(evidence_type,record_id,input_hash,engine,config_json,status,created_at) VALUES('comment',?,?,?,?, 'queued',?)",
+                      (record_id,fingerprint,semantic.state()['engine'],json.dumps(self.settings,sort_keys=True),app.now()))
+        with patch.object(SyntheticAdapter,'predict') as predict:
+            with self.assertRaisesRegex(ValueError,'陪玩相关性初筛未通过'):
+                semantic.analyze_one(dict(evidence_type='comment',id=record_id,input_hash=fingerprint,request_id='relevance-manual'),adapter_factory=SyntheticAdapter)
+            self.assertTrue(queue.run_one(adapter_factory=SyntheticAdapter))
+            predict.assert_not_called()
+        self.assertEqual(self.jobs()[0]['status'],'skipped')
+        self.assertIn('未调用模型',self.jobs()[0]['detail'])
+        current=app.state()['comments'][0]
+        self.assertFalse(current['companion_relevance']['passed'])
+        self.assertIn('初筛未通过',current['reason'])
+        with app.db() as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM intent_results WHERE method='model'").fetchone()[0],0)
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM message_jobs').fetchone()[0],0)
+
+    def test_related_negation_and_sellers_still_reach_intent_stage(self):
+        for n,text in enumerate(('不要陪玩，只找队友','陪玩接单','多少钱一小时','求带','昨天刚被骗，来个靠谱的陪玩')):
+            self.assertEqual(self.add(str(n),text)['model_queue']['queued'],1,text)
+
     def test_rules_enqueue_once_and_worker_commits_result_and_job_together(self):
         with patch('http.client.HTTPConnection') as network:
             result = self.add()

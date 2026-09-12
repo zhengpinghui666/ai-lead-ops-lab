@@ -5,10 +5,28 @@ import unittest
 from pathlib import Path
 
 import clubops as app
-from intent_rules import RULESET_VERSION
+from intent_rules import RULESET_VERSION,companion_relevance
 
 
 class IntentRuleTests(unittest.TestCase):
+    def test_companion_gate_distinguishes_context_from_the_commenters_expression(self):
+        for raw in ('预测一手 tyloo 2:0 jdg 1:2','刚好完成所有比分[憨笑]','昨天比赛太精彩了','教练赶紧下课','这场比赛复盘很到位','哈哈哈','谢谢','怎么练枪',''):
+            with self.subTest(raw=raw):
+                self.assertFalse(companion_relevance(raw,'无畏契约陪玩教学','找陪练')['passed'])
+        for raw in ('找个靠谱的陪玩','不要陪玩，只找队友','陪玩接单','教练求职','付钱请老师复盘','求带','带带我','多少钱一小时',
+                    '无畏契约免费组队','听说她找陪练被骗','想找个女陪','VALORANT排位组队，预算200，找两个人'):
+            with self.subTest(raw=raw):
+                result=companion_relevance(raw,'无畏契约')
+                self.assertTrue(result['passed'])
+                self.assertTrue(result['evidence'])
+                for hit in result['evidence']:
+                    self.assertEqual(hit['text'],raw[hit['start']:hit['end']])
+        self.assertTrue(companion_relevance('多少钱','无畏契约陪玩')['passed'])
+        self.assertTrue(companion_relevance('多少钱','无畏契约','我是做陪练的')['passed'])
+        self.assertFalse(companion_relevance('多少钱','无畏契约陪玩','这把键盘挺贵')['passed'])
+        self.assertFalse(companion_relevance('这皮肤多少钱','无畏契约陪玩')['passed'])
+        self.assertFalse(companion_relevance('多少钱','无畏契约比赛')['passed'])
+
     def test_social_requests_are_not_automatically_buyers(self):
         for raw in ['无畏契约找个搭子开黑', '无畏契约新手找个人带我', 'VALORANT来个队友', '无畏契约求带一下', '无畏契约最多3人组队']:
             with self.subTest(raw=raw):

@@ -43,8 +43,8 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "d64395868ff2362c452d5dcc648dc3b5b680b8610afd5ac306cdea9137814136",
-      "bytes": 82406
+      "sha256": "941a3eca73e85275dea802d92cabb3d5e7b58e336ca66adddb0670f6734ceb0d",
+      "bytes": 86823
     },
     {
       "name": "DISCOVERY_TRACKING.md",
@@ -63,8 +63,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "3f04ff40cb2baa998139c7679e321247aa97c0189a3bfce7dd71a7416a529376",
-      "bytes": 123822
+      "sha256": "89850b38aa6c49cd48debcd550666963c3ae0acc42cc6409d0d053353a8ea1bb",
+      "bytes": 128239
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -108,8 +108,8 @@
     },
     {
       "name": "MODEL_QUEUE.md",
-      "sha256": "6ff4a0828bd310e707240d28f6013a733aeda5f55f6239537bb8f2f9c2528ca3",
-      "bytes": 6419
+      "sha256": "9479614b1a763dd504c04f08966058c380bb1cf2c99c6d1f7e27ee3b74dccba4",
+      "bytes": 7298
     },
     {
       "name": "MONITOR_CENTER.md",
@@ -128,13 +128,13 @@
     },
     {
       "name": "RULES.md",
-      "sha256": "bacb7f5b7ce18d810c0d85673056b819993da212d1507e350a82d1091dc212d7",
-      "bytes": 4780
+      "sha256": "a53364f67ff2acc2083be064f94d3d0b506bdcccd50ee3e3a155827963c84ed7",
+      "bytes": 5659
     },
     {
       "name": "SEMANTIC.md",
-      "sha256": "46e37f4f9ce2edb942442ac1a49ce38305d59278a19c7c64bdd059dd253ee4af",
-      "bytes": 12107
+      "sha256": "5cf79ce81e1813526884fd8b8498199bd57a48dba1c4e9a9b6eecfcf88204ceb",
+      "bytes": 12991
     },
     {
       "name": "SERVICE_LIFECYCLE.md",
@@ -163,8 +163,8 @@
     },
     {
       "name": "analysis_store.py",
-      "sha256": "813f6099a412d0cddbc4948d1f010d859aef7afce6fed652ee8bf69b0670cf0b",
-      "bytes": 5748
+      "sha256": "b92af87840ec75d5f0b490b8f5e678109982142aca41eba3fa5cf7e5e06e22bd",
+      "bytes": 6119
     },
     {
       "name": "browser_config.cjs",
@@ -448,8 +448,8 @@
     },
     {
       "name": "intent_rules.py",
-      "sha256": "ac4f4a3f8b2c563830868918c6383ec54a8f73a015f0c97aca549096017bc38a",
-      "bytes": 11774
+      "sha256": "e9f1a338673e56a6490bd9a7424d98de731bfea9ef3dced17285ebb98a0391e3",
+      "bytes": 15472
     },
     {
       "name": "live_discovery.py",
@@ -523,8 +523,8 @@
     },
     {
       "name": "monitoring.py",
-      "sha256": "07397075bc19cb57b2b25a5adffb3d86dc361fd4f1249b58b09aaf622dec5c03",
-      "bytes": 14799
+      "sha256": "b1f571ed58c2de7ac44642c065f60b0d0751c180ac9416b3c35470e03168ce57",
+      "bytes": 14990
     },
     {
       "name": "package.json",
@@ -673,8 +673,8 @@
     },
     {
       "name": "semantic.py",
-      "sha256": "bdfe3b65387cad0ea6fc5a86e4b3d7b6248c6c129b4f4f4974a99a619fa7468a",
-      "bytes": 33709
+      "sha256": "089b977dd3887a8abe07be84a09835e5faeae28548fae122406101468af302fa",
+      "bytes": 34059
     },
     {
       "name": "semantic_api.py",
@@ -683,8 +683,8 @@
     },
     {
       "name": "semantic_queue.py",
-      "sha256": "a0e438ae771d48b9bee6347e5006295e5d8fe9267577e764f81ee98c706c4976",
-      "bytes": 11194
+      "sha256": "28ac4d7266384a6aa67d7fea3056c60e7a032f51e0473dde49a687e547fa50bd",
+      "bytes": 11789
     },
     {
       "name": "server.py",
@@ -868,8 +868,8 @@
     },
     {
       "name": "test_intent_rules.py",
-      "sha256": "777268c9b22d9b199404d61a66dbf7af8e7ef04b239ebebff238dccdc3e92472",
-      "bytes": 11353
+      "sha256": "b6e87a478ce457aa656e76229aaca1b640bc0f51a88e6eef79d1b30833410a69",
+      "bytes": 12956
     },
     {
       "name": "test_iphone_forwarder.cjs",
@@ -1013,8 +1013,8 @@
     },
     {
       "name": "test_semantic_concurrency.py",
-      "sha256": "c44c9a6c678a4f9e2669c60879224b9fc483969fe574d1483036f76cd5c22767",
-      "bytes": 7029
+      "sha256": "bacb3e5c91b5cd23c274cfbba728895991ceb2c07ff4d90a9653988420f15ee4",
+      "bytes": 7047
     },
     {
       "name": "test_semantic_diagnostics.py",
@@ -1028,8 +1028,8 @@
     },
     {
       "name": "test_semantic_queue.py",
-      "sha256": "4b8e9c92a3fbf2460a12af5429b459b86d65945f9a722b9857b0d960a5b944d0",
-      "bytes": 11002
+      "sha256": "01bbc4895bc30baa3fd3cfddcf236962fb60c7f7313e17236a5b8c63e044f893",
+      "bytes": 13831
     },
     {
       "name": "test_service_lifecycle.py",

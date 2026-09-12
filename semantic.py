@@ -545,6 +545,11 @@ def analyze_one(body, mode='live', *, adapter_factory=None, cancel_event=None, e
                 raise ValueError('原文或上下文已更新，请重新打开分析入口')
             if row['analysis_method'] == 'pending':
                 raise ValueError('请先完成该评论的规则初筛，再进行模型分析')
+            if kind == 'comment':
+                from intent_rules import companion_relevance
+                relevance=companion_relevance(source['text'],source['title'],source['parent'])
+                if not relevance['passed']:
+                    raise ValueError('陪玩相关性初筛未通过：'+relevance['reason']+' 未调用模型。')
             if len(source['text']) > 5000 or len(source['parent']) > 5000 or len(source['title']) > 1000:
                 raise ValueError('本条原文或上下文超过模型输入上限，保留规则与人工核对')
             store.capture_rule(c, kind, record_id)

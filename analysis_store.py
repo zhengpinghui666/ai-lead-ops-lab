@@ -98,6 +98,12 @@ def project(c, row, *, model_engine=None):
     row['model_result'] = model
     if model and model['status'] == 'completed' and model_engine == model['engine'] and row['analysis_method'] not in ('human', 'pending'):
         row.update(model['result'])
+    if kind == 'comment':
+        from intent_rules import companion_relevance
+        relevance=companion_relevance(source['text'],source['title'],source['parent'])
+        row['companion_relevance']=relevance
+        if row['analysis_method']=='rules' and not relevance['passed']:
+            row['reason']='当前陪玩相关性初筛未通过：'+relevance['reason']
     return row
 
 

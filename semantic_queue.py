@@ -6,6 +6,7 @@ import time
 import clubops as app
 import analysis_store as store
 import semantic
+from intent_rules import companion_relevance
 
 CAPACITY = 200
 STOP = threading.Event()
@@ -49,6 +50,9 @@ def enqueue(kind, record_ids, mode='live'):
         for record_id in dict.fromkeys(record_ids):
             source, row = store.inputs(c, kind, record_id)
             if row['analysis_method'] != 'rules' or human_reviewed(c, kind, row):
+                summary['skipped'] += 1
+                continue
+            if kind == 'comment' and not companion_relevance(source['text'],source['title'],source['parent'])['passed']:
                 summary['skipped'] += 1
                 continue
             fingerprint = store.digest(source)
@@ -146,6 +150,11 @@ def run_one(*, adapter_factory=None):
             if evidence['analysis_method'] != 'rules' or human_reviewed(c, job['evidence_type'], evidence):
                 finish(c, job_id, dict(status='skipped', detail='该记录已人工处理或不再需要自动分析'))
                 return True
+            if job['evidence_type']=='comment':
+                relevance=companion_relevance(source['text'],source['title'],source['parent'])
+                if not relevance['passed']:
+                    finish(c,job_id,dict(status='skipped',detail='陪玩相关性初筛未通过：'+relevance['reason']+' 未调用模型。'))
+                    return True
             existing = store.latest(c, job['evidence_type'], job['record_id'], 'model', job['input_hash'])
             if existing and existing['engine'] == job['engine']:
                 finish(c, job_id, dict(status='skipped', detail='此版本原文已有模型分析记录，未重复调用', id=existing['id']))

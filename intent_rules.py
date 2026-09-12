@@ -14,6 +14,47 @@ REQUEST = (rf'(?:预约|需要|想要|想买|想购买|购买|找|求|(?<![原�
 GROUP = r'(?:找|来|求|缺|差)[^，,。.!?！？；;\n]{0,8}?(?:搭子|队友|个人|人|一位|两位|组队)|带我|带一下|一起(?:玩|开黑|匹配)|组队|互带互学|互学互带|[双三五]排'
 PRODUCT = r'皮肤|枪皮|外设|键盘|鼠标|显卡|显示器|电脑|账号|通行证'
 AMOUNT = r'\d+(?:\.\d+)?(?:\s*[-–到至]\s*\d+(?:\.\d+)?)?'
+RELEVANCE_VERSION = 'comment-relevance-v1'
+COMPANION = r'陪玩|陪练|陪打|陪排|带练|代练|代打|男陪|女陪|技术陪|娱乐陪|点陪|陪\s*[wW]'
+HELP = (r'求带|带带我|带我(?:打|玩|上分|排位|开黑)|带我[啊呀吧呗吗么?？!！\s]*$'
+        r'|(?:找|求|来|缺|有没有|一起)[^，,。.!?！？；;\n]{0,8}(?:搭子|队友|组队|开黑|[双三五]排)'
+        r'|(?:免费|付费|有偿|花钱)\s*(?:组队|开黑|上分)|一起玩|互带互学|互学互带')
+SERVICE_ACTION = (rf'(?:找|求|请|约|预约|购买|付费|有偿|招聘|招募|提供|接单){CLAUSE}{{0,12}}(?:教练|老师|教学|复盘|练枪)'
+                  rf'|(?:教练|老师|教学|复盘|练枪){CLAUSE}{{0,8}}(?:收费|接单|预约|多少钱|怎么约|求职|应聘)'
+                  r'|教教我|教我(?:打|玩|练枪|上分)|接单|找(?:个|位)?老板|有老板吗'
+                  r'|多少(?:钱|米).{0,4}(?:一小时|每小时|一局)|(?:一小时|每小时|一局).{0,4}多少(?:钱|米)')
+SERVICE_QUESTION = r'多少(?:钱|米)|怎么收费|如何收费|什么价格|价格多少|怎么下单|如何下单|在哪下单|怎么买|怎么约|能约|预约|怎么联系|怎么找你|在哪找你|还接吗|接吗|来一个'
+
+
+def companion_relevance(raw, video_context='', parent_context=''):
+    """A recall-oriented model gate, separate from buying intent and collection acceptance."""
+    def decision(passed, reason, evidence=()):
+        return dict(version=RELEVANCE_VERSION, passed=passed, reason=reason, evidence=list(evidence)[:4])
+    if not raw.strip():
+        return decision(False, '没有可供判断的文字。')
+    for pattern, reason in ((COMPANION, '原文提到陪玩、陪练或相关服务。'),
+                            (HELP, '原文有求带、陪同游戏或组队表达，交由模型区分付费与免费意图。'),
+                            (SERVICE_ACTION, '原文有游戏服务咨询、接单或招募线索。')):
+        hits=matches(raw,pattern,'companion_relevance')
+        if hits:
+            return decision(True,reason,hits)
+    play=matches(raw,r'组队|[双三五]排|开黑|上分|练枪','companion_play')
+    payment=matches(raw,r'付费|有偿|预算\s*\d|花钱|付钱','companion_payment')
+    if play and payment:
+        return decision(True,'原文同时有游戏协作和费用线索，交由模型确认服务对象与意图。',play[:2]+payment[:2])
+    questions=matches(raw,SERVICE_QUESTION,'companion_question')
+    if questions:
+        # Resolve the nearest named object; a keyboard question must not borrow
+        # a more distant companion-service title. Context alone never passes.
+        for source,text in (('comment',raw),('parent',parent_context),('video',video_context)):
+            services=matches(text,COMPANION+'|教练|教学|复盘老师','companion_context',source=source)
+            products=matches(text,PRODUCT,'product_context',source=source)
+            if services:
+                return decision(True,'原文询价或咨询，最近的明确话题包含陪玩服务；具体意图仍需模型判断。',questions[:2]+services[:2])
+            if products:
+                return decision(False,'最近的询问对象是账号、皮肤或设备，没有陪玩服务线索。',questions[:2]+products[:2])
+        return decision(False,'只有泛化询价或咨询，原文及已保存上下文未明确指向陪玩服务。',questions[:2])
+    return decision(False,'原文未见陪玩、陪练、求带、服务咨询或接单招募线索；仅有相关视频标题不足以通过。')
 
 
 def matches(text, pattern, kind, group=0, source='comment'):
@@ -170,6 +211,7 @@ def classify_comment(raw, video_context, parent_context, games, target_game):
         keep.add(index)
     facts['evidence'] = [item for index, item in enumerate(evidence) if index in keep]
     facts['game_source'] = game_source
+    facts['companion_relevance'] = companion_relevance(raw,video_context,parent_context)
     source_label = {'comment': '评论原文', 'parent': '已保存的上级原文', 'video': '视频标题'}.get(game_source, '未明确')
     reason = explanation + f' 游戏依据：{source_label}。规则初筛，需人工核对。'
     return dict(category=category, confidence=None, game=game, reason=reason, facts=facts, analysis_method='rules')

@@ -25,7 +25,7 @@ class ConcurrencyTests(unittest.TestCase):
     def overlap(self, during=None, *, limit=3):
         self.configure(limit)
         for i in range(limit+1):
-            self.add(str(i), text='无畏契约普通讨论 '+str(i))
+            self.add(str(i), text='无畏契约找陪玩，合成并发样本 '+str(i))
         release, denied = threading.Event(), threading.Event()
         barrier = threading.Barrier(limit+1)
         calls, workers = [], []
