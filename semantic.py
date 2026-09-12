@@ -545,11 +545,10 @@ def analyze_one(body, mode='live', *, adapter_factory=None, cancel_event=None, e
                 raise ValueError('原文或上下文已更新，请重新打开分析入口')
             if row['analysis_method'] == 'pending':
                 raise ValueError('请先完成该评论的规则初筛，再进行模型分析')
-            if kind == 'comment':
-                from intent_rules import companion_relevance
-                relevance=companion_relevance(source['text'],source['title'],source['parent'])
-                if not relevance['passed']:
-                    raise ValueError('陪玩相关性初筛未通过：'+relevance['reason']+' 未调用模型。')
+            import asset_verticality
+            route=asset_verticality.routing(c,kind,record_id,refresh_asset=True)
+            if not route['model_allowed']:
+                raise ValueError(route['reason']+' 未调用模型。')
             if len(source['text']) > 5000 or len(source['parent']) > 5000 or len(source['title']) > 1000:
                 raise ValueError('本条原文或上下文超过模型输入上限，保留规则与人工核对')
             store.capture_rule(c, kind, record_id)
@@ -586,6 +585,8 @@ def analyze_one(body, mode='live', *, adapter_factory=None, cancel_event=None, e
             current, _ = store.inputs(c, kind, record_id)
             if store.digest(current) != fingerprint or not config_unchanged(settings, issues, kind):
                 status, detail = 'stale', DETAILS['stale']
+            if not asset_verticality.routing(c,kind,record_id,refresh_asset=True)['model_allowed']:
+                status,detail='stale','资产分类或关键词匹配已改变；保留本次记录，不应用模型结果。'
             if cancel_event is not None and cancel_event.is_set():
                 status, detail = 'cancelled', DETAILS['cancelled']
             c.execute('UPDATE intent_results SET status=?,result_json=?,detail=?,finished_at=? WHERE id=?',

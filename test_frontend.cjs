@@ -42,6 +42,12 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   }
   run(`S={...fixtures.live,collector:{tasks:[],plans:[],board:{rows:[{id:1,external_id:'123456',title:'<script>unsafe</script>',url:'https://www.douyin.com/video/123456',state:'history',continuous_monitoring:false,archived_comments:12,fresh_comments:0,model_pending:0}],summary:{tracked:0,reading:0,works:1,fresh_comments:0,model_pending:0}},results:{rows:[{text:'A',video_url:'video-A'},{text:'B',video_url:'video-B'}]}}};workFilter='all';`);
   const poolHtml=run('workPool()');checkHtml(poolHtml);
+  run("workFilter='vertical'");assert.ok(!run('workPool()').includes('&lt;script&gt;unsafe'));
+  run("S.collector.board.rows[0].verticality={matched:true,label:'垂直对口',reason:'<script>reference',tags:['标签'],reference_hits:[],history_samples:0,history_hits:0};");
+  assert.ok(run('workPool()').includes('&lt;script&gt;unsafe'));run("workFilter='all'");
+  run("referenceState={rows:[{id:1,revision:1,status:'pending',rule:{},reason:'',content:{title:'<script>样本',copy:'文案',tags:['<img>'],author_name:'作者',author_sec_uid:''}}]};assetReferenceReviewDialog(1)");
+  assert.ok(!element('#modal-content').innerHTML.includes('<script>'));assert.ok(!element('#modal-content').innerHTML.includes('<img>'));assert.match(element('#modal-content').innerHTML,/name="service_terms"/);
+
   run("discoverySettingsDialog()");checkHtml(element('#modal-content').innerHTML);
   assert.match(element('#modal-content').innerHTML,/同一关键词再次发现间隔/);
   run("discoveryAuthorsDialog()");checkHtml(element('#modal-content').innerHTML);
@@ -325,7 +331,11 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.match(element('#modal-content').innerHTML,/HTTP 登录身份核对/);
   assert.match(element('#modal-content').innerHTML,/发送时仍会重新核对/);
   run('api=beforeProbeApi');
-  run(`S.semantic={can_analyze:true,config:{enabled:true,host:'127.0.0.1',port:11434,model:'synthetic:1',timeout_seconds:30}};const semRow={...S.comments[0],analysis_input_hash:'saved-input-hash',analysis_method:'human',model_result:{status:'completed',engine:'synthetic',detail:'<script>test detail',result:{category:'buyer',certainty:'clear',reason:'<img>test reason',facts:{evidence:[{kind:'category',source:'comment',text:'<script>test quote'}]}}}};`);
+  run(`S.semantic={can_analyze:true,config:{enabled:true,host:'127.0.0.1',port:11434,model:'synthetic:1',timeout_seconds:30}};const semRow={...S.comments[0],model_routing:{model_allowed:true},analysis_input_hash:'saved-input-hash',analysis_method:'human',model_result:{status:'completed',engine:'synthetic',detail:'<script>test detail',result:{category:'buyer',certainty:'clear',reason:'<img>test reason',facts:{evidence:[{kind:'category',source:'comment',text:'<script>test quote'}]}}}};`);
+  assert.ok(!run('modelEvidence({...semRow,model_routing:{model_allowed:false}})').includes('data-action="semantic-analyze"'));
+  run("const vocabularyFetch=fetch;fetch=async url=>({ok:true,json:async()=>url.includes('/api/asset-keyword?')?{term:'瓦搭',revision:1,status:'pending',kind:'service',scope:'asset',reason:'',sources:[]}:{rows:[],counts:{active:0,pending:1,total:1},limit:500}})");
+  await run('assetKeywordsDialog()');assert.match(element('#modal-content').innerHTML,/作品与作者发现/);
+  await run("keywordReviewDialog('瓦搭')");assert.match(element('#modal-content').innerHTML,/name="scope"/);assert.match(element('#modal-content').innerHTML,/value="asset" selected/);run('fetch=vocabularyFetch');
   const modelHtml=run('modelEvidence(semRow)');assert.ok(!modelHtml.includes('<script>'));assert.ok(!modelHtml.includes('<img>'));
   assert.match(modelHtml,/人工判断优先/);assert.match(modelHtml,/尚未测定准确率/);assert.match(modelHtml,/type="button"/);
   run('reviewDialog(semRow.id,semRow)');assert.ok(!element('#modal-content').innerHTML.includes('data-action="semantic-analyze"'),'Do not start a model call from an unsaved human review form');
@@ -382,6 +392,7 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.ok(element('#main').innerHTML.indexOf('id="live-tracking"')<element('#main').innerHTML.indexOf("id='live-monitor-controls'"),'Ongoing monitoring is visible before folded run details');
   run("S.collector.live_monitor.library={counts:{total:1},rows:[{room_url:'https://live.douyin.com/12345',title:'<script>room',enabled:1,saved_messages:2}]};liveLibraryDialog();");
   assert.ok(!element('#modal-content').innerHTML.includes('<script>'));
+  assert.match(element('#modal-content').innerHTML,/当前没有符合筛选/);run("liveLibraryFilter='all';liveLibraryDialog()");
   assert.match(element('#modal-content').innerHTML,/暂停关注/);
   assert.match(run('liveSettingsPanel()'),/discovery_interval_minutes|offline_retry_minutes/);
   run("markMonitorDraft({closest:s=>s==='#live-form'})");assert.equal(run('liveDraftDirty'),true);

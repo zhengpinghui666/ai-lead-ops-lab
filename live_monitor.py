@@ -283,6 +283,8 @@ def receive(session_id, message):
                    json.dumps(comment_filters.matches(text, config['include_keywords']), ensure_ascii=False), json.dumps(comment_filters.matches(text, config['exclude_keywords']), ensure_ascii=False), digest, result.get('game', ''))).lastrowid
         import live_workflow
         live_workflow.attach(c, message_id)
+        import asset_verticality
+        asset_verticality.refresh(c,'live',session['room_url'])
         import analysis_store
         analysis_store.capture_rule(c, 'live', message_id)
         c.execute('UPDATE live_sessions SET observed=observed+1,inserted=inserted+1,filtered=filtered+?,updated_at=? WHERE id=?', (int(bool(rejected)), app.now(), session_id))

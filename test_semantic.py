@@ -119,7 +119,7 @@ class StoreTests(unittest.TestCase):
         self.old_dir, app.DATA_DIR = app.DATA_DIR, Path(self.temp.name)
         self.addCleanup(setattr, app, 'DATA_DIR', self.old_dir)
         app.init()
-        app.ingest({'records': [dict(comment_id='comment1', video_id='v1', user_id='20001',
+        app.ingest({'records': [dict(comment_id='comment1', video_id='v1',video_title='无畏契约陪练服务', user_id='20001',
                                     text='无畏契约找陪练，预算200元')]})
         app.analyze()
         self.id = app.state()['comments'][0]['id']
@@ -256,6 +256,8 @@ class StoreTests(unittest.TestCase):
         room='7683000000000000001'
         with app.db() as c:
             config=dict(live.DEFAULTS,room_url='https://live.douyin.com/12345')
+            import live_room_pool
+            live_room_pool.ingest(c,[dict(room_url=config['room_url'],title='无畏契约陪练')],'valorant_category',app.now())
             sid=c.execute('INSERT INTO live_sessions(request_id,room_url,room_id,config,status,detail,started_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
                 ('synthetic-live',config['room_url'],room,json.dumps(config),'running','',app.now(),app.now())).lastrowid
         live.receive(sid,dict(type='message',record=dict(room_id=room,message_id='7683000000000000002',outer_message_id='7683000000000000003',uid='20002',nickname='合成用户',text='无畏契约找陪练',published_at=None)))

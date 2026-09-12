@@ -21,6 +21,8 @@ class LivePolicyTests(unittest.TestCase):
     def live_row(self, text='无畏契约找陪练'):
         config = dict(live.DEFAULTS, room_url='https://live.douyin.com/12345')
         with app.db() as c:
+            import live_room_pool
+            live_room_pool.ingest(c,[dict(room_url=config['room_url'],title='无畏契约陪练')],'saved_room',app.now())
             sid = c.execute('INSERT INTO live_sessions(request_id,room_url,room_id,config,status,detail,started_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
                 ('fixture-live', config['room_url'], '10000000000000001', json.dumps(config), 'running', '', app.now(), app.now())).lastrowid
         live.receive(sid, dict(type='message', record=dict(room_id='10000000000000001', uid='10000000000000002',

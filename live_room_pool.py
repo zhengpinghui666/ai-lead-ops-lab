@@ -38,8 +38,13 @@ def ingest(c, rows, source, stamp):
         c.execute('INSERT INTO live_rooms(room_url,title,source,first_seen_at,last_seen_at,next_check_at) '
                   'VALUES(?,?,?,?,?,?) ON CONFLICT(room_url) DO UPDATE SET '
                   "title=CASE WHEN excluded.title<>'' THEN excluded.title ELSE live_rooms.title END, "
+                  "source=CASE WHEN excluded.source='valorant_category' THEN excluded.source ELSE live_rooms.source END, "
                   'last_seen_at=MAX(live_rooms.last_seen_at,excluded.last_seen_at)',
                   (url, title, source, stamp, stamp, app.now()))
+        import asset_verticality
+        import asset_keywords
+        asset_keywords.observe(c,'live:'+url,title)
+        asset_verticality.refresh(c,'live',url)
 
 
 def seed(c, config):
@@ -73,6 +78,10 @@ def state(mode='live'):
             'COALESCE(SUM(enabled=1 AND next_check_at>? AND COALESCE(last_session_id,-1)<>?),0) AS cooling FROM live_rooms',
             (stamp, active_id, stamp, active_id)).fetchone())
         rows = [dict(r) for r in c.execute('SELECT * FROM live_rooms ORDER BY enabled DESC,next_check_at,room_url LIMIT 100')]
+        import asset_verticality
+        verticality=asset_verticality.profiles(c,'live')
+        for row in rows:row['verticality']=verticality.get(row['room_url'])
+        counts['vertical']=sum(verticality.get(r[0],{}).get('matched',False) for r in c.execute('SELECT room_url FROM live_rooms'))
         discovery = c.execute('SELECT * FROM live_pool_checks ORDER BY track_id DESC LIMIT 1').fetchone()
     return {'counts': counts, 'rows': rows, 'limit': 100, 'discovery': dict(discovery) if discovery else None}
 

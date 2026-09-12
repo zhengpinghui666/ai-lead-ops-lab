@@ -88,6 +88,13 @@ class Handler(BaseHTTPRequestHandler):
             path = urlparse(self.path).path
             if path == '/api/service':
                 return self.respond(self.server.service_state())
+            if path == '/api/asset-references':
+                import asset_references
+                return self.respond(asset_references.state(self.mode()))
+            if path in ('/api/asset-keywords','/api/asset-keyword'):
+                import asset_keywords
+                query=parse_qs(urlparse(self.path).query)
+                return self.respond(asset_keywords.state(self.mode(),query.get('q',[''])[0]) if path=='/api/asset-keywords' else asset_keywords.detail(query.get('term',[''])[0],self.mode()))
             if path == '/api/login-recovery':
                 return self.respond({**login_recovery.state(self.mode()), 'csrf': CSRF})
             if path == '/api/collector':
@@ -205,6 +212,12 @@ class Handler(BaseHTTPRequestHandler):
                         result = {**login_relay.phone_configuration(), 'account': login_recovery.config()['account']}
                 else:
                     raise ValueError('登录恢复操作不存在')
+            elif action in ('asset-reference-propose','asset-reference-review'):
+                import asset_references
+                result = asset_references.propose(body,mode) if action=='asset-reference-propose' else asset_references.review(body,mode)
+            elif action in ('asset-keyword-propose','asset-keyword-review'):
+                import asset_keywords
+                result = asset_keywords.propose(body,mode) if action=='asset-keyword-propose' else asset_keywords.review(body,mode)
             elif action in ('discovery-save','discovery-author'):
                 import discovery_tracking
                 result = discovery_tracking.save(body,mode) if action=='discovery-save' else discovery_tracking.author_command(body,mode)

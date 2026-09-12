@@ -20,6 +20,9 @@ def build(tasks, plans, mode='live'):
             FROM videos v LEFT JOIN comments x ON x.video_id=v.id
             GROUP BY v.id ORDER BY v.id DESC""",(cutoff,instant,cutoff))]
         by_id = {r['external_id']:r for r in rows}
+        import asset_verticality
+        verticality=asset_verticality.profiles(c,'work')
+        for row in rows:row['verticality']=verticality.get(row['external_id'])
         memberships = {}
         for plan in plans:
             if plan['kind'] != 'video':

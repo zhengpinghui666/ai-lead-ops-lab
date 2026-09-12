@@ -129,7 +129,7 @@ def observation_analysis(c, comment_id, text, model_engine):
         (comment_id, projected['analysis_input_hash'], model_engine)).fetchone() if model_engine else None
     current_model = model if model.get('engine') == model_engine else {}
     relevance=projected.get('companion_relevance')
-    if method=='rules' and state=='rules' and relevance and not relevance['passed']:
+    if method=='rules' and state=='rules' and not projected['model_routing']['model_allowed']:
         state='skipped'
     # Keep explanation and conclusion from the same current, input-bound result.
     # Only classification quotes from this comment explain its intent; title and
@@ -140,7 +140,7 @@ def observation_analysis(c, comment_id, text, model_engine):
         and isinstance(e.get('text'), str) and e['text'] and e['text'] in text]
     return dict(category=projected['category'], analysis_method=method, analysis_state=state,
         analysis_reason=projected.get('reason') if method in ('model', 'rules', 'human') else None,
-        analysis_evidence=category_quotes, companion_relevance=relevance,
+        analysis_evidence=category_quotes, companion_relevance=relevance,model_routing=projected['model_routing'],
         rule_finished_at=rule.get('finished_at'),
         model_queued_at=job['created_at'] if job else None,
         model_started_at=current_model.get('started_at'),

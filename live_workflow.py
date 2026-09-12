@@ -59,10 +59,11 @@ def migrate(c):
         attach(c, row['id'])
 
 
-SELECT = '''SELECT m.*,s.room_url,k.person_id,l.id AS lead_id,
+SELECT = '''SELECT m.*,s.room_url,COALESCE(r.title,'') AS room_title,k.person_id,l.id AS lead_id,
  j.category AS manual_category,j.manual_fields,j.reason AS manual_reason,
  j.version AS review_version,j.updated_at AS reviewed_at
  FROM live_messages m JOIN live_sessions s ON s.id=m.session_id
+ LEFT JOIN live_rooms r ON r.room_url=s.room_url
  LEFT JOIN live_links k ON k.message_id=m.id LEFT JOIN leads l ON l.person_id=k.person_id
  LEFT JOIN live_judgments j ON j.message_id=m.id'''
 

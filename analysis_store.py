@@ -30,11 +30,13 @@ def inputs(c, kind, record_id):
           AND p.external_id=x.parent_external_id) AS parent_text
           FROM comments x JOIN videos v ON v.id=x.video_id WHERE x.id=?''', (record_id,)).fetchone()
     else:
-        row = c.execute('SELECT * FROM live_messages WHERE id=?', (record_id,)).fetchone()
+        row = c.execute('''SELECT m.*,COALESCE(r.title,'') AS title FROM live_messages m
+          JOIN live_sessions s ON s.id=m.session_id LEFT JOIN live_rooms r ON r.room_url=s.room_url
+          WHERE m.id=?''', (record_id,)).fetchone()
     if not row:
         raise ValueError('原文记录不存在')
     return dict(kind=kind, text=row['raw_text'], parent=(row['parent_text'] or '') if kind == 'comment' else '',
-                title=row['title'] if kind == 'comment' else ''), row
+                title=row['title']), row
 
 
 def capture_rule(c, kind, record_id):
@@ -83,6 +85,7 @@ def project(c, row, *, model_engine=None):
         parent = row.get('parent_context', {})
         if parent.get('status') == 'available':
             source['parent'] = parent['raw_text']
+    else:source['title']=row.get('room_title','')
     fingerprint = digest(source)
     row['analysis_input_hash'] = fingerprint
     rule = latest(c, kind, row['id'], 'rules', fingerprint)
@@ -102,8 +105,8 @@ def project(c, row, *, model_engine=None):
         from intent_rules import companion_relevance
         relevance=companion_relevance(source['text'],source['title'],source['parent'])
         row['companion_relevance']=relevance
-        if row['analysis_method']=='rules' and not relevance['passed']:
-            row['reason']='当前陪玩相关性初筛未通过：'+relevance['reason']
+    import asset_verticality
+    row['model_routing']=asset_verticality.routing(c,kind,row['id'])
     return row
 
 

@@ -392,6 +392,11 @@ def observe(task_id, source_id, message):
              app.clean(row.get('text') or row.get('content'), 5000) if kind == 'comment' else '', published_at,
              app.clean(row.get('nickname'), 120) if kind == 'comment' else '', app.clean(row.get('user_id'), 300) if kind == 'comment' else '', disposition))
         c.execute("UPDATE sources SET status='observed',last_received=? WHERE id=?", (app.now(), source_id))
+        import asset_verticality
+        import asset_references
+        if not c.execute('SELECT 1 FROM work_content WHERE asset_key=?',(row['video_id'],)).fetchone():
+            asset_references.save_content(c,row)
+        asset_verticality.refresh(c,'work',row['video_id'])
         c.execute('UPDATE collection_tasks SET ' + ','.join(k+'=?' for k in counts) + ',page_url=?,updated_at=? WHERE id=?', (*counts.values(), url, app.now(), task_id))
     # Commit evidence before analysis; the model queue can work while the pipe
     # continues reading. Rejected records never trigger historical analysis.

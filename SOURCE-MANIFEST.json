@@ -17,6 +17,11 @@
       "bytes": 2818
     },
     {
+      "name": "ASSET_VERTICALITY.md",
+      "sha256": "5865dc472218a4839497eb2cbe3764ae8c2657834fa2139c5e5b6610dd98af4f",
+      "bytes": 5450
+    },
+    {
       "name": "AUTHOR_DISCOVERY.md",
       "sha256": "84b0aad7c07f314c3ea82648fa122cfbc9a50f7f6cc73a2a30d979723fe5c5e5",
       "bytes": 4035
@@ -43,8 +48,8 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "5c9728e80c2fb60a713147c6b6925420bdb1c9ed11f311443ee8c994e6fe8986",
-      "bytes": 99826
+      "sha256": "94bfa7f44d6852a7941866720cf27e33fdbd2f7acc14f3b1c279b666e3e06041",
+      "bytes": 105133
     },
     {
       "name": "DISCOVERY_TRACKING.md",
@@ -63,8 +68,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "235ec0dd8917570acac47b5d9861df6e7a41bc141c167102fed535f928ed28d0",
-      "bytes": 141242
+      "sha256": "a7e39ce609b7c1e193755f604ee911e0bd79a6f58515e4943ffb8a96eff91e51",
+      "bytes": 146549
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -88,8 +93,8 @@
     },
     {
       "name": "LIVE_WORKFLOW.md",
-      "sha256": "0aa1e89016820a77794acd5be605b5dd595433c8894906adf222bfdbe94f383f",
-      "bytes": 7544
+      "sha256": "66fbb75133c2acfd3b2742fc010b5f3785e7b364ad5a600437fca73f9da4f91e",
+      "bytes": 7973
     },
     {
       "name": "LOCAL_MODEL.md",
@@ -108,8 +113,8 @@
     },
     {
       "name": "MODEL_QUEUE.md",
-      "sha256": "9479614b1a763dd504c04f08966058c380bb1cf2c99c6d1f7e27ee3b74dccba4",
-      "bytes": 7298
+      "sha256": "19b4b260b938010c3afdebb8607299b30dc9d3b5e974a515b61570db6916de5a",
+      "bytes": 7727
     },
     {
       "name": "MONITOR_CENTER.md",
@@ -128,13 +133,13 @@
     },
     {
       "name": "RULES.md",
-      "sha256": "a53364f67ff2acc2083be064f94d3d0b506bdcccd50ee3e3a155827963c84ed7",
-      "bytes": 5659
+      "sha256": "084a07437909d3ce90199ce16e8c33e840e8139859e89f033d301e4756b433cd",
+      "bytes": 6088
     },
     {
       "name": "SEMANTIC.md",
-      "sha256": "5cf79ce81e1813526884fd8b8498199bd57a48dba1c4e9a9b6eecfcf88204ceb",
-      "bytes": 12991
+      "sha256": "e81b599eb3f9125b21ce26d63cf723f254de382cb867e8c16ff6a673ade305c9",
+      "bytes": 13420
     },
     {
       "name": "SERVICE_LIFECYCLE.md",
@@ -163,8 +168,23 @@
     },
     {
       "name": "analysis_store.py",
-      "sha256": "b92af87840ec75d5f0b490b8f5e678109982142aca41eba3fa5cf7e5e06e22bd",
-      "bytes": 6119
+      "sha256": "39695d16e82f19e1fc88e7a7078bc089cbaa7db1be4660dc786baba1c93a1248",
+      "bytes": 6228
+    },
+    {
+      "name": "asset_keywords.py",
+      "sha256": "bed374244a1d6837ea0979b3f8a485b6dfc79392be6520f23aee0b56cd02892f",
+      "bytes": 7280
+    },
+    {
+      "name": "asset_references.py",
+      "sha256": "95a083f7002445d1c4b2074191ad4a7368d832b026144d22bfb7e2a9e0695b7c",
+      "bytes": 8050
+    },
+    {
+      "name": "asset_verticality.py",
+      "sha256": "74da1d5913a79e719ccf1f2dd770c23e86658004683ba95909ad0bef63505ac1",
+      "bytes": 9200
     },
     {
       "name": "browser_config.cjs",
@@ -233,8 +253,8 @@
     },
     {
       "name": "clubops.py",
-      "sha256": "7fa795316c00daf996fba21c9a0fe333dfe9b1a3a8709ad3aa8991c470dbf0f3",
-      "bytes": 51242
+      "sha256": "d5731d6bd211de7710d94bbd6209442c2905c49956f439232a200ec6de85fe69",
+      "bytes": 52449
     },
     {
       "name": "collection_scheduler.py",
@@ -243,8 +263,8 @@
     },
     {
       "name": "collector.py",
-      "sha256": "ff2cb2eabef954bd37bcc8d9660d1903f062422d34a21cfe824a63078e495cee",
-      "bytes": 38752
+      "sha256": "45c49e42ce5cdf8a7d1781cab161d5aa409941afc8019d23bf8f89853320ab97",
+      "bytes": 39030
     },
     {
       "name": "collector_http.py",
@@ -328,8 +348,8 @@
     },
     {
       "name": "discovery_tracking.py",
-      "sha256": "ebbf735d99fb08a784ea20f84b1ae44a86d6feaab4c820034bdaf956c60ca6c0",
-      "bytes": 20762
+      "sha256": "7ce5c7d6be36e23ad76d1ee582d2aa8e56e1ba9b03a36dfd9b65893f041ec1be",
+      "bytes": 21259
     },
     {
       "name": "evaluation/intent-development-v1.json",
@@ -458,8 +478,8 @@
     },
     {
       "name": "live_monitor.py",
-      "sha256": "6057d7536c7b264035c23c97f2757affa2851ec06caf73ad93f287fd57c4fd27",
-      "bytes": 26203
+      "sha256": "e344c2616793e6f1c7f2b75cbe05ae5c2902c05093677b6ea48d9df771d7a9dc",
+      "bytes": 26300
     },
     {
       "name": "live_protocol.cjs",
@@ -468,8 +488,8 @@
     },
     {
       "name": "live_room_pool.py",
-      "sha256": "5c7b889f6f5d8f57031eb0ab1f64bb4a02a945791a41373afbe832a73f831d86",
-      "bytes": 9645
+      "sha256": "25561aab8e01c37be17bb05f1d051d8ef489d58325339844c9c9706a7dc7e439",
+      "bytes": 10229
     },
     {
       "name": "live_rules.py",
@@ -488,8 +508,8 @@
     },
     {
       "name": "live_workflow.py",
-      "sha256": "c72213c1fb50b7d26ec3ff4bb868afb7b78a070b2c8c4995814fc2089f45650a",
-      "bytes": 9803
+      "sha256": "f6549848677c10b160c8d01df30cfeb6ec8b1cb527128a64fde8fe3e34c3d60a",
+      "bytes": 9887
     },
     {
       "name": "login_recovery.py",
@@ -518,8 +538,8 @@
     },
     {
       "name": "monitor_board.py",
-      "sha256": "06e8acd3596018e5c459b5e01dbbcca162434332680493578babee4735e0ea2b",
-      "bytes": 6406
+      "sha256": "9e056a415cd5b59987f0a955c703942b984d6b0e070a3a4d668863e3e4df5db2",
+      "bytes": 6575
     },
     {
       "name": "monitor_comments.py",
@@ -528,8 +548,8 @@
     },
     {
       "name": "monitoring.py",
-      "sha256": "b1f571ed58c2de7ac44642c065f60b0d0751c180ac9416b3c35470e03168ce57",
-      "bytes": 14990
+      "sha256": "6ff311870875ff5e1271b5eed56c1df3c448f28bf949613dd42fc5e4b378f0c7",
+      "bytes": 15041
     },
     {
       "name": "package.json",
@@ -678,8 +698,8 @@
     },
     {
       "name": "semantic.py",
-      "sha256": "089b977dd3887a8abe07be84a09835e5faeae28548fae122406101468af302fa",
-      "bytes": 34059
+      "sha256": "ff68a938bd9f9fa65a8f7e20c3cc35fa2257449db51b85fd09baf7309b205db4",
+      "bytes": 34170
     },
     {
       "name": "semantic_api.py",
@@ -688,18 +708,18 @@
     },
     {
       "name": "semantic_queue.py",
-      "sha256": "28ac4d7266384a6aa67d7fea3056c60e7a032f51e0473dde49a687e547fa50bd",
-      "bytes": 11789
+      "sha256": "e1dce37f5da30b719406e537f17506e47e813c59753127c0f48b380765d5c465",
+      "bytes": 11660
     },
     {
       "name": "server.py",
-      "sha256": "a4989f0a9e8021e3f6361df0c9902469f11513fa9bcfa807dfcd82f14277cec3",
-      "bytes": 18887
+      "sha256": "07ae00b16af958d38c82e86593cb27eb99e9e56afb9c569fae68d5de9b6c316a",
+      "bytes": 19910
     },
     {
       "name": "source-files.json",
-      "sha256": "72eb9139edbf44401f99c9ecd0badc1b90f4af26523e0fea2262dfca0a3ebb6c",
-      "bytes": 6985
+      "sha256": "5f317128de31215f29f7dee59282accef5c69952dd4e9a57e445a844936586f2",
+      "bytes": 7184
     },
     {
       "name": "start.ps1",
@@ -708,8 +728,8 @@
     },
     {
       "name": "static/app.css",
-      "sha256": "e2cb97f910bbaa20dc572cb1840cf8428a3b7e8d7da9db1dcd4410fc31289ccd",
-      "bytes": 58549
+      "sha256": "2c979b906318e6dcbf3ef73d2fd22782c3a345a83e7dbf1996e8a66cc107c8fb",
+      "bytes": 59407
     },
     {
       "name": "static/app.html",
@@ -718,8 +738,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "eb0cc55a7caba8c1af9b092db8b7ff6aed9a55ebaf8e42c990c1cf8e8f96035d",
-      "bytes": 153789
+      "sha256": "81deb1d5e38e672a29229af6485df88e4f10472f89ae7758e8274cd80bd35afe",
+      "bytes": 165100
     },
     {
       "name": "static/clubops-iphone.js",
@@ -760,6 +780,21 @@
       "name": "team_access.py",
       "sha256": "358c2a83ef8082640e4ef6fac1dab32e4d0b80d58b7ee93417ed718256c9e865",
       "bytes": 6727
+    },
+    {
+      "name": "test_asset_keywords.py",
+      "sha256": "65a059eb9bf25695c498519095ed8282987f8cd7317a2c525d0ad8e8b34c6f33",
+      "bytes": 4786
+    },
+    {
+      "name": "test_asset_references.py",
+      "sha256": "1bf5e62529abb35e8b8f21be670adb10c84cdf44ed32cbb037bca64d7c8bde58",
+      "bytes": 3737
+    },
+    {
+      "name": "test_asset_verticality.py",
+      "sha256": "411337e1a50d321b75572086f6402925ecc2f159c21988049754b903edf6bbe0",
+      "bytes": 7180
     },
     {
       "name": "test_author_collection.py",
@@ -813,8 +848,8 @@
     },
     {
       "name": "test_collection_freshness.py",
-      "sha256": "b8649bd8e214dd58c2e52edaecd54ea4e3988571c6e701de6818d9b5f29b64e1",
-      "bytes": 10995
+      "sha256": "400b25b618ca5153f0c5dd9accd58316818f624b40865fd42dec83f247f8e81c",
+      "bytes": 11028
     },
     {
       "name": "test_collection_session.cjs",
@@ -843,8 +878,8 @@
     },
     {
       "name": "test_frontend.cjs",
-      "sha256": "83abdb918b124a78b614226be074c5d83f84909382d0f4319714797b28e2eb66",
-      "bytes": 41206
+      "sha256": "35149f27062071eb6866b4190bbfd250ffe9364366869b7539a918b642bd7a1c",
+      "bytes": 42906
     },
     {
       "name": "test_frontend_live_history.cjs",
@@ -1013,8 +1048,8 @@
     },
     {
       "name": "test_semantic.py",
-      "sha256": "acb52ca700715ebec5c2ba4043a88f46eadaded845277a5cbe06b557fbbe6c73",
-      "bytes": 27069
+      "sha256": "91afc96581f8992eb1fec3e4ab7e4cd1b36530f9a1cd8546e6cba8aa233c81fa",
+      "bytes": 27272
     },
     {
       "name": "test_semantic_api.py",
@@ -1033,13 +1068,13 @@
     },
     {
       "name": "test_semantic_live_policy.py",
-      "sha256": "d7664ecffa69fa2e84aaa2f56c5d03e8d8ec6468c28cf8111d858e71f23d6834",
-      "bytes": 6267
+      "sha256": "c063d6775ae88cef0d87c154115a497aa3ac2e954f1254eca9f0fe01ba0f406f",
+      "bytes": 6424
     },
     {
       "name": "test_semantic_queue.py",
-      "sha256": "01bbc4895bc30baa3fd3cfddcf236962fb60c7f7313e17236a5b8c63e044f893",
-      "bytes": 13831
+      "sha256": "6f689e825a93fccfc306b24405e065a73313ff1aaaca572ea8b796c2389c9d0a",
+      "bytes": 14106
     },
     {
       "name": "test_service_lifecycle.py",
@@ -1168,8 +1203,8 @@
     },
     {
       "name": "video_discovery.py",
-      "sha256": "245b837a0f55c0260ac4b84db78df744caf30df6aec26c6bb0613155be110dca",
-      "bytes": 9627
+      "sha256": "593e970d716f02ed4e3fef1806390a90ef8a1f60ffa3fed90e57b0ff208912e0",
+      "bytes": 9829
     },
     {
       "name": "video_metadata.py",

@@ -64,12 +64,15 @@ def paused_targets(c):
 
 
 def author_rows(c,cfg):
+    import asset_references
+    reference_authors,_=asset_references.discovery_assets(c)
     rows=[dict(r) for r in c.execute('''SELECT a.*,COUNT(w.video_id) AS sampled,
       COALESCE(SUM(w.relevant),0) AS related FROM discovery_authors a
       LEFT JOIN discovery_works w ON w.author_sec_uid=a.sec_uid AND w.author_sample=1 GROUP BY a.sec_uid''')]
     for r in rows:
+        r['reference_focused']=r['sec_uid'] in reference_authors
         r['ratio']=round(r['related']/r['sampled']*100,1) if r['sampled'] else None
-        r['focused']=r['priority']=='focus' or r['priority']=='auto' and r['related']>=cfg['focus_min_related'] and r['related']*100>=r['sampled']*cfg['focus_ratio']
+        r['focused']=r['priority']=='focus' or r['priority']=='auto' and (r['reference_focused'] or r['related']>=cfg['focus_min_related'] and r['related']*100>=r['sampled']*cfg['focus_ratio'])
     return sorted(rows,key=lambda r:(not r['focused'],-r['related'],r['first_seen_at']))
 
 
@@ -159,11 +162,15 @@ def record(c,rows,*,source,target,task=None):
             if previous:c.execute('UPDATE discovery_works SET last_checked_at=? WHERE video_id=?',(previous[0],vid))
         if vid in paused:c.execute('UPDATE discovery_works SET enabled=0 WHERE video_id=?',(vid,))
         if relevant:
+            import asset_references
+            asset_references.save_content(c,row)
             # New discovery must not rewrite user-selected priority or enable an existing paused target.
             c.execute('''INSERT INTO videos(source_id,external_id,title,url,game,created_at) VALUES(?,?,?,?,?,?)
               ON CONFLICT(source_id,external_id) DO NOTHING''',(source_row[0],vid,title[:300],f'https://www.douyin.com/video/{vid}',app.TARGET_GAME,stamp))
             pk=c.execute('SELECT id FROM videos WHERE source_id=? AND external_id=?',(source_row[0],vid)).fetchone()[0]
             if row.get('metrics'):video_metadata.save(c,pk,row['metrics'])
+            import asset_verticality
+            asset_verticality.refresh(c,'work',vid)
 
 
 def select_work_targets(c,plan,instant,focused,paused):
@@ -239,7 +246,10 @@ def choose(c,plan,instant):
                 prior=c.execute("SELECT t.finished_at FROM discovery_jobs j JOIN collection_tasks t ON t.id=j.task_id WHERE j.key=? AND t.finished_at IS NOT NULL ORDER BY j.task_id DESC LIMIT 1",('seed:'+seed,)).fetchone()
                 if prior and not due(future(prior[0],cfg['author_interval'])):continue
                 jobs['author']=dict(kind='author',target=seed,transport='http',key='seed:'+seed,channel='author',author_pages=cfg['initial_author_pages']);break
-    query=next((dict(r) for r in c.execute('SELECT * FROM discovery_queries ORDER BY COALESCE(last_checked_at,\'\'),keyword') if r['keyword'] in cfg['keywords'] and due(r['next_check_at'])),None)
+    import asset_references
+    _,reference_queries=asset_references.discovery_assets(c)
+    search_terms=set(cfg['keywords'])|set(reference_queries)
+    query=next((dict(r) for r in c.execute('SELECT * FROM discovery_queries ORDER BY COALESCE(last_checked_at,\'\'),keyword') if r['keyword'] in search_terms and due(r['next_check_at'])),None)
     if query:jobs['search']=dict(kind='search',target=query['keyword'],transport=plan['transport'] if plan['kind']=='search' else 'local_browser',key=query['keyword'],channel='search')
     paused=paused_targets(c)
     focused={r['sec_uid'] for r in authors if r['focused'] and r['enabled']}

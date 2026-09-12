@@ -139,7 +139,7 @@ class FreshCollectionTests(unittest.TestCase):
 
     def test_recent_comment_has_queue_priority_over_old_unknown_and_future(self):
         for i, published in enumerate(('2026-09-10T00:00:00+00:00',None,'2026-09-12T00:00:00+00:00')):
-            app.ingest({'records':[dict(comment_id='backlog-'+str(i),video_id='backlog',text='无畏契约找陪练',published_at=published)]})
+            app.ingest({'records':[dict(comment_id='backlog-'+str(i),video_id='backlog',video_title='无畏契约陪练',text='无畏契约找陪练',published_at=published)]})
         with app.db() as c:
             ids = [r[0] for r in c.execute('SELECT id FROM comments')]
         app.analyze(comment_ids=ids)

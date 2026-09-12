@@ -28,8 +28,8 @@ class QueueTests(unittest.TestCase):
         self.settings = dict(semantic.DEFAULTS, enabled=True, auto_analyze=True, model='synthetic:1')
         semantic.save(self.settings)
 
-    def add(self, key='first', text='无畏契约找陪练，预算100元'):
-        app.ingest({'records':[dict(comment_id=key, video_id='video1', user_id='12345', text=text)]})
+    def add(self, key='first', text='无畏契约找陪练，预算100元',title='无畏契约陪练服务'):
+        app.ingest({'records':[dict(comment_id=key, video_id='video1',video_title=title, user_id='12345', text=text)]})
         return app.analyze()
 
     def jobs(self):
@@ -37,7 +37,7 @@ class QueueTests(unittest.TestCase):
             return [dict(r) for r in c.execute('SELECT * FROM semantic_jobs ORDER BY id')]
 
     def test_match_discussion_never_enters_model_queue(self):
-        result=self.add(text='预测一手 tyloo 2:0 jdg 1:2，刚好完成所有比分')
+        result=self.add(text='预测一手 tyloo 2:0 jdg 1:2，刚好完成所有比分',title='无畏契约赛事预测')
         self.assertEqual(result['model_queue']['queued'],0)
         self.assertEqual(self.jobs(),[])
         with patch.object(SyntheticAdapter,'predict') as predict:
@@ -49,7 +49,7 @@ class QueueTests(unittest.TestCase):
 
     def test_relevance_gate_keeps_source_and_covers_manual_and_old_queued_jobs(self):
         text='预测一手 tyloo 2:0 jdg 1:2'
-        self.add(text=text)
+        self.add(text=text,title='无畏契约赛事预测')
         with app.db() as c:
             record_id=c.execute('SELECT id FROM comments').fetchone()[0]
             source,row=store.inputs(c,'comment',record_id)
@@ -61,7 +61,7 @@ class QueueTests(unittest.TestCase):
             c.execute("INSERT INTO semantic_jobs(evidence_type,record_id,input_hash,engine,config_json,status,created_at) VALUES('comment',?,?,?,?, 'queued',?)",
                       (record_id,fingerprint,semantic.state()['engine'],json.dumps(self.settings,sort_keys=True),app.now()))
         with patch.object(SyntheticAdapter,'predict') as predict:
-            with self.assertRaisesRegex(ValueError,'陪玩相关性初筛未通过'):
+            with self.assertRaisesRegex(ValueError,'非垂直对口'):
                 semantic.analyze_one(dict(evidence_type='comment',id=record_id,input_hash=fingerprint,request_id='relevance-manual'),adapter_factory=SyntheticAdapter)
             self.assertTrue(queue.run_one(adapter_factory=SyntheticAdapter))
             predict.assert_not_called()
@@ -69,7 +69,7 @@ class QueueTests(unittest.TestCase):
         self.assertIn('未调用模型',self.jobs()[0]['detail'])
         current=app.state()['comments'][0]
         self.assertFalse(current['companion_relevance']['passed'])
-        self.assertIn('初筛未通过',current['reason'])
+        self.assertFalse(current['model_routing']['model_allowed'])
         with app.db() as c:
             self.assertEqual(c.execute("SELECT COUNT(*) FROM intent_results WHERE method='model'").fetchone()[0],0)
             self.assertEqual(c.execute('SELECT COUNT(*) FROM message_jobs').fetchone()[0],0)
@@ -122,6 +122,8 @@ class QueueTests(unittest.TestCase):
         import live_workflow
         config=dict(live.DEFAULTS,room_url='https://live.douyin.com/12345',exclude_keywords='接单')
         with app.db() as c:
+            import live_room_pool
+            live_room_pool.ingest(c,[dict(room_url=config['room_url'],title='无畏契约陪练')],'valorant_category',app.now())
             sid=c.execute('INSERT INTO live_sessions(request_id,room_url,room_id,config,status,detail,started_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
                           ('live-queue',config['room_url'],'10000000000000001',json.dumps(config),'running','',app.now(),app.now())).lastrowid
         for index,text in enumerate(('无畏契约找陪练','接单找工作')):

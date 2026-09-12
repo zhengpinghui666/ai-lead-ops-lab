@@ -197,6 +197,16 @@ dialog.collection-modal .modal-actions{flex-wrap:wrap}
 .settings-modal .card-body{padding:12px 0}
 .settings-modal .login-grid{grid-template-columns:1fr;gap:18px;margin:0}
 .settings-modal .fields-2{align-items:start}
+.live-room-library article{padding:14px 0;border-bottom:1px solid var(--line);overflow-wrap:anywhere}
+.live-room-library article:last-child{border-bottom:0}
+.live-room-library article>strong,.live-room-library article>small{display:block}
+.live-room-library article>small{margin-top:4px;color:var(--muted)}
+.live-room-library article>p{margin:8px 0}
+.keyword-search{display:flex;align-items:flex-end;gap:10px;margin:14px 0}
+.keyword-search .field{flex:1;margin-bottom:0}
+#asset-reference-form,#keyword-review-form{display:flex;flex-direction:column;max-height:calc(88dvh - 2px)}
+#asset-reference-form .modal-head,#asset-reference-form .modal-actions,#keyword-review-form .modal-head,#keyword-review-form .modal-actions{flex-shrink:0}
+#asset-reference-form .modal-body,#keyword-review-form .modal-body{min-height:0;overflow-y:auto;overscroll-behavior:contain}
 .channel-settings-entry{margin-bottom:16px}
 .live-workspace{display:block;max-width:none}
 .result-table .result-time{width:145px;min-width:130px;white-space:normal;font-variant-numeric:tabular-nums;line-height:1.65;color:var(--text)}

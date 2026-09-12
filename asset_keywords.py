@@ -1,0 +1,114 @@
+"""Continuously observed vocabulary, activated only by an explicit review."""
+import json
+import re
+import clubops as app
+
+SCHEMA='''CREATE TABLE IF NOT EXISTS asset_keywords (
+ term TEXT PRIMARY KEY,status TEXT NOT NULL DEFAULT 'pending',kind TEXT NOT NULL DEFAULT 'service',scope TEXT NOT NULL DEFAULT 'asset',
+ reason TEXT NOT NULL DEFAULT '',revision INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS asset_keyword_sources (
+ term TEXT NOT NULL,asset_key TEXT NOT NULL,title TEXT NOT NULL,first_seen_at TEXT NOT NULL,last_seen_at TEXT NOT NULL,
+ PRIMARY KEY(term,asset_key)
+);
+CREATE TABLE IF NOT EXISTS asset_keyword_reviews (
+ id INTEGER PRIMARY KEY,term TEXT NOT NULL,revision INTEGER NOT NULL,status TEXT NOT NULL,kind TEXT NOT NULL,scope TEXT NOT NULL,
+ reason TEXT NOT NULL,created_at TEXT NOT NULL
+);'''
+
+
+def observe(c,key,title,tags=()):
+    # Durable distinct assets, not repeated poll counts or synthetic phrases.
+    terms=list(dict.fromkeys([*re.findall(r'[#＃]([^\s#＃]{2,30})',title or ''),*tags]))[:30]
+    for term in terms:
+        if not isinstance(term,str) or not 2<=len(term.strip())<=30:continue
+        term=term.strip();stamp=app.now()
+        c.execute('INSERT OR IGNORE INTO asset_keywords(term,created_at,updated_at) VALUES(?,?,?)',(term,stamp,stamp))
+        c.execute('''INSERT INTO asset_keyword_sources VALUES(?,?,?,?,?) ON CONFLICT(term,asset_key)
+          DO UPDATE SET title=excluded.title,last_seen_at=excluded.last_seen_at''',(term,key,title[:5000],stamp,stamp))
+
+
+def active(c,scope='asset'):
+    words={'game':set(),'service':set(),'search':set()}
+    for r in c.execute("SELECT term,kind FROM asset_keywords WHERE status='approved' AND scope IN (?, 'both')",(scope,)):words[r['kind']].add(r['term'])
+    # References are the authority for their terms; withdrawal removes inherited activation.
+    for r in c.execute("SELECT rule FROM asset_references WHERE status='approved' AND ?='asset'",(scope,)):
+        rule=json.loads(r[0]);words['game'].update(rule['game_terms']);words['service'].update(rule['service_terms']);words['search'].update(rule.get('queries',[]))
+    return {k:sorted(v) for k,v in words.items()}
+
+
+def literal_hits(text,terms):
+    folded=(text or '').casefold();return [t for t in terms if t.casefold() in folded]
+
+
+def backfill(c):
+    import asset_references as refs
+    for row in c.execute('SELECT DISTINCT external_id FROM videos').fetchall():
+        content=refs.work(c,row[0])
+        if content:observe(c,'work:'+row[0],content['copy'],content['tags'])
+    for row in c.execute('SELECT room_url,title FROM live_rooms').fetchall():observe(c,'live:'+row[0],row[1])
+
+
+def state(mode='live',q=''):
+    with app.LOCKS[mode],app.db(mode) as c:
+        words=active(c);messages=active(c,'message');inherited={t:k for k in ('game','service','search') for t in words[k]+messages[k]}
+        # Brief summaries only. Evidence is fetched when opening a review.
+        rows={r['term']:dict(r) for r in c.execute('''SELECT k.*,COUNT(s.asset_key) AS source_count,MAX(s.last_seen_at) AS last_seen_at
+          FROM asset_keywords k LEFT JOIN asset_keyword_sources s ON s.term=k.term GROUP BY k.term''')}
+        for term,kind in inherited.items():
+            if term not in rows:rows[term]=dict(term=term,kind=kind,scope='asset',status='reference',reason='来自已评审参考资产',revision=0,source_count=0,last_seen_at=None)
+            rows[term]['active']=True;rows[term]['active_kind']=kind
+        values=sorted(rows.values(),key=lambda r:(not r.get('active'),r['status']!='pending',-r['source_count'],r['term']))
+        counts=dict(total=len(values),active=sum(bool(r.get('active')) for r in values),pending=sum(r['status']=='pending' and not r.get('active') for r in values))
+    query=str(q).strip().casefold()[:80];filtered=[r for r in values if not query or query in r['term'].casefold()]
+    return dict(rows=filtered[:500],counts=counts,matched=len(filtered),limit=500)
+
+
+def detail(term,mode='live'):
+    with app.LOCKS[mode],app.db(mode) as c:
+        row=c.execute('SELECT * FROM asset_keywords WHERE term=?',(term,)).fetchone()
+        if not row:raise ValueError('该词由参考资产管理，请在参考评审中修改')
+        inherited=[]
+        for r in c.execute("SELECT id,rule FROM asset_references WHERE status='approved'"):
+            rule=json.loads(r['rule'])
+            if term in rule['game_terms']+rule['service_terms']+rule.get('queries',[]):inherited.append(r['id'])
+        return dict(**dict(row),reference_ids=inherited,sources=[dict(r) for r in c.execute('SELECT asset_key,title,last_seen_at FROM asset_keyword_sources WHERE term=? ORDER BY last_seen_at DESC LIMIT 5',(term,))])
+
+
+def propose(body,mode='live'):
+    if mode!='live' or set(body)!={'term'}:raise ValueError('词库参数无效')
+    term=body['term'].strip() if isinstance(body['term'],str) else ''
+    if not 2<=len(term)<=30:raise ValueError('关键词为 2–30 字')
+    with app.LOCKS[mode],app.db(mode) as c:
+        c.execute('INSERT OR IGNORE INTO asset_keywords(term,created_at,updated_at) VALUES(?,?,?)',(term,app.now(),app.now()))
+    return detail(term,mode)
+
+
+def review(body,mode='live'):
+    if mode!='live' or set(body)!={'term','revision','status','kind','scope','reason'}:raise ValueError('词库评审参数无效')
+    if body['status'] not in ('approved','rejected','pending') or body['kind'] not in ('game','service','search'):raise ValueError('词库分类无效')
+    if body['scope'] not in ('asset','message','both'):raise ValueError('词库用途无效')
+    if body['scope']!='asset' and body['kind']!='service':raise ValueError('评论与弹幕初筛仅接受明确的陪玩服务词')
+    reason=str(body['reason']).strip()
+    if not 4<=len(reason)<=1000:raise ValueError('请填写 4–1000 字的评审理由')
+    with app.LOCKS[mode],app.db(mode) as c:
+        row=c.execute('SELECT * FROM asset_keywords WHERE term=?',(body['term'],)).fetchone()
+        if not row or row['revision']!=body['revision']:raise ValueError('词条已更新，请重新打开')
+        revision=row['revision']+1;stamp=app.now()
+        c.execute('UPDATE asset_keywords SET status=?,kind=?,scope=?,reason=?,revision=?,updated_at=? WHERE term=?',
+            (body['status'],body['kind'],body['scope'],reason,revision,stamp,row['term']))
+        c.execute('INSERT INTO asset_keyword_reviews(term,revision,status,kind,scope,reason,created_at) VALUES(?,?,?,?,?,?,?)',
+            (row['term'],revision,body['status'],body['kind'],body['scope'],reason,stamp))
+        if body['status']=='approved' and body['kind']!='game' and body['scope']!='message':
+            from video_discovery import GAME_PATTERN
+            query=row['term'] if body['kind']=='search' and GAME_PATTERN.search(row['term']) else '无畏契约 '+row['term']
+            c.execute('INSERT OR IGNORE INTO discovery_queries(keyword,next_check_at) VALUES(?,?)',(query,stamp))
+        import asset_verticality
+        asset_verticality.backfill(c)
+    return state(mode)
+
+
+def queries(c):
+    from video_discovery import GAME_PATTERN
+    words=active(c)
+    return sorted({t if GAME_PATTERN.search(t) else '无畏契约 '+t for t in words['search']+words['service']})

@@ -29,7 +29,8 @@ def video_row(item):
     published = item.get('create_time')
     stats = item.get('statistics') if isinstance(item.get('statistics'), dict) else {}
     comments = stats.get('comment_count')
-    return {'video_id': vid, 'video_title': str(item.get('desc') or vid)[:5000],
+    tags=[r['hashtag_name'] for r in (item.get('text_extra') or []) if isinstance(r,dict) and isinstance(r.get('hashtag_name'),str)] if isinstance(item.get('text_extra'),list) else []
+    return {'video_id': vid, 'video_title': str(item.get('desc') or vid)[:5000], 'tags':tags[:30],
             'video_url': ORIGIN + '/video/' + vid, 'author_sec_uid': sec_uid,
             'author_nickname': str(author.get('nickname') or '')[:120],
             'published_at': published if type(published) is int and 0 < published < 32503680000 else None,
