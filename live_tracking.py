@@ -1,10 +1,11 @@
-"""Explicit single-room tracking; frozen batches, no challenge or error retries."""
+"""Explicit live tracking: frozen batches, optional durable room-library rotation."""
 import json
 import threading
 from datetime import datetime, timedelta, timezone
 
 import clubops as app
 import live_monitor as live
+import live_room_pool as pool
 
 STOP = threading.Event()
 THREAD = None
@@ -38,6 +39,9 @@ def start(body, mode='live'):
     if mode != 'live':
         raise ValueError('演示区不启动真实直播跟踪')
     request_id = body.get('request_id')
+    scope = body.get('scope', 'single')
+    if scope not in ('single', 'library'):
+        raise ValueError('直播跟踪范围无效')
     if not isinstance(request_id, str) or not 1 <= len(request_id) <= 100:
         raise ValueError('缺少持续跟踪请求 ID')
     with live.GUARD, app.LOCKS[mode], app.db(mode) as c:
@@ -49,10 +53,16 @@ def start(body, mode='live'):
         config = live.options(live.settings())
         # Tracking always runs in the background; a manual one-shot may show UI.
         config['interactive'] = False
+        if scope == 'library':
+            config['scope'] = 'library'
+            pool.seed(c, config)
         stamp = app.now()
         track_id = c.execute('INSERT INTO live_tracks(request_id,config,status,detail,next_run_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',
             (request_id, json.dumps(config, ensure_ascii=False), 'enabled',
              '持续跟踪已开启，等待后台读取指定房间', stamp, stamp, stamp)).lastrowid
+        if scope == 'library':
+            c.execute('INSERT INTO live_pool_checks(track_id,next_discovery_at) VALUES(?,?)', (track_id, stamp))
+            c.execute('UPDATE live_tracks SET detail=? WHERE id=?', ('直播间库持续监控已开启，等待串行读取已关注房间', track_id))
         return project(c.execute('SELECT * FROM live_tracks WHERE id=?', (track_id,)).fetchone())
 
 
@@ -82,6 +92,9 @@ def tick():
                 return
             row = dict(row)
             config = json.loads(row['config'])
+            library = config.get('scope') == 'library'
+            if library:
+                pool.request_discovery(row['id'], config)
             if row['last_session_id'] and row['next_run_at'] is None:
                 session = c.execute('SELECT * FROM live_sessions WHERE id=?', (row['last_session_id'],)).fetchone()
                 if not session or not session['finished_at']:
@@ -91,7 +104,11 @@ def tick():
                 # Only a healthy completed batch schedules a new connection.
                 # Valid non-chat events can complete a quiet-room batch. Empty
                 # responses cannot prove a healthy stream and still pause.
-                if session['status'] != 'completed':
+                if library and session['status'] in pool.ROTATABLE:
+                    pool.settle(c, session, config)
+                elif session['status'] != 'completed':
+                    if library:
+                        pool.record_problem(c, session)
                     status = 'ended' if session['status'] == 'ended' else 'attention'
                     c.execute('UPDATE live_tracks SET status=?,detail=?,updated_at=? WHERE id=?',
                               (status, '持续跟踪已停止：' + session['detail'], app.now(), row['id']))
@@ -102,6 +119,15 @@ def tick():
                 row['next_run_at'] = due
             if not row['next_run_at'] or datetime.now(timezone.utc) < datetime.fromisoformat(row['next_run_at']):
                 return
+            if library:
+                selected = pool.select_room(c)
+                if not selected:
+                    next_room = c.execute('SELECT MIN(next_check_at) FROM live_rooms WHERE enabled=1').fetchone()[0]
+                    due = max(pool.later(app.now(), 1), next_room) if next_room else pool.later(app.now(), 60)
+                    c.execute('UPDATE live_tracks SET next_run_at=?,detail=?,updated_at=? WHERE id=?',
+                              (due, '已关注房间正在等待复查；直播发现按计划继续', app.now(), row['id']))
+                    return
+                config = {**config, 'room_url': selected['room_url']}
         # start commits before its worker can consume data. GUARD serializes stop.
         try:
             result = live.start({'request_id': f"track-{row['id']}-batch-{row['run_count'] + 1}"},
@@ -113,11 +139,17 @@ def tick():
             return
         with app.LOCKS['live'], app.db() as c:
             c.execute('UPDATE live_tracks SET last_session_id=?,run_count=run_count+1,next_run_at=NULL,detail=?,updated_at=? WHERE id=?',
-                      (result['id'], '正在后台跟踪指定直播间；参数固定为开启时的配置', app.now(), row['id']))
+                      (result['id'], '正在串行读取直播间库；下播和暂时无数据的房间按间隔复查' if library else '正在后台跟踪指定直播间；参数固定为开启时的配置', app.now(), row['id']))
+            if library:
+                c.execute('UPDATE live_rooms SET last_session_id=?,last_status=(SELECT status FROM live_sessions WHERE id=?) WHERE room_url=?',
+                          (result['id'], result['id'], config['room_url']))
 
 
 def recover():
     with live.GUARD, app.LOCKS['live'], app.db() as c:
+        for session in c.execute('SELECT s.* FROM live_rooms r JOIN live_sessions s ON s.id=r.last_session_id '
+                                 'WHERE s.finished_at IS NOT NULL AND COALESCE(r.last_settled_session_id,0)<s.id').fetchall():
+            pool.settle(c, session, {**live.DEFAULTS, **json.loads(session['config'])})
         c.execute("UPDATE live_tracks SET status='paused',next_run_at=NULL,detail=?,updated_at=? WHERE status='enabled'",
                   ('服务重启，持续跟踪已关闭；已有会话和弹幕保留', app.now()))
 

@@ -77,7 +77,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def discover(mode='live', *, opener=None):
+def discover(mode='live', *, opener=None, _catalog=True):
     if mode != 'live':
         raise ValueError('演示区不发现真实直播间')
     if not GUARD.acquire(blocking=False):
@@ -113,6 +113,9 @@ def discover(mode='live', *, opener=None):
         with app.LOCKS[mode], app.db(mode) as c:
             c.execute("INSERT INTO settings VALUES('live_discovery',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                       (json.dumps(result, ensure_ascii=False),))
+            if _catalog and result['status'] == 'ready':
+                import live_room_pool
+                live_room_pool.ingest(c, result['rows'], 'valorant_category', result['fetched_at'])
         return state(mode)
     finally:
         GUARD.release()

@@ -14,7 +14,8 @@ import comment_filters
 
 GUARD = threading.RLock()
 ACTIVE = {}
-DEFAULTS = dict(room_url='', duration_seconds=60, max_messages=100, include_keywords='', exclude_keywords='', interactive=False, interval_seconds=30)
+DEFAULTS = dict(room_url='', duration_seconds=60, max_messages=100, include_keywords='', exclude_keywords='', interactive=False, interval_seconds=30,
+                discovery_interval_minutes=15, offline_retry_minutes=15, empty_retry_minutes=5)
 DETAILS = {
     'connecting': '正在打开专用直播页面，尚未收到有效弹幕数据',
     'running': '已收到直播连接数据；只记录当前观察到的文字弹幕',
@@ -80,7 +81,10 @@ def options(body):
                 max_messages=integer(body.get('max_messages', 100), '消息预算', 1, 5000),
                 include_keywords=comment_filters.normalize(body.get('include_keywords', ''), '弹幕关键词'),
                 exclude_keywords=comment_filters.normalize(body.get('exclude_keywords', ''), '弹幕屏蔽词'), interactive=interactive,
-                interval_seconds=integer(body.get('interval_seconds', 30), '批次间隔', 30, 3600))
+                interval_seconds=integer(body.get('interval_seconds', 30), '批次间隔', 30, 3600),
+                discovery_interval_minutes=integer(body.get('discovery_interval_minutes', 15), '直播分类检查间隔', 5, 120),
+                offline_retry_minutes=integer(body.get('offline_retry_minutes', 15), '下播房间复查间隔', 5, 120),
+                empty_retry_minutes=integer(body.get('empty_retry_minutes', 5), '未取得数据复查间隔', 1, 60))
 
 
 def settings(mode='live'):
@@ -103,6 +107,7 @@ def state(mode='live'):
         sessions = [dict(r) for r in c.execute('SELECT * FROM live_sessions ORDER BY id DESC LIMIT 20')]
         active = next(iter(ACTIVE), None) if mode == 'live' else None
         current = next((s for s in sessions if s['id'] == active), sessions[0] if sessions else None)
+        latest_message_id = c.execute('SELECT COALESCE(MAX(id),0) FROM live_messages').fetchone()[0]
         import live_workflow
         records = live_workflow.records(c, 'WHERE m.session_id=?', (current['id'],)) if current else []
         events = [dict(r) for r in c.execute('SELECT * FROM live_session_events WHERE session_id=? ORDER BY id DESC LIMIT 30', (current['id'],))] if current else []
@@ -111,8 +116,10 @@ def state(mode='live'):
     import live_tracking
     import live_discovery
     import live_rules
+    import live_room_pool
     return dict(config=settings(mode), sessions=sessions, current=current, rows=records, events=events, active_id=active,
-                transport='browser_live', ruleset_version=live_rules.RULESET_VERSION, history_available=True, records_limit=500, tracking=live_tracking.state(mode), discovery=live_discovery.state(mode))
+                transport='browser_live', ruleset_version=live_rules.RULESET_VERSION, history_available=True, records_limit=500, latest_message_id=latest_message_id,
+                tracking=live_tracking.state(mode), discovery=live_discovery.state(mode), library=live_room_pool.state(mode))
 
 
 def history(query, mode='live'):
@@ -171,6 +178,10 @@ def record_status(session_id, status, final=False, **counts):
                   (status, DETAILS[status], app.now(), app.now() if final else None, gap, counts.get('frames', row['frames']), row['invalid'] + counts.get('invalid', 0), session_id))
         if row['status'] != status or final:
             c.execute('INSERT INTO live_session_events(session_id,status,detail,observed_at) VALUES(?,?,?,?)', (session_id, status, DETAILS[status], app.now()))
+        if final:
+            import live_room_pool
+            final_row = c.execute('SELECT * FROM live_sessions WHERE id=?', (session_id,)).fetchone()
+            live_room_pool.settle(c, final_row, {**DEFAULTS, **json.loads(final_row['config'])})
 
 
 def identifier(value, optional=False):

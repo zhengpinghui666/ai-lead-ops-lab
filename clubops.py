@@ -114,12 +114,12 @@ def init(mode='live'):
             collection_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_tasks)')}
             plan_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_plans)')}
             observation_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_observations)')}
-            if not {'uid_message_attempts', 'live_sessions', 'live_links', 'live_judgments', 'live_reviews', 'intent_results', 'semantic_jobs', 'video_metadata', 'live_tracks', 'collection_candidates', 'collection_candidate_reads', 'discovery_authors', 'discovery_works', 'discovery_jobs', 'discovery_queries'} <= known_tables or not {'outer_message_id', 'game'} <= live_columns or 'transport' not in collection_columns or 'intent_version' not in plan_columns or 'ingest_disposition' not in observation_columns:
+            if not {'uid_message_attempts', 'live_sessions', 'live_links', 'live_judgments', 'live_reviews', 'intent_results', 'semantic_jobs', 'video_metadata', 'live_tracks', 'live_rooms', 'live_pool_checks', 'collection_candidates', 'collection_candidate_reads', 'discovery_authors', 'discovery_works', 'discovery_jobs', 'discovery_queries'} <= known_tables or not {'outer_message_id', 'game'} <= live_columns or 'transport' not in collection_columns or 'intent_version' not in plan_columns or 'ingest_disposition' not in observation_columns:
                 backup_dir = DATA_DIR / 'backups'
                 backup_dir.mkdir(parents=True, exist_ok=True)
                 label = ('before-uid-http-' if 'uid_message_attempts' not in known_tables else
                          'before-live-stream-' if 'outer_message_id' not in live_columns else
-                         'before-live-workflow-' if 'live_links' not in known_tables else 'before-http-collection-' if 'transport' not in collection_columns else 'before-intent-results-' if 'intent_results' not in known_tables else 'before-semantic-queue-' if 'semantic_jobs' not in known_tables else 'before-monitor-recovery-' if 'intent_version' not in plan_columns else 'before-collection-timing-' if 'ingest_disposition' not in observation_columns else 'before-video-metadata-' if 'video_metadata' not in known_tables else 'before-live-tracking-' if 'live_tracks' not in known_tables else 'before-candidate-pool-')
+                         'before-live-workflow-' if 'live_links' not in known_tables else 'before-http-collection-' if 'transport' not in collection_columns else 'before-intent-results-' if 'intent_results' not in known_tables else 'before-semantic-queue-' if 'semantic_jobs' not in known_tables else 'before-monitor-recovery-' if 'intent_version' not in plan_columns else 'before-collection-timing-' if 'ingest_disposition' not in observation_columns else 'before-video-metadata-' if 'video_metadata' not in known_tables else 'before-live-tracking-' if 'live_tracks' not in known_tables else 'before-live-room-pool-' if not {'live_rooms', 'live_pool_checks'} <= known_tables else 'before-candidate-pool-')
                 backup = sqlite3.connect(backup_dir / (filename + '.' + label + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f') + '.bak'))
                 try:
                     source.backup(backup)
@@ -138,6 +138,8 @@ def init(mode='live'):
         c.executescript(live_monitor.SCHEMA)
         import live_tracking
         c.executescript(live_tracking.SCHEMA)
+        import live_room_pool
+        c.executescript(live_room_pool.SCHEMA)
         if 'outer_message_id' not in {r[1] for r in c.execute('PRAGMA table_info(live_messages)')}:
             c.execute('ALTER TABLE live_messages ADD COLUMN outer_message_id TEXT')
         import live_workflow

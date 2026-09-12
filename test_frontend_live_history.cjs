@@ -54,5 +54,14 @@ const reply=(r,label,anchor=100)=>r.resolve({ok:true,json:async()=>({rows:[{raw_
  reply(requests[11],'new scope',130);await changedScope;
  reply(requests[10],'stale background',120);await lateBackground;
  assert.equal(run('liveArchive.rows[0].raw_text'),'new scope');
- console.log('PASS: live archive native input/change, session races, stable pagination, workspace isolation and explicit failure/retry. Local fixtures only.');
+ run("liveScope='all';livePage=1;S.collector.live_monitor={latest_message_id:150};");
+ const newMessages=run('refreshLiveArchive(true,true)');
+ assert.doesNotMatch(requests.at(-1).url,/anchor_id=/,'The first archive page admits new rules-only messages');
+ reply(requests.at(-1),'new rules result',150);await newMessages;
+ assert.equal(run('liveArchiveMessageId'),150);
+ run('livePage=2;S.collector.live_monitor.latest_message_id=160;');
+ const stablePage=run('refreshLiveArchive(true,true)');
+ assert.match(requests.at(-1).url,/anchor_id=150/,'Later pages retain their snapshot while new messages arrive');
+ reply(requests.at(-1),'stable second page',150);await stablePage;
+ console.log('PASS: live archive native input/change, session races, stable pagination, first-page rules-only arrivals, workspace isolation and explicit failure/retry. Local fixtures only.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

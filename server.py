@@ -241,6 +241,9 @@ class Handler(BaseHTTPRequestHandler):
             elif action == 'live-discover':
                 import live_discovery
                 result = live_discovery.discover(mode)
+            elif action == 'live-room-toggle':
+                import live_room_pool
+                result = live_room_pool.toggle(body, mode)
             elif action == 'live-review':
                 result = live_workflow.review(body, mode)
             elif action == 'uid-http-send':

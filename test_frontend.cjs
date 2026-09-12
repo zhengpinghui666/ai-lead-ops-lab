@@ -19,7 +19,7 @@ const listeners=new Map(),posts=[];
 const removedElements=new Set(['#club-name','#breadcrumb','#mode-badge','#mode-toggle']);
 const document={querySelectorAll:()=>[],querySelector:key=>removedElements.has(key)?null:element(key),addEventListener(type,fn){listeners.set(type,fn);},createElement(){return {click(){}};},body:element('body')};
 class TestFormData {constructor(form){if(form.failFormData)throw Error('synthetic form read failure');this.values=form.values;} [Symbol.iterator](){return this.values[Symbol.iterator]();} getAll(name){return this.values.filter(([k])=>k===name).map(([,v])=>v);}}
-const context=vm.createContext({document,FormData:TestFormData,location:{hash:''},window:{lucide:{createIcons(){}},addEventListener(){},scrollTo(){}},fetch:async(url,options)=>{if(options?.method==='POST'){posts.push({url,body:JSON.parse(options.body)});return {ok:true,json:async()=>({result:{id:99}})};}return {ok:true,json:async()=>({...fixture.live,csrf:'test-only-token'})};},setTimeout,clearTimeout,crypto:globalThis.crypto,Blob,URL,console,fixtures:fixture});
+const context=vm.createContext({document,FormData:TestFormData,location:{hash:''},window:{lucide:{createIcons(){}},addEventListener(){},scrollTo(){}},fetch:async(url,options)=>{if(url.startsWith('/api/live-history'))return {ok:true,json:async()=>({rows:[],total:0,anchor_id:0,limit:25})};if(options?.method==='POST'){posts.push({url,body:JSON.parse(options.body)});return {ok:true,json:async()=>({result:{id:99}})};}return {ok:true,json:async()=>({...fixture.live,csrf:'test-only-token'})};},setTimeout,clearTimeout,crypto:globalThis.crypto,Blob,URL,URLSearchParams,console,fixtures:fixture});
 const run=code=>vm.runInContext(code,context);
 vm.runInContext(fs.readFileSync(path.join(__dirname,'static/app.js'),'utf8'),context);
 function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('undefined'),'Undefined appears in UI');assert.ok(!html.includes('NaN'),'NaN appears in UI');for(const [,name] of html.matchAll(/data-lucide="([^"]+)"/g)){const key=name.replace(/(^|-)([a-z])/g,(_,sep,c)=>c.toUpperCase());assert.ok(lucide[key],`Missing icon ${name}`);}}
@@ -28,6 +28,7 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   run("history={replaceState(){}};");
   assert.equal(run('monitorResultFilter'),'valuable');
   assert.equal(run('liveFilter'),'valuable');
+  assert.equal(run('liveScope'),'all');
   for(const value of elements.values())value.classList.add=()=>{};
   for(const mode of ['live','demo']){
     for(const page of ['overview','monitor','monitor-settings','live','leads','recruit','roster','inbox','analytics','settings']){
@@ -138,7 +139,7 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.match(element('#main').innerHTML,/已确认导流/);
   assert.ok(!element('#main').innerHTML.includes('已记录成交'));
   run("page='overview';render()");
-  for(const service of ['娱乐开黑','排位组队','新手陪练','对局复盘'])assert.ok(element('#main').innerHTML.includes(service));
+  assert.doesNotMatch(element('#main').innerHTML,/service-shortcuts|data-action="service-leads"/);
   assert.ok(!element('#main').innerHTML.includes('三角洲'));
   run("const reviewLead=S.leads.find(l=>l.latest.facts?.service_type==='对局复盘'&&l.category==='buyer');");
   assert.ok(run('matching(reviewLead).every(m=>m.region===reviewLead.latest.facts.region)'));
@@ -374,9 +375,15 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
     httpHtml=run('inbox()');assert.ok(!httpHtml.includes('data-action="uid-http-send"'));assert.match(httpHtml,/10000000000000001/);
   }
   run("S.jobs[0].status='draft';S.leads[0].do_not_contact=true");assert.match(run('inbox()'),/data-action="uid-http-send"[^>]*disabled/);
-  run(`S=fixtures.live;mode='live';page='live';liveFilter='all';S.collector={tasks:[],live_monitor:{config:{room_url:'https://live.douyin.com/12345',duration_seconds:60,max_messages:100,include_keywords:'陪练',exclude_keywords:''},sessions:[],current:null,rows:[{id:1,raw_text:'找陪练<script>',nickname:'<img>',uid:'10000000000000002',message_id:null,published_at:null,filter_reason:'',category:'uncertain',analysis_method:'rules',reason:'synthetic',facts:{},include_matches:[],exclude_matches:[]}],events:[],active_id:null}};render();`);
+  run(`S=fixtures.live;mode='live';page='live';liveFilter='all';liveScope='current';S.collector={tasks:[],live_monitor:{config:{room_url:'https://live.douyin.com/12345',duration_seconds:60,max_messages:100,include_keywords:'陪练',exclude_keywords:''},sessions:[],current:null,rows:[{id:1,raw_text:'找陪练<script>',nickname:'<img>',uid:'10000000000000002',message_id:null,published_at:null,filter_reason:'',category:'uncertain',analysis_method:'rules',reason:'synthetic',facts:{},include_matches:[],exclude_matches:[]}],events:[],active_id:null}};render();`);
   checkHtml(element('#main').innerHTML);assert.ok(!element('#main').innerHTML.includes('<script>'));assert.ok(!element('#main').innerHTML.includes('<img>'));
   assert.match(element('#main').innerHTML,/不能回看未采集的历史弹幕/);assert.match(element('#main').innerHTML,/10000000000000002/);
+  assert.match(run('liveTrackingPanel()'),/开启24h监控|直播间库/);
+  assert.ok(element('#main').innerHTML.indexOf('id="live-tracking"')<element('#main').innerHTML.indexOf("id='live-monitor-controls'"),'Ongoing monitoring is visible before folded run details');
+  run("S.collector.live_monitor.library={counts:{total:1},rows:[{room_url:'https://live.douyin.com/12345',title:'<script>room',enabled:1,saved_messages:2}]};liveLibraryDialog();");
+  assert.ok(!element('#modal-content').innerHTML.includes('<script>'));
+  assert.match(element('#modal-content').innerHTML,/暂停关注/);
+  assert.match(run('liveSettingsPanel()'),/discovery_interval_minutes|offline_retry_minutes/);
   run("markMonitorDraft({closest:s=>s==='#live-form'})");assert.equal(run('liveDraftDirty'),true);
   assert.match(run('liveStatus()'),/data-action="live-start"[^>]*disabled/);
   run("liveSearch='nonexistent'");assert.equal(run('liveRows().length'),0);

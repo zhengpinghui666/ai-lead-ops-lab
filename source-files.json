@@ -231,5 +231,7 @@
   "test_candidate_pool.py",
   "discovery_tracking.py",
   "test_discovery_tracking.py",
-  "DISCOVERY_TRACKING.md"
+  "DISCOVERY_TRACKING.md",
+  "live_room_pool.py",
+  "test_live_room_pool.py"
 ]

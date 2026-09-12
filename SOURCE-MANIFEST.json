@@ -43,8 +43,8 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "941a3eca73e85275dea802d92cabb3d5e7b58e336ca66adddb0670f6734ceb0d",
-      "bytes": 86823
+      "sha256": "bfaf73f7eba78a8fd0f6149440ceda1cd1115f63d67dedd7f7542902daa504f8",
+      "bytes": 92427
     },
     {
       "name": "DISCOVERY_TRACKING.md",
@@ -63,8 +63,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "89850b38aa6c49cd48debcd550666963c3ae0acc42cc6409d0d053353a8ea1bb",
-      "bytes": 128239
+      "sha256": "c03b96734a052f61e6253591ad45da3e8bbe2a094a8420c72c0a65a7d9c1042c",
+      "bytes": 133843
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -73,8 +73,8 @@
     },
     {
       "name": "LIVE_MONITOR.md",
-      "sha256": "f08ddeaa1fc66f2fd779cbbb5d331ee14af825563b2f843acef7f924d89dad16",
-      "bytes": 14333
+      "sha256": "2104c0e4c0d6a7ad3d3881963be7bb8a00f988e52b9183a8bca8a6420f8f718a",
+      "bytes": 15491
     },
     {
       "name": "LIVE_RULES.md",
@@ -83,8 +83,8 @@
     },
     {
       "name": "LIVE_TRACKING.md",
-      "sha256": "625677731428221d2b4620bfa20d00426c31d3c8f4407f6ecd575c072e63278c",
-      "bytes": 7109
+      "sha256": "f032aa98c90493236e31723da7e2eda4a834b3798818b0e709b96b1f651a1e01",
+      "bytes": 8267
     },
     {
       "name": "LIVE_WORKFLOW.md",
@@ -233,8 +233,8 @@
     },
     {
       "name": "clubops.py",
-      "sha256": "518d493aaf929783aa15bcc17edc9b8f8181205159c0e651e9a03927d3d1766b",
-      "bytes": 50689
+      "sha256": "7c4c249072c76c1ef058510616ee32a4fd74f2c9d5d7120647ea7c036295011e",
+      "bytes": 50896
     },
     {
       "name": "collection_scheduler.py",
@@ -323,8 +323,8 @@
     },
     {
       "name": "design-qa.md",
-      "sha256": "e403cd73f4cc3b60245e7dba0aae6e886a045fee63877725549caad80f167740",
-      "bytes": 23804
+      "sha256": "d34289b1fb462cfbb9f9d9c759d1107c717c67f006ae9f2034efef8249eccb6e",
+      "bytes": 29006
     },
     {
       "name": "discovery_tracking.py",
@@ -453,18 +453,23 @@
     },
     {
       "name": "live_discovery.py",
-      "sha256": "0c7fadf5032bf17787f396a94108254669b0650f7af2a9215f4615d729008072",
-      "bytes": 5233
+      "sha256": "901289075d1dc6960e307ce5e6d0ec6694e39d0f70ce3e97222b4184d57d43a2",
+      "bytes": 5443
     },
     {
       "name": "live_monitor.py",
-      "sha256": "4ee18b653e2d6376d86ccd645c94c86abc51cb7e42a52f6e1148912cc2d54462",
-      "bytes": 25267
+      "sha256": "6057d7536c7b264035c23c97f2757affa2851ec06caf73ad93f287fd57c4fd27",
+      "bytes": 26203
     },
     {
       "name": "live_protocol.cjs",
       "sha256": "379be29fa9bfc0cca74f7185bd20db9b5eea10af861469ab4950c061103f1204",
       "bytes": 5677
+    },
+    {
+      "name": "live_room_pool.py",
+      "sha256": "5c7b889f6f5d8f57031eb0ab1f64bb4a02a945791a41373afbe832a73f831d86",
+      "bytes": 9645
     },
     {
       "name": "live_rules.py",
@@ -478,8 +483,8 @@
     },
     {
       "name": "live_tracking.py",
-      "sha256": "6a9579fb735427b663ff99fcfdddb50e37ef677f22187d7e69cf34c3da11c31c",
-      "bytes": 7362
+      "sha256": "4b1bc4afaaba0855194ae160bd382f7ace908bdd9159e37289e70dbddd381fb1",
+      "bytes": 9607
     },
     {
       "name": "live_workflow.py",
@@ -688,13 +693,13 @@
     },
     {
       "name": "server.py",
-      "sha256": "e4e9d1903b87921033e3df17a9dcc31a47e25692872abadb96c7593c577cd997",
-      "bytes": 18743
+      "sha256": "a4989f0a9e8021e3f6361df0c9902469f11513fa9bcfa807dfcd82f14277cec3",
+      "bytes": 18887
     },
     {
       "name": "source-files.json",
-      "sha256": "2a07fd67a34f655a1773b4ccc03c8562dc2239169e8f10ad2c0e913975f13eeb",
-      "bytes": 6935
+      "sha256": "72eb9139edbf44401f99c9ecd0badc1b90f4af26523e0fea2262dfca0a3ebb6c",
+      "bytes": 6985
     },
     {
       "name": "start.ps1",
@@ -703,8 +708,8 @@
     },
     {
       "name": "static/app.css",
-      "sha256": "15658ca063d3483035f140a347be1b684df8d178ca13b90c825eae558d829fa1",
-      "bytes": 55420
+      "sha256": "e2cb97f910bbaa20dc572cb1840cf8428a3b7e8d7da9db1dcd4410fc31289ccd",
+      "bytes": 58549
     },
     {
       "name": "static/app.html",
@@ -713,8 +718,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "e6845183f4ece64877df91f52abd000e912a1427617bc92ebfc34da463bbfcfb",
-      "bytes": 147307
+      "sha256": "eb0cc55a7caba8c1af9b092db8b7ff6aed9a55ebaf8e42c990c1cf8e8f96035d",
+      "bytes": 153789
     },
     {
       "name": "static/clubops-iphone.js",
@@ -838,23 +843,23 @@
     },
     {
       "name": "test_frontend.cjs",
-      "sha256": "19356b54b22d6e0598d6d39333f61a6ea693495841696e9c0ec48c458d687f61",
-      "bytes": 40378
+      "sha256": "83abdb918b124a78b614226be074c5d83f84909382d0f4319714797b28e2eb66",
+      "bytes": 41206
     },
     {
       "name": "test_frontend_live_history.cjs",
-      "sha256": "c52730d40752246eaa2cf6c025c67398a9f93d733af7e335ddf02c8c8c29e3d2",
-      "bytes": 4761
+      "sha256": "dfecd34b59308d932058defbb9bb1a59eb98eec3873e6b76f20b5ac6a840f2da",
+      "bytes": 5467
     },
     {
       "name": "test_frontend_monitor_history.cjs",
-      "sha256": "83a5efe83f92f8617639de80b440ede93c730771286a96728631e1d3b0202e57",
-      "bytes": 7891
+      "sha256": "a8d3731a5ecabb25c222823fdbab446179b59678b0b0c5328d0b504a6dae353f",
+      "bytes": 10949
     },
     {
       "name": "test_frontend_poll.cjs",
-      "sha256": "a64abf9f5c8bc5a66c696fcfcb60d59837b63e26d4aed7e61c9156d64fe6ff27",
-      "bytes": 7740
+      "sha256": "78212cddce8d017b94ded93f1db4bb1a86087d4b327e7c870cfb56dbd7d98acb",
+      "bytes": 8167
     },
     {
       "name": "test_github_backup.py",
@@ -895,6 +900,11 @@
       "name": "test_live_protocol.cjs",
       "sha256": "33b5c9f54c22e8ff8f190427c305f495dcf20c5a66d37c6d8821e92a374760c0",
       "bytes": 4459
+    },
+    {
+      "name": "test_live_room_pool.py",
+      "sha256": "9b93a28f9dd5a1847e130507ac61c1f605a9574640208da652fb8b82f4e8d179",
+      "bytes": 8693
     },
     {
       "name": "test_live_rules.py",

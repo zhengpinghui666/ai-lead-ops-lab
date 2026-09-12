@@ -41,13 +41,16 @@ run("syncFreshnessHint=()=>{};refreshMonitorHistory=async()=>{};render=()=>{};co
   await run('pollCollection()');assert.equal(run('loads'),1,'Live config editing prevents whole-page refresh');
   assert.match(el('#live-results').outerHTML,/live synthetic observation/);assert.match(el('#live-status').outerHTML,/running/);assert.equal([...timers.values()].at(-1).ms,2500);
   run('liveDraftDirty=false');next={...next,live_monitor:{...next.live_monitor,rows:[...next.live_monitor.rows,{text:'second'}]}};await run('pollCollection()');assert.equal(run('loads'),1,'Active live data only redraws results and status');assert.match(el('#live-results').outerHTML,/second/);
-  run("liveScope='all';liveArchive={rows:[]};liveArchiveModelKey='null';let archiveUpdates=0;refreshLiveArchive=async(force,background)=>{if(force&&background){archiveUpdates++;liveArchiveModelKey=JSON.stringify(S.collector.model_queue||null);}};");
+  run("liveScope='all';liveArchive={rows:[]};liveArchiveModelKey='null';let archiveUpdates=0;refreshLiveArchive=async(force,background)=>{if(force&&background){archiveUpdates++;liveArchiveModelKey=JSON.stringify(S.collector.model_queue||null);liveArchiveMessageId=S.collector.live_monitor?.latest_message_id||0;}};");
   next={...next,model_queue:{completed:13}};await run('pollCollection()');
   assert.equal(run('archiveUpdates'),1,'Model completion refreshes older archived sessions');
   await run('pollCollection()');assert.equal(run('archiveUpdates'),1,'Unchanged model state avoids redundant archive requests');
   run('liveDraftDirty=true');next={...next,model_queue:{completed:14}};await run('pollCollection()');
   assert.equal(run('archiveUpdates'),1,'Editing postpones archive refresh');
   run('liveDraftDirty=false');await run('pollCollection()');assert.equal(run('archiveUpdates'),2,'Refresh resumes after editing even when collector state is unchanged');
+  next={...next,live_monitor:{...next.live_monitor,latest_message_id:143}};await run('pollCollection()');
+  assert.equal(run('archiveUpdates'),3,'New rules-only live messages refresh the archive without any model queue change');
+  await run('pollCollection()');assert.equal(run('archiveUpdates'),3,'Unchanged live message ID avoids another archive request');
   run("liveScope='current'");
   run('liveDraftDirty=true');next={...next,live_monitor:{...next.live_monitor,active_id:null,current:{status:'cancelled'}}};await run('pollCollection()');assert.equal(run('loads'),1,'Draft survives a terminal event after blur');assert.match(el('#live-status').outerHTML,/cancelled/);
   run("location.hash='#monitor';stashDraft=()=>{};");windowEvents.get('hashchange')();assert.equal(run('liveDraftDirty'),false,'Leaving the page clears the discarded draft flag');
