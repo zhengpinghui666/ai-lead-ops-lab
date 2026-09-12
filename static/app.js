@@ -218,6 +218,40 @@ function uidSettingsDialog(){showSettingsModal('私信通道设置',uidHttpPanel
 function uidTargetDialog(){
   showModal('登记授权测试对象',field('uid','接收方数字 UID','','text','inputmode="numeric" pattern="[1-9][0-9]{0,18}" maxlength="19" required')+field('nickname','备注昵称')+area('contact_note','同意接收测试消息的依据','','required maxlength="1000"')+notice('该记录仅用于已同意的测试对象，不生成评论或付费需求。发送前还需核对登录账号、会话身份与本地测试范围。'),'uid-target-form',submit('登记对象'));
 }
+let uidInboxState=null,uidInboxSequence=0,uidInboxBusy=false;
+async function uidInboxDialog(id,before=0){
+  stashDraft();const sequence=++uidInboxSequence;
+  showSettingsModal('收件记录','<div id="uid-inbox-content" aria-live="polite">正在加载已保存的记录…</div>');
+  try{
+    const response=await fetch(`/api/uid-inbox?mode=${mode}&lead_id=${id}&before=${before}`),value=await response.json();
+    if(sequence!==uidInboxSequence||!$('#modal').open||!$('#uid-inbox-content'))return;
+    if(!response.ok)throw Error(value.error||'收件记录读取失败');
+    uidInboxState=value;renderUidInbox();
+  }catch(error){if(sequence===uidInboxSequence&&$('#uid-inbox-content'))$('#uid-inbox-content').innerHTML=notice(esc(error.message),true);}
+}
+function renderUidInbox(){
+  const s=uidInboxState,lead=S.leads.find(l=>l.id===s.lead_id),last=s.last_read;
+  const statuses={checked:'会话核对完成',partial:'本次会话范围未读完',messages_observed:'消息读取完成',session_unavailable:'需要准备私信会话',read_failed:'读取未完成',reading:'正在读取',interrupted:'上次读取中断'};
+  $('#uid-inbox-content').innerHTML=`<div class="row spread"><div><h3>${esc(lead?.nickname||s.peer_uid)}</h3><small>本机账号 UID ${esc(s.account_uid)}</small></div>${button('核对已有会话','uid-inbox-scan','small',(!s.can_read||uidInboxBusy)?'disabled':'')}</div>
+    <p class="muted">${esc(uidInboxBusy?'正在读取平台数据，完成后保存在本机。':s.session_detail)}</p>
+    ${last?`<p class="muted">${esc(statuses[last.status]||'读取状态待核对')} · ${date(last.finished_at||last.started_at)}${last.detail.new_messages!==undefined?` · 新增 ${last.detail.new_messages} 条文字`:''}</p>`:''}
+    ${s.conversations.length?s.conversations.map(c=>`<div class="uid-inbox-conversation"><span>${c.inbox===1?'陌生人收件箱':'普通收件箱'} · 已核对会话</span><div class="actions">${button('读取最近消息','uid-inbox-read','small',`data-id="${c.id}" ${!s.can_read||uidInboxBusy?'disabled':''}`)}${c.inbox===0&&c.has_more?button('读取更早消息','uid-inbox-older','small',`data-id="${c.id}" ${!s.can_read||uidInboxBusy?'disabled':''}`):''}</div></div>`).join(''):'<p class="muted">尚未保存匹配会话；不能据此判断是否联系过。</p>'}
+    <div class="uid-inbox-history">${s.messages.length?s.messages.map(m=>`<div class="bubble-wrap ${m.direction==='outbound'?'out':''}"><div class="bubble">${esc(m.content)}</div><small>${m.direction==='inbound'?'对方消息':'本账号消息'} · 首次读取 ${date(m.first_seen_at)}</small><details><summary>来源</summary><small>平台消息编号 ${esc(m.server_message_id)}<br>会话 ${esc(m.conversation_id)}<br>平台原始时间 ${esc(m.created_at_raw)}（单位未核对）</small></details></div>`).join(''):'<div class="empty"><h3>暂无已保存的文字消息</h3><p>核对已有会话后，可按需读取该会话。</p></div>'}</div>
+    <div class="row spread"><small>历史记录单独保存；不自动认定送达、回复或联系授权。</small><div class="actions">${button('最新已存记录','uid-inbox-local','small',`data-id="${s.lead_id}"`)}${s.has_more?button('更早已存记录','uid-inbox-local','small',`data-id="${s.lead_id}" data-before="${s.next_before}"`):''}</div></div>`;
+  icons();
+}
+async function uidInboxRead(operation,conversationId=null,older=false){
+  if(uidInboxBusy||!uidInboxState)return;
+  const s=uidInboxState;uidInboxBusy=true;renderUidInbox();
+  try{
+    const body={lead_id:s.lead_id,account_uid:s.account_uid,operation};if(operation==='messages')Object.assign(body,{conversation_id:conversationId,older});
+    const result=await api('uid-inbox-read',body);
+    toast(result.status==='messages_observed'?`已保存，本次新增 ${result.new_messages} 条文字`:['checked','partial'].includes(result.status)?'会话核对已保存':'本次读取未完成，请查看收件状态',!['checked','partial','messages_observed'].includes(result.status));
+  }finally{
+    uidInboxBusy=false;
+    if($('#modal').open&&$('#uid-inbox-content')&&uidInboxState?.lead_id===s.lead_id)await uidInboxDialog(s.lead_id);
+  }
+}
 function inbox(){
   const list=S.leads.filter(l=>l.category==='buyer'||l.source_kind==='uid_test'||l.id===conversation||S.jobs.some(j=>j.lead_id===l.id)||S.messages.some(m=>m.lead_id===l.id));
   const l=list.find(x=>x.id===conversation)||list[0];
@@ -227,7 +261,7 @@ function inbox(){
   const msgs=S.messages.filter(m=>m.lead_id===l.id),jobs=S.jobs.filter(j=>j.lead_id===l.id);
   const channel=mode==='demo'?'模拟通道':S.uid_messaging?.can_attempt?'HTTP 配置就绪 · 未验收':'HTTP 待配置';
   return top+`<div class="inbox"><div class="inbox-list"><h3>线索与会话 <span class="muted">${list.length}</span></h3>${list.map(x=>`<button class="conversation ${x.id===l.id?'active':''}" data-action="chat-select" data-id="${x.id}">${avatar(x.nickname,true)}<span class="conversation-content"><b>${esc(x.nickname)}</b><p>${esc(x.source_kind==='uid_test'?'授权测试对象':x.game||'游戏未识别')} · ${stages[x.stage]}</p></span></button>`).join('')}</div>
-    <section class="chat"><div class="chat-header"><div><h2>${esc(l.nickname)}</h2><small>${esc(l.external_id)}</small></div>${badge(channel,'warn')}</div>
+    <section class="chat"><div class="chat-header"><div><h2>${esc(l.nickname)}</h2><small>${esc(l.external_id)}</small></div><div class="row">${mode==='live'?button('收件记录','uid-inbox','small',`data-id="${l.id}"`):''}${badge(channel,'warn')}</div></div>
     <div class="chat-history">${msgs.length?msgs.map(m=>`<div class="bubble-wrap ${m.direction==='outbound'?'out':''}"><div class="bubble">${esc(m.content)}</div><small>${esc(m.status==='demo'?'演示消息':jobLabels[m.status]||m.status)} · ${date(m.created_at)}</small></div>`).join(''):empty('还没有私信记录','保存草稿不代表发送；服务端接受也不代表接收端送达。','','','message-square')}</div>
     <form id="composer" class="composer"><div class="row spread">${button(icon('wand-sparkles')+' 填入回复模板','suggest','subtle small','type="button"')}<span>模板辅助 · 非 AI 自动回复</span></div><textarea id="draft-content" name="content" placeholder="填写内容并保存为草稿…" maxlength="2000" required aria-label="私信草稿">${esc(draftText)}</textarea><div class="row spread"><span>保存不会自动发送</span><button class="button primary" type="submit">${icon('save')} 保存草稿</button></div></form></section>
     <aside class="inbox-detail"><div><h3>联系与跟进</h3>${badge(l.do_not_contact?'禁止联系':l.contact_basis?'已登记联系依据':'未登记联系依据',l.do_not_contact?'bad':l.contact_basis?'good':'warn')}<p class="muted">${esc(l.contact_note||'尚未记录联系依据')}</p>${button('编辑联系依据','contact','small',`data-id="${l.id}"`)}<hr class="divider">${button('更新跟进结果','follow','small',`data-id="${l.id}"`)}<hr class="divider"><h3>原始需求</h3><p>${esc(l.latest.raw_text||'无来源原文；不得据此认定付费需求')}</p>${sourceLink(l.latest)}</div>
@@ -270,6 +304,9 @@ case 'close-menu': setMobileNavigation(false);break;
 case 'close': closeModal();break;
 case 'refresh': await load();toast('数据已刷新');break;
 case 'uid-http-check': await save('uid-http-check',{},'本地配置已检查，没有发送消息');break;
+case 'uid-inbox':case 'uid-inbox-local': await uidInboxDialog(id,Number(el.dataset.before||0));break;
+case 'uid-inbox-scan': await uidInboxRead('scan');break;
+case 'uid-inbox-read':case 'uid-inbox-older': await uidInboxRead('messages',id,el.dataset.action==='uid-inbox-older');break;
 case 'uid-http-probe': {el.disabled=true;try{const r=await api('uid-http-probe',{});showModal('HTTP 登录身份核对',`<p>${esc(r.detail)}</p><p class="muted">核对时间：${date(r.checked_at)}</p><p>该结果仅用于核对当时的登录身份。发送时仍会重新核对账号、接收方和联系依据。</p>`);}finally{el.disabled=false;}break;}
 case 'uid-http-target-new': uidTargetDialog();break;
 case 'uid-http-send': {const r=await save('uid-http-send',{id},'');toast(r.detail||'任务已处理',r.status!=='accepted');break;}

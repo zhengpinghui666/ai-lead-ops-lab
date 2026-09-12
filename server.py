@@ -88,6 +88,10 @@ class Handler(BaseHTTPRequestHandler):
             path = urlparse(self.path).path
             if path == '/api/service':
                 return self.respond(self.server.service_state())
+            if path == '/api/uid-inbox':
+                import uid_inbox_store
+                query=parse_qs(urlparse(self.path).query)
+                return self.respond(uid_inbox_store.history(int(query.get('lead_id',['0'])[0]),self.mode(),int(query.get('before',['0'])[0])))
             if path == '/api/asset-references':
                 import asset_references
                 return self.respond(asset_references.state(self.mode()))
@@ -227,6 +231,9 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('CO-DM-01 已完成网页测试，旧入口不再发送；新测试请另建草稿')
             elif action == 'uid-http-check':
                 result = uid_messaging.state(mode)
+            elif action == 'uid-inbox-read':
+                import uid_inbox_store
+                result = uid_inbox_store.read(body,mode)
             elif action == 'uid-http-probe':
                 if body:
                     raise ValueError('身份核对不接收 UID、凭证或消息参数；只使用本地配置')
@@ -336,6 +343,8 @@ def main():
         with runtime.data_lock(clubops.DATA_DIR):
             clubops.init()
             uid_messaging.recover()
+            import uid_inbox_store
+            uid_inbox_store.recover()
             analysis_store.recover()
             semantic_queue.recover()
             live_monitor.recover()

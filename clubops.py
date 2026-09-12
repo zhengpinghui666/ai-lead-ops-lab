@@ -111,12 +111,13 @@ def init(mode='live'):
         with db(mode) as source:
             known_tables = {r[0] for r in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             verticality_missing = not {'asset_verticality','asset_references','asset_keywords'} <= known_tables
+            inbox_missing = not {'uid_inbox_conversations','uid_inbox_messages','uid_inbox_reads'} <= known_tables
             live_columns = {r[1] for r in source.execute('PRAGMA table_info(live_messages)')}
             collection_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_tasks)')}
             plan_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_plans)')}
             observation_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_observations)')}
             activity_index_missing = not source.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_observation_published_activity'").fetchone()
-            if not {'uid_message_attempts', 'live_sessions', 'live_links', 'live_judgments', 'live_reviews', 'intent_results', 'semantic_jobs', 'video_metadata', 'live_tracks', 'live_rooms', 'live_pool_checks', 'collection_candidates', 'collection_candidate_reads', 'discovery_authors', 'discovery_works', 'discovery_jobs', 'discovery_queries'} <= known_tables or not {'outer_message_id', 'game'} <= live_columns or 'transport' not in collection_columns or 'intent_version' not in plan_columns or 'ingest_disposition' not in observation_columns or activity_index_missing or verticality_missing:
+            if not {'uid_message_attempts', 'live_sessions', 'live_links', 'live_judgments', 'live_reviews', 'intent_results', 'semantic_jobs', 'video_metadata', 'live_tracks', 'live_rooms', 'live_pool_checks', 'collection_candidates', 'collection_candidate_reads', 'discovery_authors', 'discovery_works', 'discovery_jobs', 'discovery_queries'} <= known_tables or not {'outer_message_id', 'game'} <= live_columns or 'transport' not in collection_columns or 'intent_version' not in plan_columns or 'ingest_disposition' not in observation_columns or activity_index_missing or verticality_missing or inbox_missing:
                 backup_dir = DATA_DIR / 'backups'
                 backup_dir.mkdir(parents=True, exist_ok=True)
                 label = ('before-uid-http-' if 'uid_message_attempts' not in known_tables else
@@ -124,6 +125,7 @@ def init(mode='live'):
                          'before-live-workflow-' if 'live_links' not in known_tables else 'before-http-collection-' if 'transport' not in collection_columns else 'before-intent-results-' if 'intent_results' not in known_tables else 'before-semantic-queue-' if 'semantic_jobs' not in known_tables else 'before-monitor-recovery-' if 'intent_version' not in plan_columns else 'before-collection-timing-' if 'ingest_disposition' not in observation_columns else 'before-video-metadata-' if 'video_metadata' not in known_tables else 'before-live-tracking-' if 'live_tracks' not in known_tables else 'before-live-room-pool-' if not {'live_rooms', 'live_pool_checks'} <= known_tables else 'before-candidate-pool-')
                 if label=='before-candidate-pool-' and activity_index_missing:label='before-work-activity-'
                 if label=='before-candidate-pool-' and verticality_missing:label='before-asset-verticality-'
+                if label=='before-candidate-pool-' and inbox_missing:label='before-uid-inbox-'
                 backup = sqlite3.connect(backup_dir / (filename + '.' + label + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f') + '.bak'))
                 try:
                     source.backup(backup)
@@ -138,6 +140,8 @@ def init(mode='live'):
         c.executescript(discovery_tracking.SCHEMA)
         import uid_messaging
         c.executescript(uid_messaging.SCHEMA)
+        import uid_inbox_store
+        c.executescript(uid_inbox_store.SCHEMA)
         import live_monitor
         c.executescript(live_monitor.SCHEMA)
         import live_tracking

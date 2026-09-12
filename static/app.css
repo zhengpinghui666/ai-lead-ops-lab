@@ -190,6 +190,9 @@ dialog.collection-modal .modal-actions{flex-wrap:wrap}
 .settings-modal{width:min(820px,calc(100vw - 32px));padding:0}
 .settings-modal .modal-head{position:sticky;top:0;z-index:2;background:var(--white,#fff);border-bottom:1px solid var(--line)}
 .settings-modal>.modal-body,.settings-modal #modal-content>.modal-body{padding:16px 20px;max-height:calc(86dvh - 85px);overflow:auto}
+.uid-inbox-conversation{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-block:1px solid var(--line);padding:12px 0;font-size:12px}
+.uid-inbox-history{padding:16px 0;overflow-wrap:anywhere}.uid-inbox-history .bubble{white-space:pre-wrap}.uid-inbox-history small,.uid-inbox-history summary{font-size:11px;color:var(--muted)}.uid-inbox-history details{max-width:100%;margin-top:4px}.uid-inbox-history .bubble-wrap{align-items:flex-start}.uid-inbox-history .bubble-wrap.out{align-items:flex-end}
+.uid-inbox-history .empty{min-height:100px;padding:24px 16px}
 .settings-modal .card{box-shadow:none;border:0;margin:0}
 .settings-modal .monitor-settings{max-height:none;position:static;width:100%;overflow:visible}
 .settings-modal .monitor-fields{padding:16px 0}

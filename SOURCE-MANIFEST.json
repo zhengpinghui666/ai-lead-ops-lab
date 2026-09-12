@@ -48,8 +48,8 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "94bfa7f44d6852a7941866720cf27e33fdbd2f7acc14f3b1c279b666e3e06041",
-      "bytes": 105133
+      "sha256": "3d874ea12463e72f24cfd6f8c458fb64d124e72d72abe546972be8af1e102ec2",
+      "bytes": 109173
     },
     {
       "name": "DISCOVERY_TRACKING.md",
@@ -68,8 +68,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "a7e39ce609b7c1e193755f604ee911e0bd79a6f58515e4943ffb8a96eff91e51",
-      "bytes": 146549
+      "sha256": "94adb4cf4baac900fd330ba3de6a16850830a30105d4b7ae8926aace04fff725",
+      "bytes": 150589
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -153,13 +153,13 @@
     },
     {
       "name": "UID_INBOX.md",
-      "sha256": "5dffd14769f35768349b1315007dca59bb733e63ab7e1ba2c282cb51d2e3888f",
-      "bytes": 5721
+      "sha256": "fc30c4894653c4f55e0aafe3a2d5e6e579d42066c169e3a24684f0069a67d865",
+      "bytes": 8343
     },
     {
       "name": "UID_SESSION.md",
-      "sha256": "dc58e6e0e20c202377f852d53e68e08a5112288eae8678a3419a85534db378df",
-      "bytes": 10419
+      "sha256": "689bbde54b033bb23e65211dfc052b233fe5911a270c883e8696c09c9a412fd7",
+      "bytes": 12853
     },
     {
       "name": "VALIDATION.md",
@@ -253,8 +253,8 @@
     },
     {
       "name": "clubops.py",
-      "sha256": "d5731d6bd211de7710d94bbd6209442c2905c49956f439232a200ec6de85fe69",
-      "bytes": 52449
+      "sha256": "68fa542c013c246a3a0ee1987e7a5ed7ba75e791c9fb5b4746988b26588c9be9",
+      "bytes": 52753
     },
     {
       "name": "collection_scheduler.py",
@@ -713,13 +713,13 @@
     },
     {
       "name": "server.py",
-      "sha256": "07ae00b16af958d38c82e86593cb27eb99e9e56afb9c569fae68d5de9b6c316a",
-      "bytes": 19910
+      "sha256": "cf71caf58947855e1616296230232874922c620c35418e32f02754cb8187ad04",
+      "bytes": 20405
     },
     {
       "name": "source-files.json",
-      "sha256": "5f317128de31215f29f7dee59282accef5c69952dd4e9a57e445a844936586f2",
-      "bytes": 7184
+      "sha256": "917124ce3b419243f8de5fda6ebf228b2c1ccc776d19e95c49b0322385d28302",
+      "bytes": 7239
     },
     {
       "name": "start.ps1",
@@ -728,8 +728,8 @@
     },
     {
       "name": "static/app.css",
-      "sha256": "2c979b906318e6dcbf3ef73d2fd22782c3a345a83e7dbf1996e8a66cc107c8fb",
-      "bytes": 59407
+      "sha256": "1b1474ff004bf6cc2163ddf088536f36a10a0fd5acc619761c2c99c84d7a35c2",
+      "bytes": 60005
     },
     {
       "name": "static/app.html",
@@ -738,8 +738,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "81deb1d5e38e672a29229af6485df88e4f10472f89ae7758e8274cd80bd35afe",
-      "bytes": 165100
+      "sha256": "52ad6e05afb73817bfcab7ab79995f95a31a7ef561cb69671d6280d698ed6096",
+      "bytes": 169679
     },
     {
       "name": "static/clubops-iphone.js",
@@ -1107,6 +1107,11 @@
       "bytes": 10584
     },
     {
+      "name": "test_uid_inbox_store.py",
+      "sha256": "ae89c504b902fd26c5f0bccaf30943bfaf9d27a6d2c8d99697b28f2845c5b9ad",
+      "bytes": 9579
+    },
+    {
       "name": "test_uid_messaging.py",
       "sha256": "68b119694ca297082d57a7271ba58ffc4035ed379e393d6f40cdb038cf68d951",
       "bytes": 32931
@@ -1180,6 +1185,11 @@
       "name": "uid_inbox.py",
       "sha256": "b1afffe6dd9d673dd17a3bad3bbe9f9aba879dfe29d671fa08b6ea36e693707a",
       "bytes": 12928
+    },
+    {
+      "name": "uid_inbox_store.py",
+      "sha256": "45bdbbcc2896a9b91b8cf1b7d18ddc9c8911973c3192f3f0f7b5eaebcfaee6be",
+      "bytes": 10983
     },
     {
       "name": "uid_messaging.py",
