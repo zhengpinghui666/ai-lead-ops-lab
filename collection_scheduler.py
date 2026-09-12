@@ -127,12 +127,51 @@ def transient_identity_wait(connection, task):
         return None
 
 
+def transient_data_wait(connection, task):
+    """A data request timed out after verified identity; reuse bounded backoff."""
+    if not task or task['transport'] != 'http' or task['status'] != 'network_error' or not task['finished_at']:
+        return None
+    identity, failed = False, 0
+    try:
+        for row in connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=? ORDER BY id', (task['id'],)):
+            snapshot = json.loads(row['snapshot'])
+            if row['stage'] == 'comment_paging':
+                continue
+            if row['stage'] == 'author_discovery':
+                for summary in snapshot.get('responses', []):
+                    if any(item.get('status') != 'network_error' for item in summary.get('failures', [])):
+                        return None
+                continue
+            if row['stage'] != 'http_read':
+                return None
+            responses = snapshot.get('responses')
+            if not isinstance(responses, list) or not responses:
+                return None
+            for item in responses:
+                if item.get('transport') != 'http' or item.get('verification_indicated') or item.get('response_shape', {}).get('verification_indicated'):
+                    return None
+                if item.get('operation') == 'identity':
+                    if identity or item.get('status') != 'identity_verified' or item.get('http_status') != 200 or item.get('verification_indicated') is not False:
+                        return None
+                    identity = True
+                elif not identity or item.get('operation') not in ('detail', 'author', 'comments', 'replies'):
+                    return None
+                elif item.get('status') == 'network_error' and item.get('http_status') is None:
+                    failed += 1
+                elif item.get('status') != 'valid_page' or item.get('http_status') != 200 or item.get('skipped_reasons', {}).get('invalid_record', 0):
+                    return None
+        return 0 if identity and failed == 1 else None
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
 def transient_batch_wait(connection, task):
     """Keep ordinary incomplete page reads distinct from parser/auth failures."""
     if task and task['status'] == 'schema_changed':
         return transient_reply_wait(connection, task)
     if task and task['transport'] == 'http' and task['status'] == 'network_error':
-        return transient_identity_wait(connection, task)
+        identity_wait = transient_identity_wait(connection, task)
+        return identity_wait if identity_wait is not None else transient_data_wait(connection, task)
     if not task or task['status'] != 'partial':
         return transient_http_wait(connection, task)
     if task['transport'] != 'local_browser' or not task['finished_at']:
@@ -304,6 +343,13 @@ def command(plan_id, action, mode='live', *, allow_monitor=False):
             latest = c.execute('SELECT * FROM collection_tasks WHERE transport=? ORDER BY id DESC LIMIT 1', (row['transport'],)).fetchone()
             observed = sum(latest[k] for k in ('comments', 'filtered_old', 'filtered_unknown', 'filtered_future', 'filtered_keyword', 'filtered_blocked')) if latest else 0
             healthy = bool(latest and latest['status'] == 'completed' and observed > 0)
+            import discovery_tracking
+            if row['continuous'] and discovery_tracking.config(c)['enabled'] and discovery_tracking.empty_search_wait(c,latest):
+                # An empty discovery shell cannot invalidate independently
+                # verified HTTP work reads. The next read still verifies identity.
+                http_latest=c.execute("SELECT * FROM collection_tasks WHERE transport='http' ORDER BY id DESC LIMIT 1").fetchone()
+                healthy=bool(http_latest and http_latest['status']=='completed' and sum(http_latest[k] for k in ('comments','filtered_old','filtered_unknown','filtered_future','filtered_keyword','filtered_blocked'))>0)
+                if healthy:discovery_tracking.defer_empty_search(c,latest)
             if row['continuous'] and latest and latest['id'] == row['last_task_id'] and latest['status'] in ('completed', 'cancelled'):
                 # A deliberate stop or an empty successful monitor batch does not
                 # erase its previously proven baseline. Failed/gated tasks do.
@@ -403,6 +449,9 @@ def tick(instant=None):
                 new_status, detail, due = p['status'], '上批已结束', None
                 if p['status'] == 'paused':
                     detail = p['detail']
+                elif p['continuous'] and p['status']=='running' and discovery_tracking.empty_search_wait(c,task):
+                    due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=p['interval_seconds'])).astimezone(timezone.utc).isoformat(timespec='seconds')
+                    detail='搜索页面暂未加载作品，保留失败记录并延后搜索；已有作品评论继续轮询'
                 elif p['continuous'] and p['status']=='running' and verification_retry_seconds(c,task):
                     due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=300)).astimezone(timezone.utc).isoformat(timespec='seconds')
                     detail='验证码未通过，样本已记录；暂停 5 分钟后在后台重新加载原监控目标。可随时关闭监控。'

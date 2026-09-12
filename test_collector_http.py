@@ -393,7 +393,14 @@ class HTTPReadTests(unittest.TestCase):
         for payload in rejected:
             with self.subTest(payload=payload), self.assertRaises(http.ReadError):
                 http.parse_page(payload,'replies',VIDEO,PARENT)
-        with self.assertRaises(http.ReadError):http.parse_page(empty,'comments',VIDEO)
+        main=http.parse_page(empty,'comments',VIDEO)
+        self.assertEqual(main['comment_visibility'],{'state':'terminal_without_visible_comments','declared_total':1,'returned_rows':0})
+        for payload in rejected:
+            with self.subTest(operation='comments',payload=payload),self.assertRaises(http.ReadError):
+                http.parse_page(payload,'comments',VIDEO)
+        with self.assertRaises(http.ReadError) as caught:
+            http.parse_page({**empty,'verify_type':'captcha'},'comments',VIDEO)
+        self.assertEqual(caught.exception.status,'needs_verification')
         calls=[]
         class Client:
             def page(self,operation,**kw):

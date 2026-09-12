@@ -17,6 +17,51 @@ VIDEO = '7600000000000000001'
 
 
 class MonitorTests(unittest.TestCase):
+    def data_network_failure(self, task):
+        self.finish(task, 'network_error')
+        evidence = [
+            {'operation': 'identity', 'transport': 'http', 'status': 'identity_verified', 'http_status': 200, 'verification_indicated': False},
+            {'operation': 'detail', 'transport': 'http', 'status': 'valid_page', 'http_status': 200},
+            {'operation': 'author', 'transport': 'http', 'status': 'network_error', 'request_elapsed_ms': 15000},
+        ]
+        with app.db() as c:
+            for item in evidence:
+                c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                          (task, 'http_read', json.dumps({'responses': [item]}), NOW))
+        return evidence
+
+    def test_data_timeout_uses_bounded_backoff_and_keeps_failure(self):
+        self.http_baseline()
+        task = sch.tick(NOW)
+        for delay in (60, 120, 240):
+            self.data_network_failure(task)
+            finished = app.now()
+            sch.tick()
+            state = mon.state()
+            self.assertTrue(state['enabled'])
+            self.assertEqual(state['next_run_at'], (datetime.fromisoformat(finished) + timedelta(seconds=delay)).isoformat())
+            with app.db() as c:
+                self.assertEqual(c.execute('SELECT status FROM collection_tasks WHERE id=?', (task,)).fetchone()[0], 'network_error')
+            task = self.at(state['next_run_at'])
+        self.data_network_failure(task)
+        sch.tick()
+        self.assertEqual(mon.state()['status'], 'attention')
+
+    def test_data_timeout_never_masks_identity_or_platform_rejection(self):
+        self.http_baseline()
+        task = sch.tick(NOW)
+        evidence = self.data_network_failure(task)
+        with app.db() as c:
+            row = c.execute('SELECT * FROM collection_tasks WHERE id=?', (task,)).fetchone()
+            self.assertEqual(sch.transient_data_wait(c, row), 0)
+            for items in (evidence[1:], [evidence[0], {**evidence[-1], 'http_status': 429}],
+                          [evidence[0], {**evidence[-1], 'status': 'access_denied'}],
+                          [evidence[0], {**evidence[-1], 'verification_indicated': True}]):
+                c.execute('DELETE FROM collection_diagnostics WHERE task_id=?', (task,))
+                c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                          (task, 'http_read', json.dumps({'responses': items}), NOW))
+                self.assertIsNone(sch.transient_data_wait(c, row))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='monitor-test-')
         self.old = app.DATA_DIR

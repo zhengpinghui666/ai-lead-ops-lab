@@ -312,6 +312,69 @@ class DiscoveryTrackingTests(unittest.TestCase):
         enabled,next_job=self.choose(self.plan(run_count=0,last_task_id=task),discovery.future(NOW,300))
         self.assertTrue(enabled);self.assertEqual(next_job,job,'Retry cannot rotate to another keyword or author')
 
+    def empty_search(self, **snapshot_changes):
+        from urllib.parse import quote
+        self.save();self.record([work()])
+        _,job=self.choose(self.plan(run_count=3))
+        task=col.start(dict(kind=job['kind'],target=job['target'],transport=job['transport'],request_id='empty-search'),discovery_job=job)['id']
+        col.update(task,status='no_data',finished_at=NOW);col.ACTIVE.clear()
+        snapshot=dict(page_url='https://www.douyin.com/search/'+quote(job['target']),navigation_http_status=200,
+            navigation_error='',responses=[],video_links=0,visible_text='搜索 综合 视频 用户')
+        snapshot.update(snapshot_changes)
+        with app.db() as c:
+            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                (task,'search-empty',json.dumps(snapshot),NOW))
+        return task,job
+
+    def test_empty_search_defers_only_discovery_and_preserves_failure(self):
+        task,job=self.empty_search()
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            self.assertEqual(discovery.empty_search_wait(c,row),300)
+            discovery.settle(c,row)
+            query=c.execute('SELECT * FROM discovery_queries WHERE keyword=?',(job['target'],)).fetchone()
+            self.assertIsNone(query['last_checked_at'])
+            self.assertEqual(query['next_check_at'],discovery.future(NOW,300))
+            self.assertEqual(c.execute('SELECT status FROM collection_tasks WHERE id=?',(task,)).fetchone()[0],'no_data')
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM collection_observations WHERE task_id=?',(task,)).fetchone()[0],0)
+        _,next_job=self.choose(self.plan(run_count=3,last_task_id=task),discovery.future(NOW,30))
+        self.assertEqual(next_job['channel'],'work')
+
+    def test_empty_search_does_not_mask_verification_or_unrecognized_response(self):
+        task,job=self.empty_search()
+        with app.db() as c:
+            original=c.execute('SELECT snapshot FROM collection_diagnostics WHERE task_id=?',(task,)).fetchone()[0]
+            for changed in ({'visible_text':'请完成安全验证'},{'navigation_http_status':403},{'responses':[{'status':200}]},
+                            {'page_url':'https://www.douyin.com/login/'},{'video_links':2}):
+                with self.subTest(changed=changed):
+                    c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE task_id=?',(json.dumps({**json.loads(original),**changed}),task))
+                    row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+                    self.assertEqual(discovery.empty_search_wait(c,row),0)
+                    self.assertEqual(discovery.choose(c,self.plan(last_task_id=task),NOW)[1],job)
+            c.execute('DELETE FROM collection_diagnostics WHERE task_id=?',(task,))
+            self.assertEqual(discovery.empty_search_wait(c,row),0)
+
+    def test_empty_search_monitor_settlement_keeps_comment_plan_running(self):
+        monitor=monitoring.save(dict(transport='http'))
+        monitoring.command('start')
+        task,_=self.empty_search()
+        with app.db() as c:
+            c.execute('UPDATE collection_plans SET last_task_id=?,run_count=1 WHERE id=?',(task,monitor['id']))
+        scheduler.tick(NOW)
+        state=monitoring.state()
+        self.assertTrue(state['enabled'])
+        self.assertEqual(state['settled_task_id'],task)
+        self.assertIn('已有作品评论继续轮询',state['detail'])
+
+    def test_empty_search_start_requires_independent_healthy_http_read(self):
+        monitor=monitoring.save(dict(transport='local_browser'))
+        task,_=self.empty_search()
+        with app.db() as c:c.execute("UPDATE collection_plans SET status='attention',last_task_id=? WHERE id=?",(task,monitor['id']))
+        self.assertTrue(monitoring.command('start')['enabled'])
+        monitoring.command('stop')
+        col.update(self.base,status='identity_failed')
+        with self.assertRaises(ValueError):monitoring.command('start')
+
     def test_board_query_count_does_not_grow_with_library(self):
         self.save()
         with app.db() as c:
@@ -398,6 +461,56 @@ class DiscoveryTrackingTests(unittest.TestCase):
         ids=job['target'].splitlines()
         self.assertEqual(len(set(ids)),5)
         self.assertIn(VID,ids)
+
+    def cadence_fixture(self):
+        self.save();self.record([work(i) for i in range(10)])
+        for i in range(2):self.activity(work(i)['video_id'],discovery.future(NOW,-60))
+        ordinary=work(100);ordinary['video_title']='无畏契约合成普通集锦';self.record([ordinary])
+        return {work(i)['video_id'] for i in range(2)}
+
+    def test_due_vertical_activity_precedes_discovery_without_double_exploration(self):
+        active=self.cadence_fixture()
+        _,job=self.choose(self.plan(run_count=1))
+        self.assertEqual(job['channel'],'work')
+        self.assertTrue(active<=set(job['target'].splitlines()))
+        self.assertEqual(len(job['target'].splitlines()),3)
+        self.assertEqual(job['dispatch_selection']['reason'],'due_vertical_activity')
+        self.assertEqual(sum(not s['vertical'] for s in job['work_selection']['slots']),1)
+
+    def test_active_cadence_reserves_author_search_and_vertical_exploration(self):
+        active=self.cadence_fixture();channels=[];active_counts=[]
+        for turn in range(8):
+            instant=discovery.future(NOW,turn*180)
+            with app.db() as c:c.execute('UPDATE discovery_works SET next_check_at=NULL WHERE video_id=?',(work(100)['video_id'],))
+            _,job=self.choose(self.plan(run_count=turn),instant)
+            channels.append(job['channel'])
+            if job['channel']=='work':
+                active_counts.append(len(active&set(job['target'].splitlines())))
+                self.finish_work_job(job,'cadence-'+str(turn),instant)
+            else:
+                task=col.start(dict(kind=job['kind'],target=job['target'],transport=job['transport'],
+                    request_id='cadence-discovery-'+str(turn)),discovery_job=job)['id']
+                col.update(task,status='completed',finished_at=instant);col.ACTIVE.clear()
+                with app.db() as c:discovery.settle(c,c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone())
+        self.assertEqual(channels,['work','work','work','author','work','work','work','search'])
+        self.assertEqual(active_counts,[2,2,1,2,2,1])
+
+    def test_ordinary_or_not_due_activity_keeps_balanced_discovery(self):
+        self.cadence_fixture()
+        with app.db() as c:c.execute('UPDATE discovery_works SET next_check_at=? WHERE video_id IN (?,?)',
+            (discovery.future(NOW,60),work(0)['video_id'],work(1)['video_id']))
+        self.assertEqual(self.choose(self.plan(run_count=1))[1]['channel'],'author')
+        self.activity(work(100)['video_id'],discovery.future(NOW,-30))
+        self.assertEqual(self.choose(self.plan(run_count=1))[1]['channel'],'author')
+
+    def test_active_cadence_does_not_replace_frozen_failed_discovery(self):
+        self.save();self.record([work(i) for i in range(10)])
+        _,job=self.choose(self.plan(run_count=3))
+        task=col.start(dict(kind=job['kind'],target=job['target'],transport=job['transport'],
+            request_id='cadence-failed-search'),discovery_job=job)['id']
+        col.update(task,status='needs_verification',finished_at=NOW);col.ACTIVE.clear()
+        self.activity(VID,discovery.future(NOW,-30))
+        self.assertEqual(self.choose(self.plan(last_task_id=task))[1],job)
 
 
 if __name__=='__main__':unittest.main()

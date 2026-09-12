@@ -142,16 +142,40 @@ def result(raw, command, sender, receiver, client_id=None, *, sequence=None):
         info = decode(one(body, 100, 2, b''))
         if text(info, 4) != client_id:
             return unknown
-        # Current web schema: field 2 is extra_info; field 6 is a plain
-        # check_message, not JSON. Never persist that server-supplied text.
-        text(info, 6)
-        if one(info, 3, 0, 0) != 0 or one(info, 5, 0, 0) != 0:
-            return dict(status='failed', detail='平台未接受消息；不会重发')
+        # Field 6 occurs as both plain text and a structured rejection envelope.
+        # Extract the observed human explanation, never store the full envelope.
+        import re
+        raw_explanation = text(info, 6)
+        reason_code = ''
+        if raw_explanation.lstrip().startswith('{'):
+            try:
+                rejection = json.loads(raw_explanation) if len(raw_explanation) <= 8192 else {}
+                value = rejection.get('status_code')
+                if type(value) is int:
+                    reason_code = str(value)
+                status_message = rejection.get('status_msg')
+                message_content = status_message.get('msg_content') if isinstance(status_message, dict) else None
+                raw_explanation = message_content.get('tips') if isinstance(message_content, dict) else rejection.get('tips', '')
+                if not isinstance(raw_explanation, str):raw_explanation = ''
+            except (ValueError, AttributeError):
+                raw_explanation = ''
+        explanation = ' '.join(raw_explanation.split())[:240]
+        explanation = re.sub(r'https?://\S+', '[链接已省略]', explanation)
+        explanation = re.sub(r'(?i)(cookie|token|sessionid|authorization)\s*[:=]\s*\S+', r'\1=[已隐藏]', explanation)
+        explanation = re.sub(r'[A-Za-z0-9_\-]{64,}', '[长标识已省略]', explanation)
+        send_status, check_code = one(info, 3, 0, 0), one(info, 5, 0, 0)
+        if send_status != 0 or check_code != 0:
+            return dict(status='failed', detail='平台未接受消息；不会重发',
+                        send_status=str(send_status), check_code=str(check_code), platform_message=explanation,
+                        platform_reason_code=reason_code)
         extra = json.loads(text(info, 2) or '{}')
         if not isinstance(extra, dict):
             return unknown
         if 'status_code' in extra and str(extra['status_code']) != '0':
-            return dict(status='failed', detail='平台返回消息业务错误；不会重发')
+            code = str(extra['status_code'])
+            return dict(status='failed', detail='平台返回消息业务错误；不会重发',
+                        platform_code=code if len(code) <= 20 and code.lstrip('-').isascii() and code.lstrip('-').isdigit() else 'invalid', platform_message=explanation,
+                        platform_reason_code=reason_code)
         message_id = one(info, 1, 0, 0)
         if not 0 < message_id < 2**63:
             return unknown

@@ -15,8 +15,11 @@ import clubops as app
 from uid_session import crypt
 
 MAGIC=b'CLUBOPS-TEAM-ACCESS-1\n'
+MAX_RESPONSE_BYTES=64*1024*1024
+MAX_ENCODED_BYTES=4*1024*1024
 GETS={'/','/app.js','/app.css','/vendor/lucide.min.js','/login','/login.js','/login.css','/login-guide','/iphone-script',
-      '/api/state','/api/collector','/api/monitor-comments','/api/login-recovery','/api/live-message','/api/live-history','/api/analysis-history','/api/lead-live-history','/api/collector-evidence','/api/export'}
+      '/api/state','/api/collector','/api/monitor-comments','/api/login-recovery','/api/live-message','/api/live-history','/api/analysis-history','/api/lead-live-history','/api/collector-evidence','/api/export',
+      '/api/uid-inbox','/api/asset-references','/api/asset-keywords','/api/asset-keyword'}
 STOP=threading.Event()
 THREAD=None
 SOCKET=None
@@ -64,12 +67,13 @@ def forward(value,origin):
     try:response=opener.open(request,timeout=16)
     except urllib.error.HTTPError as error:response=error
     with response:
-        raw=response.read(4*1024*1024+1)
-        if len(raw)>4*1024*1024:raise ValueError('response_size')
+        raw=response.read(MAX_RESPONSE_BYTES+1)
+        if len(raw)>MAX_RESPONSE_BYTES:raise ValueError('response_size')
         encoded=raw
         if len(raw)>=2048:
             compressed=gzip.compress(raw,compresslevel=5,mtime=0)
             if len(compressed)<len(raw):encoded=compressed
+        if len(encoded)>MAX_ENCODED_BYTES:raise ValueError('encoded_response_size')
         result={'id':value['id'],'status':response.status,'content_type':response.headers.get('Content-Type','application/octet-stream'),'body':base64.b64encode(encoded).decode()}
         if encoded is not raw:result['body_encoding']='gzip'
         return result

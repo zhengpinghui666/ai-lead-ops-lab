@@ -24,7 +24,7 @@ test('public entry, authenticated outbound connection, unchanged content and bou
   const requests=[];
   ws.addEventListener('message',event=>{if(event.data==='pong')return;const req=JSON.parse(event.data);requests.push(req);
     const codec=new URL(req.path,origin).searchParams.get('codec');
-    if(codec){const raw=Buffer.from(codec==='large'?'x'.repeat(4*1024*1024+1):'压缩后的相同工作台内容'.repeat(1000));
+    if(codec){const raw=Buffer.from(codec==='large'?'x'.repeat(64*1024*1024+1):codec==='archive'?'x'.repeat(26*1024*1024):'压缩后的相同工作台内容'.repeat(1000));
       ws.send(JSON.stringify({id:req.id,status:200,content_type:'text/plain; charset=utf-8',body_encoding:codec==='unknown'?'br':'gzip',body:(codec==='invalid'?Buffer.from('invalid gzip'):gzipSync(raw)).toString('base64')}));return;}
     ws.send(JSON.stringify({id:req.id,status:200,content_type:req.path==='/'?'text/html; charset=utf-8':'application/json',
       body:Buffer.from(req.path==='/'?'<!doctype html><h1>现有工作台</h1>':JSON.stringify({fixture:true})).toString('base64')}));
@@ -32,6 +32,7 @@ test('public entry, authenticated outbound connection, unchanged content and bou
   const page=await mf.dispatchFetch(origin+'/');assert.equal(page.status,200);assert.equal(await page.text(),'<!doctype html><h1>现有工作台</h1>');
   assert.equal(page.headers.get('set-cookie'),null);
   const compressed=await mf.dispatchFetch(origin+'/api/state?codec=gzip');assert.equal(compressed.status,200);assert.equal(await compressed.text(),'压缩后的相同工作台内容'.repeat(1000));
+  const archive=await mf.dispatchFetch(origin+'/api/state?codec=archive');assert.equal(archive.status,200);assert.equal((await archive.text()).length,26*1024*1024);
   for(const codec of ['large','invalid','unknown'])assert.equal((await mf.dispatchFetch(origin+'/api/state?codec='+codec)).status,502);
   assert.equal((await mf.dispatchFetch(origin+'/api/live-history?limit=25')).status,200);
   assert.equal(requests.at(-1).path,'/api/live-history?limit=25');

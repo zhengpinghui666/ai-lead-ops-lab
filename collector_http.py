@@ -169,14 +169,11 @@ def parse_page(body, operation, video='', parent='', title=''):
         raise ReadError('schema_changed', {'reason': 'invalid_cursor'})
     key = 'data' if operation == 'search' else 'comments'
     items = body.get(key)
-    # Replies can report a nonzero statistical total while exposing no rows on
+    # Comment pages can report a nonzero statistical total while exposing no rows on
     # the terminal page. This says nothing about deletion or the total count.
-    empty_replies = (operation == 'replies' and 'comments' in body and items is None
+    empty_visible = (operation in ('comments','replies') and 'comments' in body and items is None
                      and more == 0 and type(body.get('total')) is int and 0 <= body['total'] < 2**63)
-    if empty_replies:
-        items = []
-    if (items is None and operation == 'comments' and 'comments' in body
-            and type(body.get('total')) is int and body['total'] == 0 and more == 0):
+    if empty_visible:
         items = []
     if not isinstance(items, list):
         raise ReadError('schema_changed', {'reason': 'invalid_page_container'})
@@ -240,8 +237,9 @@ def parse_page(body, operation, video='', parent='', title=''):
     result = {'rows': rows, 'cursor': cursor, 'has_more': bool(more), 'search_id': search_id,
               'skipped': skipped, 'skipped_reasons': {'non_text':nontext,'invalid_record':skipped-nontext},
               'reply_targets': reply_targets, 'non_text_reply_targets': non_text_reply_targets}
-    if empty_replies:
-        result['reply_visibility'] = {'state': 'terminal_without_visible_replies', 'declared_total': body['total'], 'returned_rows': 0}
+    if empty_visible:
+        field='reply_visibility' if operation=='replies' else 'comment_visibility'
+        result[field] = {'state': 'terminal_without_visible_'+operation, 'declared_total': body['total'], 'returned_rows': 0}
     return result
 
 
@@ -451,6 +449,8 @@ class Client:
                 evidence['non_text_reply_targets']=result['non_text_reply_targets'][:20]
             if result.get('reply_visibility'):
                 evidence['reply_visibility'] = result['reply_visibility']
+            if result.get('comment_visibility'):
+                evidence['comment_visibility'] = result['comment_visibility']
             if result.get('page_visibility'):
                 evidence['page_visibility'] = result['page_visibility']
             if self.real_transport:

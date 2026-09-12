@@ -204,7 +204,7 @@ def select_work_targets(c,plan,instant,focused,paused):
       FROM eligible
     ) SELECT * FROM ranked WHERE selection_rank<=? ORDER BY selection_group,selection_rank''',
       (instant,instant,instant,*focused,*paused,instant,turn,limit)).fetchall()
-    def select_pool(pool,budget):
+    def select_pool(pool,budget,*,reserve_exploration=True):
         queues={name:deque(r for r in pool if r['selection_group']==name) for name in ('active','focused_new','rotation')}
         selected=[]
         def take(name):
@@ -215,7 +215,7 @@ def select_work_targets(c,plan,instant,focused,paused):
             for offset in range(len(cycle)):
                 if take(cycle[(turn+offset)%len(cycle)]):break
         else:
-            reserved=int(bool(queues['focused_new'] or queues['rotation']))
+            reserved=int(reserve_exploration and bool(queues['focused_new'] or queues['rotation']))
             while len(selected)<budget-reserved and take('active'):pass
             exploration=0
             while len(selected)<budget and (queues['focused_new'] or queues['rotation']):
@@ -228,14 +228,18 @@ def select_work_targets(c,plan,instant,focused,paused):
     ordinary=[r for r in rows if not r['vertical']]
     if vertical and ordinary:
         vertical_budget=int(turn%3!=2) if limit==1 else min(limit-1,(limit*2+2)//3)
-        selected=select_pool(vertical,vertical_budget)+select_pool(ordinary,limit-vertical_budget)
+        # The ordinary reservation already explores outside the vertical pool.
+        # On two of three work turns, both vertical slots can refresh active work;
+        # the third still reserves vertical new/quiet exploration.
+        reserve_vertical=turn%3==2 or vertical_budget<2
+        selected=select_pool(vertical,vertical_budget,reserve_exploration=reserve_vertical)+select_pool(ordinary,limit-vertical_budget)
         # Unused reservations return to the other pool, within the same request budget.
         selected_ids={r['video_id'] for r in selected}
         remaining=[r for r in vertical+ordinary if r['video_id'] not in selected_ids]
         selected+=select_pool(remaining,limit-len(selected))
     else:
         selected=select_pool(vertical or ordinary,limit)
-    audit=dict(version='work-vertical-priority-v3',turn=turn,activity_window_seconds=3600,
+    audit=dict(version='work-vertical-priority-v4',turn=turn,activity_window_seconds=3600,
                slots=[dict(video_id=r['video_id'],group=r['selection_group'],
                            vertical=bool(r['vertical']),
                            latest_comment_at=r['latest_comment_at']) for r in selected])
@@ -249,9 +253,9 @@ def choose(c,plan,instant):
     # A permitted retry stays on the frozen failed job. It never switches entry
     # points to turn an unresolved challenge into apparently successful discovery.
     if dict(plan).get('last_task_id'):
-        previous=c.execute('SELECT status FROM collection_tasks WHERE id=?',(plan['last_task_id'],)).fetchone()
+        previous=c.execute('SELECT * FROM collection_tasks WHERE id=?',(plan['last_task_id'],)).fetchone()
         frozen=worker_config(c,plan['last_task_id'])
-        if previous and previous['status']!='completed' and frozen:return True,frozen
+        if previous and previous['status']!='completed' and frozen and not empty_search_wait(c,previous):return True,frozen
     authors=author_rows(c,cfg)
     due=lambda stamp:not stamp or datetime.fromisoformat(stamp)<=datetime.fromisoformat(instant)
     jobs={}
@@ -275,13 +279,40 @@ def choose(c,plan,instant):
     _,reference_queries=asset_references.discovery_assets(c)
     search_terms=set(cfg['keywords'])|set(reference_queries)
     query=next((dict(r) for r in c.execute('SELECT * FROM discovery_queries ORDER BY COALESCE(last_checked_at,\'\'),keyword') if r['keyword'] in search_terms and due(r['next_check_at'])),None)
-    if query:jobs['search']=dict(kind='search',target=query['keyword'],transport=plan['transport'] if plan['kind']=='search' else 'local_browser',key=query['keyword'],channel='search')
+    latest_search=c.execute("SELECT t.* FROM discovery_jobs j JOIN collection_tasks t ON t.id=j.task_id WHERE j.kind='search' ORDER BY t.id DESC LIMIT 1").fetchone()
+    search_wait=empty_search_wait(c,latest_search)
+    search_ready=not search_wait or due(future(latest_search['finished_at'],search_wait))
+    if query and search_ready:jobs['search']=dict(kind='search',target=query['keyword'],transport=plan['transport'] if plan['kind']=='search' else 'local_browser',key=query['keyword'],channel='search')
     paused=paused_targets(c)
     focused={r['sec_uid'] for r in authors if r['focused'] and r['enabled']}
     rows,selection=select_work_targets(c,plan,instant,focused,paused)
     if rows:jobs['work']=dict(kind='video',target='\n'.join(r['video_id'] for r in rows),transport='http',key='work',channel='work',work_selection=selection)
     rotation=['work','author','work','search'];start=plan['run_count']%len(rotation)
     chosen=next((jobs[rotation[(start+i)%len(rotation)]] for i in range(len(rotation)) if rotation[(start+i)%len(rotation)] in jobs),None)
+    # Use observed publication activity, not cumulative collection counts or
+    # model judgments, to prioritize a refresh. Failed jobs returned above stay
+    # frozen and all due/disabled checks were applied by select_work_targets.
+    active=sum(s['vertical'] and s['group']=='active' for s in selection['slots'])
+    recent=c.execute("""SELECT j.kind FROM discovery_jobs j JOIN collection_tasks t ON t.id=j.task_id
+        WHERE j.settled=1 AND t.status='completed' ORDER BY j.task_id DESC LIMIT 3""").fetchall()
+    streak=0
+    for row in recent:
+        if row['kind']!='work':break
+        streak+=1
+    reason='balanced_rotation'
+    if active:
+        available=[name for name in ('author','search') if name in jobs]
+        if streak<3 or not available:
+            chosen=jobs['work'];reason='due_vertical_activity'
+        else:
+            last=c.execute("""SELECT j.kind FROM discovery_jobs j JOIN collection_tasks t ON t.id=j.task_id
+                WHERE j.kind IN ('author','search') AND j.settled=1 AND t.status='completed'
+                ORDER BY j.task_id DESC LIMIT 1""").fetchone()
+            preferred='search' if last and last['kind']=='author' else 'author'
+            chosen=jobs[preferred if preferred in available else available[0]];reason='reserved_discovery'
+    if chosen:
+        chosen={**chosen,'dispatch_selection':dict(version='active-work-cadence-v1',reason=reason,
+            due_vertical_active_slots=active,consecutive_work_batches=streak,max_work_streak=3)}
     return True,{**chosen,'policy':cfg} if chosen else None
 
 
@@ -296,10 +327,49 @@ def worker_config(c,task_id):
     return json.loads(row[0]) if row else None
 
 
+def empty_search_wait(c, task):
+    """Only the observed empty browser shell may defer discovery, never a gate."""
+    from urllib.parse import urlsplit,unquote
+    if not task or task['status']!='no_data' or task['kind']!='search' or task['transport']!='local_browser' or not task['finished_at']:
+        return 0
+    frozen=worker_config(c,task['id'])
+    if not frozen or frozen.get('channel')!='search' or frozen.get('target')!=task['target']:
+        return 0
+    if c.execute('SELECT 1 FROM collection_observations WHERE task_id=? LIMIT 1',(task['id'],)).fetchone():return 0
+    found=False
+    try:
+        for row in c.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=?',(task['id'],)):
+            if row['stage'] not in ('search-empty','finished-error'):return 0
+            s=json.loads(row['snapshot']);url=urlsplit(s.get('page_url',''))
+            if (s.get('navigation_http_status')!=200 or s.get('navigation_error') or s.get('responses')!=[]
+                    or s.get('video_links')!=0 or url.scheme!='https' or url.hostname!='www.douyin.com'
+                    or unquote(url.path)!='/search/'+task['target']):return 0
+            text=s.get('visible_text','')
+            if any(word in text for word in ('验证码','安全验证','访问受限','操作频繁','请求过多','登录后查看')):return 0
+            found |= row['stage']=='search-empty'
+        if not found:return 0
+        recent=c.execute("SELECT t.status FROM discovery_jobs j JOIN collection_tasks t ON t.id=j.task_id WHERE j.kind='search' AND t.id<=? ORDER BY t.id DESC LIMIT 4",(task['id'],)).fetchall()
+        failures=0
+        for row in recent:
+            if row['status']!='no_data':break
+            failures+=1
+        return min(2400,300*2**max(0,failures-1))
+    except (ValueError,TypeError,AttributeError):return 0
+
+
+def defer_empty_search(c, task):
+    wait=empty_search_wait(c,task)
+    if wait:
+        c.execute('UPDATE discovery_queries SET next_check_at=? WHERE keyword=?',
+            (future(task['finished_at'],wait),task['target']))
+    return wait
+
+
 def settle(c,task):
     job=c.execute('SELECT * FROM discovery_jobs WHERE task_id=? AND settled=0',(task['id'],)).fetchone()
     if not job or not task['finished_at']:return
     frozen=json.loads(job['config']);cfg=frozen['policy'];stamp=task['finished_at']
+    defer_empty_search(c,task)
     if task['status']=='completed':
         if job['kind']=='search':
             c.execute('UPDATE discovery_queries SET last_checked_at=?,next_check_at=? WHERE keyword=?',(stamp,future(stamp,cfg['search_interval']),job['key']))

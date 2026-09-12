@@ -1,5 +1,7 @@
 # ClubOps · 无畏契约获客导流工作台 2.2（采集接入开发中）
 
+2026-09-13 接续开发入口：[设计初衷、最新需求与接续说明](SUCCESSOR_HANDOFF.md)。本文下方保留各阶段说明，涉及“当前／未接通”的旧描述须结合最新交付与实时状态判断。
+
 2026-09-10 验证码实验接入：采集器已接入本机 ddddocr 处理流程，严格匹配的滑块可尝试一次并检查采集是否恢复；HTTP 只有 verify_check 时仍暂停。真实抖音验证码通过率尚未验证，正式服务已加载新版代码。范围、配置和测试见 [CAPTCHA_WORKFLOW.md](CAPTCHA_WORKFLOW.md)。
 
 2026-09-10 最新采集增量：**纯 Python HTTP 已真实读到指定视频评论与独立回复；隔离任务完成 12 条入库及自动规则初筛。关键词搜索返回 `verify_check`，待人工验证。** 已接入任务／监控的通道选择，没有重复私信测试。安装与证据见 [COLLECTION_HTTP.md](COLLECTION_HTTP.md)。正式 8765 已更新，正常重启入口见 [SERVICE_LIFECYCLE.md](SERVICE_LIFECYCLE.md)；下文早期“HTTP 未接通”的诊断段落保留为历史记录。

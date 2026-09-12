@@ -43,11 +43,14 @@ class LiveMonitorTests(unittest.TestCase):
         for i in range(4):
             live.receive(sid,self.event(str(int(MID)+i)))
         first=live.history({'filter':'valuable','limit':2})
+        self.assertEqual(first['counts'], dict(observed=4, accepted=4, filtered=0, valuable=4))
         self.assertEqual((first['total'],len(first['rows']),first['has_more']),(4,2,True))
         row=first['rows'][0]
         flow.review(dict(id=row['id'],review_token=row['review_token'],category='noise',reason='合成人工更正'))
         updated=live.history({'filter':'valuable','limit':2})
         self.assertEqual(updated['total'],3)
+        self.assertEqual(live.history({'filter':'all','session_id':sid})['counts'], dict(observed=4, accepted=4, filtered=0, valuable=3))
+        self.assertEqual(live.history({'filter':'all','q':'不存在的合成文本'})['counts'], dict(observed=0, accepted=0, filtered=0, valuable=0))
         self.assertNotIn(row['id'],[r['id'] for r in updated['rows']])
         second=live.history({'filter':'valuable','limit':2,'offset':2,'anchor_id':first['anchor_id']})
         self.assertEqual(len(second['rows']),1)

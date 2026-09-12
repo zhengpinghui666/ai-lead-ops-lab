@@ -6,7 +6,8 @@ const headers={'cache-control':'no-store','x-content-type-options':'nosniff','re
 const reply=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{...headers,'content-type':'application/json; charset=utf-8'}});
 const equal=(a,b)=>{if(typeof a!=='string'||typeof b!=='string'||a.length!==b.length)return false;let n=0;for(let i=0;i<a.length;i++)n|=a.charCodeAt(i)^b.charCodeAt(i);return n===0;};
 async function decodeBody(value){
-  const raw=Uint8Array.from(atob(value.body),c=>c.charCodeAt(0)),max=4*1024*1024;
+  const raw=Uint8Array.from(atob(value.body),c=>c.charCodeAt(0)),max=64*1024*1024;
+  if(raw.length>4*1024*1024)throw Error('size');
   if(value.body_encoding===undefined){if(raw.length>max)throw Error('size');return raw;}
   if(value.body_encoding!=='gzip')throw Error('encoding');
   const reader=new Response(raw).body.pipeThrough(new DecompressionStream('gzip')).getReader();
@@ -16,7 +17,8 @@ async function decodeBody(value){
   const decoded=new Uint8Array(count);let offset=0;for(const part of parts){decoded.set(part,offset);offset+=part.length;}return decoded;
 }
 const GETS=new Set(['/', '/app.js','/app.css','/vendor/lucide.min.js','/login','/login.js','/login.css','/login-guide','/iphone-script',
-  '/api/state','/api/collector','/api/monitor-comments','/api/login-recovery','/api/live-message','/api/live-history','/api/analysis-history','/api/lead-live-history','/api/collector-evidence','/api/export']);
+  '/api/state','/api/collector','/api/monitor-comments','/api/login-recovery','/api/live-message','/api/live-history','/api/analysis-history','/api/lead-live-history','/api/collector-evidence','/api/export',
+  '/api/uid-inbox','/api/asset-references','/api/asset-keywords','/api/asset-keyword']);
 export function permitted(method,path){return method==='GET'?GETS.has(path):method==='POST'&&/^\/api\/[a-z][a-z-]{0,64}$/.test(path)&&path!=='/api/service-stop';}
 async function boundedBody(request,max){if(Number(request.headers.get('content-length')||0)>max)throw Error('size');
   const reader=request.body?.getReader();if(!reader)return '';let count=0,parts=[];

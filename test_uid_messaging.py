@@ -45,6 +45,15 @@ class Provider:
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_structured_rejection_preserves_exact_reason_without_envelope_secrets(self):
+        explanation=dict(status_code=7173,status_msg=dict(msg_type=1,msg_content=dict(tips='对方设置了仅互关可发消息',template=[])),token='private-token')
+        raw=envelope(100,wire.field(4,'client')+wire.field(3,3)+wire.field(5,2)+wire.field(6,json.dumps(explanation,ensure_ascii=False)))
+        result=wire.result(raw,100,SENDER,RECEIVER,'client')
+        self.assertEqual(result['platform_reason_code'],'7173')
+        self.assertEqual(result['platform_message'],'对方设置了仅互关可发消息')
+        self.assertNotIn('private-token',json.dumps(result))
+        self.assertEqual(result['status'],'failed')
+
     def test_create_rejection_retains_business_code_without_sending_or_private_data(self):
         raw = envelope(609, b'', code=4) + wire.field(10, 'synthetic-private-response')
         calls = []
@@ -279,6 +288,89 @@ class QueueTests(unittest.TestCase):
     def accepted(self, config, receiver, message, client, before):
         before()
         return {'status': 'accepted', 'phase': 'send', 'server_message_id': '12345'}
+
+    def outreach_grant(self):
+        import hashlib
+        with app.db() as c:
+            person = c.execute('SELECT * FROM people').fetchone()
+            c.execute("UPDATE people SET contact_basis='',contact_note=''")
+            video = c.execute("INSERT INTO videos(source_id,external_id,title,created_at) VALUES(?,'synthetic','合成',?)", (person['source_id'], app.now())).lastrowid
+            comment = c.execute("INSERT INTO comments(source_id,external_id,video_id,person_id,raw_text,discovered_at) VALUES(?,'synthetic',?,?,'找陪玩',?)", (person['source_id'], video, person['id'], app.now())).lastrowid
+        return dict(job_id=self.job['id'], sender_uid=SENDER, recipient_uid=RECEIVER,
+                    content_sha256=hashlib.sha256(self.job['content'].encode()).hexdigest(),
+                    comment_id=comment, comment_sha256=hashlib.sha256('找陪玩'.encode()).hexdigest(),
+                    instruction='合成本地操作授权，不代表收件人同意', granted_at=app.now())
+
+    def test_operator_grant_is_bound_audited_and_never_invents_consent(self):
+        grant = self.outreach_grant()
+        with patch('monitoring.observation_analysis', return_value=dict(category='buyer', analysis_method='model')):
+            with self.assertRaises(ValueError):
+                channel.send_one(self.job['id'], transport=self.accepted)
+            transport = Mock(wraps=self.accepted)
+            result = channel.send_one(self.job['id'], transport=transport, operator_authorization=grant)
+            self.assertEqual(result['status'], 'accepted')
+            self.assertEqual(result['evidence']['operator_authorization'], grant)
+            channel.send_one(self.job['id'], transport=transport, operator_authorization=grant)
+            transport.assert_called_once()
+        with app.db() as c:
+            person = c.execute('SELECT * FROM people').fetchone()
+            self.assertEqual((person['contact_basis'], person['contact_note']), ('', ''))
+
+    def test_operator_grant_rejects_mismatch_stale_intent_and_do_not_contact(self):
+        grant = self.outreach_grant()
+        transport = Mock(wraps=self.accepted)
+        with patch('monitoring.observation_analysis', return_value=dict(category='buyer', analysis_method='model')):
+            for key in ('job_id', 'sender_uid', 'recipient_uid', 'content_sha256', 'comment_id', 'comment_sha256'):
+                wrong = {**grant, key: 999999 if key.endswith('_id') else 'mismatch'}
+                with self.subTest(key=key), self.assertRaises(ValueError):
+                    channel.send_one(self.job['id'], transport=transport, operator_authorization=wrong)
+            with app.db() as c:
+                c.execute('UPDATE people SET do_not_contact=1')
+            with self.assertRaises(ValueError):
+                channel.send_one(self.job['id'], transport=transport, operator_authorization=grant)
+            with app.db() as c:
+                c.execute('UPDATE people SET do_not_contact=0')
+        with patch('monitoring.observation_analysis', return_value=dict(category='seller', analysis_method='human')):
+            with self.assertRaises(ValueError):
+                channel.send_one(self.job['id'], transport=transport, operator_authorization=grant)
+        transport.assert_not_called()
+
+    def test_operator_grant_checks_intent_again_before_submission(self):
+        grant = self.outreach_grant()
+        with patch('monitoring.observation_analysis', side_effect=[dict(category='buyer', analysis_method='model'), dict(category='seller', analysis_method='human')]):
+            result = channel.send_one(self.job['id'], transport=self.accepted, operator_authorization=grant)
+        self.assertEqual(result['status'], 'unknown')
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM messages').fetchone()[0], 0)
+
+    def test_rejected_message_retry_is_delayed_bounded_and_preserves_history(self):
+        from datetime import datetime,timedelta,timezone
+        def reject(config, receiver, message, client, before):
+            before()
+            return dict(status='failed',phase='send',http_status=200,send_status='3',check_code='2')
+        channel.send_one(self.job['id'],transport=reject)
+        with self.assertRaises(ValueError):
+            channel.send_one(self.job['id'],transport=reject,retry_note='用户授权重试')
+        for _ in range(2):
+            with app.db() as c:
+                c.execute('UPDATE uid_message_attempts SET updated_at=?', ((datetime.now(timezone.utc)-timedelta(minutes=20)).isoformat(),))
+            channel.send_one(self.job['id'],transport=reject,retry_note='用户授权重试')
+        with app.db() as c:
+            row=c.execute('SELECT * FROM uid_message_attempts').fetchone()
+            history=json.loads(row['evidence'])['delivery_history']
+            self.assertEqual(len(history),2)
+            self.assertEqual(len({row['client_message_id'],*[x['client_message_id'] for x in history]}),3)
+        with self.assertRaises(ValueError):
+            channel.send_one(self.job['id'],transport=reject,retry_note='用户授权重试')
+
+    def test_accepted_and_unknown_never_retry_even_with_operator_note(self):
+        channel.send_one(self.job['id'],transport=self.accepted)
+        for status in ('accepted','unknown'):
+            with app.db() as c:
+                c.execute('UPDATE uid_message_attempts SET status=?',(status,))
+                c.execute('UPDATE message_jobs SET status=?',(status,))
+            with self.assertRaises(ValueError):
+                channel.send_one(self.job['id'],transport=self.accepted,retry_note='用户授权重试')
 
     def test_explicit_pre_submit_continuation_keeps_identity_and_failure_history(self):
         first = Mock(return_value=dict(status='failed', phase='create', platform_code='4'))

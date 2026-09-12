@@ -4,7 +4,7 @@
   "private": true,
   "description": "Local browser collector; no external data vendor",
   "scripts": {
-    "test": "node test_collector.cjs && node test_queue.cjs && node test_pool.cjs && node test_worker.cjs && node test_parallel_worker.cjs && node test_frontend.cjs && node test_frontend_poll.cjs && node test_time_filters.cjs && node test_http_probe.cjs && node test_live_protocol.cjs && node test_live_runner.cjs && node test_uid_bootstrap.cjs && node test_uid_session.cjs && node test_verification.cjs && node test_collection_session.cjs && node test_login_recovery.cjs && node test_login_frontend.cjs && node test_iphone_forwarder.cjs && node test_captcha_samples.cjs && node test_captcha_learning.cjs && node test_frontend_live_history.cjs"
+    "test": "node test_collector.cjs && node test_queue.cjs && node test_pool.cjs && node test_worker.cjs && node test_parallel_worker.cjs && node test_frontend.cjs && node test_frontend_poll.cjs && node test_time_filters.cjs && node test_http_probe.cjs && node test_live_protocol.cjs && node test_live_runner.cjs && node test_uid_bootstrap.cjs && node test_uid_session.cjs && node test_verification.cjs && node test_collection_session.cjs && node test_login_recovery.cjs && node test_login_frontend.cjs && node test_iphone_forwarder.cjs && node test_captcha_samples.cjs && node test_captcha_learning.cjs && node test_frontend_live_history.cjs && node test_frontend_monitor_history.cjs"
   },
   "dependencies": {
     "playwright": "1.62.1"

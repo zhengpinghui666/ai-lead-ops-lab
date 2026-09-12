@@ -138,8 +138,6 @@ def history(query, mode='live'):
         sid = integer(sid, '直播会话', 1, 2**63 - 1)
         clauses.append('m.session_id=?')
         args.append(sid)
-    if status != 'all':
-        clauses.append("m.filter_reason=''" if status in ('accepted','valuable') else "m.filter_reason<>''")
     if search.strip():
         clauses.append('(instr(lower(m.raw_text),lower(?))>0 OR instr(lower(m.nickname),lower(?))>0 OR instr(m.uid,?)>0 OR instr(m.message_id,?)>0)')
         args.extend([search.strip()] * 4)
@@ -149,20 +147,26 @@ def history(query, mode='live'):
         anchor = integer(anchor, '存档快照', 0, 2**63 - 1) if anchor not in (None, '') else c.execute('SELECT COALESCE(MAX(id),0) FROM live_messages').fetchone()[0]
         where += ' AND m.id<=?'
         args.append(anchor)
-        total = c.execute('SELECT COUNT(*) FROM live_messages m' + where, args).fetchone()[0]
+        counts = dict(c.execute("SELECT COUNT(*) AS observed,COALESCE(SUM(m.filter_reason=''),0) AS accepted,COALESCE(SUM(m.filter_reason<>''),0) AS filtered FROM live_messages m" + where, args).fetchone())
+        # Resolve the model once for this response, not once for every message.
+        engine = live_workflow.connection_engine(c)
+        projected, valuable = {}, []
+        for raw in c.execute(live_workflow.SELECT + where + " AND m.filter_reason='' ORDER BY m.id DESC", args):
+            row = live_workflow.project(c, raw, history=False, model_engine=engine)
+            projected[row['id']] = row
+            if row['category'] == 'buyer' and row['analysis_method'] in ('rules','model','human'):
+                valuable.append(row)
+        counts['valuable'] = len(valuable)
+        total = counts[{'all':'observed','accepted':'accepted','filtered':'filtered','valuable':'valuable'}[status]]
         if status == 'valuable':
-            selected = []
-            for raw in c.execute(live_workflow.SELECT + where + ' ORDER BY m.id DESC', args):
-                row = live_workflow.project(c, raw, history=False)
-                if row['category'] == 'buyer' and row['analysis_method'] in ('rules','model','human'):
-                    selected.append(row)
-            total = len(selected)
-            rows = selected[offset:offset+limit]
+            rows = valuable[offset:offset+limit]
         else:
-            rows = [live_workflow.project(c, r, history=False) for r in c.execute(
+            if status != 'all':
+                where += " AND m.filter_reason=''" if status == 'accepted' else " AND m.filter_reason<>''"
+            rows = [projected[r['id']] if r['id'] in projected else live_workflow.project(c, r, history=False, model_engine=engine) for r in c.execute(
                 live_workflow.SELECT + where + ' ORDER BY m.id DESC LIMIT ? OFFSET ?', (*args, limit, offset))]
     return dict(rows=rows, total=total, offset=offset, limit=limit, has_more=offset + len(rows) < total,
-                scope='local_archive', platform_history_available=False, anchor_id=anchor)
+                scope='local_archive', platform_history_available=False, anchor_id=anchor, counts=counts)
 
 
 def record_status(session_id, status, final=False, **counts):

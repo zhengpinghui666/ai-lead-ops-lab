@@ -1,0 +1,91 @@
+"""Read-only, bounded local monitoring checks; never launches collection or sends messages."""
+import argparse
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import sqlite3
+import time
+import urllib.request
+
+BASE = Path(__file__).resolve().parents[1]
+
+
+def overdue(value, now, grace=600):
+    if not value:
+        return False
+    stamp = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    return (now - stamp).total_seconds() > grace
+
+
+def assess(name, plan, task, now):
+    if not plan:
+        return {'state': 'unconfigured', 'issue': name + ':unconfigured'}
+    enabled = plan['status'] == ('running' if name == 'comments' else 'enabled')
+    result = {'state': plan['status'], 'last_task_id': plan.get('last_task_id', plan.get('last_session_id'))}
+    if not enabled:
+        result['issue'] = name + ':' + plan['status']
+    elif task and not task.get('finished_at'):
+        if overdue(task.get('updated_at') or task.get('started_at'), now):
+            result['issue'] = name + ':task_stalled'
+    elif overdue(plan.get('next_run_at') or plan.get('updated_at'), now):
+        result['issue'] = name + ':scheduler_overdue'
+    return result
+
+
+def check(data_dir=BASE / 'data', port=8765):
+    now = datetime.now(timezone.utc)
+    report = {'checked_at': now.isoformat(), 'status': 'healthy', 'issues': []}
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(f'http://127.0.0.1:{port}/api/service', timeout=5) as response:
+            service = json.loads(response.read(65537))
+        report['service'] = service['status']
+        if service['status'] != 'running':
+            report['issues'].append('service:' + service['status'])
+        access = service.get('external_access', {})
+        if access.get('enabled') and not access.get('connected'):
+            report['issues'].append('external_access:disconnected')
+        path = Path(data_dir).resolve() / 'clubops-live.db'
+        with sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=3) as connection:
+            connection.row_factory = sqlite3.Row
+            connection.execute('PRAGMA query_only=ON')
+            deadline = time.monotonic() + 3
+            connection.set_progress_handler(lambda: int(time.monotonic() > deadline), 1000)
+            connection.execute('BEGIN')
+            for name, table, task_table, task_key, where in (
+                ('comments', 'collection_plans', 'collection_tasks', 'last_task_id', 'WHERE continuous=1'),
+                ('live', 'live_tracks', 'live_sessions', 'last_session_id', ''),
+            ):
+                row = connection.execute(f'SELECT * FROM {table} {where} ORDER BY id DESC LIMIT 1').fetchone()
+                plan = dict(row) if row else None
+                row = connection.execute(f'SELECT * FROM {task_table} WHERE id=?', (plan[task_key],)).fetchone() if plan else None
+                item = assess(name, plan, dict(row) if row else None, now)
+                report[name] = item
+                if item.get('issue'):
+                    report['issues'].append(item['issue'])
+    except Exception as error:
+        # Do not serialize exceptions containing response bodies or account data.
+        report['issues'].append('probe:' + type(error).__name__)
+    if report['issues']:
+        report['status'] = 'attention'
+    return report
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--watch', action='store_true', help='Check every 60 seconds without model calls')
+    args = parser.parse_args()
+    output = BASE / 'data' / 'monitor-health.json'
+    while True:
+        report = check()
+        if not args.watch:
+            print(json.dumps(report, ensure_ascii=False))
+            return 0 if report['status'] == 'healthy' else 1
+        temp = output.with_suffix('.tmp')
+        temp.write_text(json.dumps(report, ensure_ascii=False), encoding='utf-8')
+        temp.replace(output)
+        time.sleep(60)
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

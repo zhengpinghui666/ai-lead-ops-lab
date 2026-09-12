@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const requests=[],listeners={};
 const dummy={innerHTML:'',open:false,addEventListener(){},classList:{remove(){}},setAttribute(){}};
-const context=vm.createContext({document:{querySelector:()=>dummy,querySelectorAll:()=>[],addEventListener:(name,handler)=>listeners[name]=handler,body:dummy},location:{hash:'#live'},window:{addEventListener(){},scrollTo(){},lucide:{createIcons(){}}},URLSearchParams,console,crypto:globalThis.crypto,setTimeout:()=>1,clearTimeout(){},fetch:url=>{
+const context=vm.createContext({document:{querySelector:()=>dummy,querySelectorAll:()=>[],addEventListener:(name,handler)=>listeners[name]=handler,body:dummy},location:{hash:'#live'},window:{addEventListener(){},scrollTo(){},lucide:{createIcons(){}}},URLSearchParams,AbortController,console,crypto:globalThis.crypto,setTimeout:()=>1,clearTimeout(){},fetch:url=>{
  if(url.startsWith('/api/state'))return Promise.resolve({ok:true,json:async()=>({collector:{tasks:[]}})});
  return new Promise(resolve=>requests.push({url,resolve}));
 }});

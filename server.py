@@ -13,6 +13,7 @@ import collection_scheduler
 import messaging_http
 import monitoring
 import uid_messaging
+import intent_outreach
 import uid_inbox_sync
 import live_monitor
 import live_tracking
@@ -48,6 +49,7 @@ def collection_state(mode):
     import discovery_tracking
     result['discovery'] = discovery_tracking.state(mode)
     result['inbox_sync'] = uid_inbox_sync.state(mode)
+    result['intent_outreach'] = intent_outreach.state(mode)
     return result
 
 
@@ -233,6 +235,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError('CO-DM-01 已完成网页测试，旧入口不再发送；新测试请另建草稿')
             elif action == 'uid-http-check':
                 result = uid_messaging.state(mode)
+            elif action == 'intent-outreach-control':
+                result = intent_outreach.control(body.get('enabled'), mode)
             elif action == 'uid-inbox-read':
                 import uid_inbox_store
                 result = uid_inbox_store.read(body,mode)
@@ -329,7 +333,7 @@ class LocalHTTPServer(ThreadingHTTPServer):
     def prepare_stop(self):
         # HTTP admissions share lifecycle_lock. Scheduler admissions share the
         # collector lock. Never interrupt a collector, live session or sender.
-        with self.lifecycle_lock, collector.GUARD, live_monitor.GUARD, uid_inbox_sync.GUARD, clubops.LOCKS['live'], clubops.db() as c:
+        with self.lifecycle_lock, collector.GUARD, live_monitor.GUARD, uid_inbox_sync.GUARD, intent_outreach.GUARD, clubops.LOCKS['live'], clubops.db() as c:
             active_plan = c.execute("SELECT 1 FROM collection_plans WHERE status='running' LIMIT 1").fetchone()
             active_model = c.execute("SELECT 1 FROM semantic_jobs WHERE status IN ('queued','running','cancelling') LIMIT 1").fetchone()
             if (self.active_writes != 1 or collector.ACTIVE or live_monitor.ACTIVE or
@@ -339,6 +343,7 @@ class LocalHTTPServer(ThreadingHTTPServer):
             collection_scheduler.STOP.set()
             live_tracking.STOP.set()
             uid_inbox_sync.STOP.set()
+            intent_outreach.STOP.set()
 
     def server_bind(self):
         if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
@@ -367,6 +372,7 @@ def main():
             semantic_queue.start_service()
             live_tracking.start_service()
             uid_inbox_sync.start_service()
+            intent_outreach.start_service()
             team_access.start_service(httpd.server_address[1])
             print(f'ClubOps 已启动：http://{HOST}:{httpd.server_address[1]}/', flush=True)
             try:
@@ -376,6 +382,7 @@ def main():
             finally:
                 team_access.shutdown()
                 uid_inbox_sync.shutdown()
+                intent_outreach.shutdown()
                 live_tracking.shutdown()
                 live_monitor.shutdown()
                 collection_scheduler.shutdown()

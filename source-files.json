@@ -248,5 +248,11 @@
   "video_discovery.py",
   "video_metadata.py",
   "comment_paging.py",
-  "test_comment_paging.py"
+  "test_comment_paging.py",
+  "intent_outreach.py",
+  "test_intent_outreach.py",
+  "scripts/monitor-health.py",
+  "test_monitor_health.py",
+  "SUCCESSOR_HANDOFF.md",
+  "scripts/run-background-service.py"
 ]
