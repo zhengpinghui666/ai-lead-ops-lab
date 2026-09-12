@@ -43,13 +43,13 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "bc19422e7ba1ddf7ce930ac6cdac06f61ce89a5c65312f12051df4bd97db1d48",
-      "bytes": 74620
+      "sha256": "546e5917ba599da28b6a44faeddf1934f75bff3c22427354b5f33e14bd57c61b",
+      "bytes": 78107
     },
     {
       "name": "DISCOVERY_TRACKING.md",
-      "sha256": "b5a4073f0d1aa6d1c261cfd0e431203b264057d425afe9b5e3cdcf2e0ca0029c",
-      "bytes": 5755
+      "sha256": "b06792d1f6a7895e1a5c8a107a9e7cade6d62d692969ac2511ecf6f63cf07d02",
+      "bytes": 6477
     },
     {
       "name": "EXTERNAL_ACCESS.md",
@@ -63,8 +63,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "60da5252bb92d423f7f987c786e8d9d4cc406264e8410f31e218fbb16fa60a93",
-      "bytes": 116036
+      "sha256": "419c67de3084981c53670dc7f7a759a08976ec5403caa4dc1c84ad4c04c28aca",
+      "bytes": 119523
     },
     {
       "name": "IPHONE_FORWARDER.md",
@@ -328,8 +328,8 @@
     },
     {
       "name": "discovery_tracking.py",
-      "sha256": "6a2d6ce257498012bb0b2197bac40f5eb9a13ec6f419595c5b4d58e407bd6ef1",
-      "bytes": 17509
+      "sha256": "ce2080be3deda26d5fce28e4a0fa495ff72da7f7a83b01f6152aa8f58655a939",
+      "bytes": 19474
     },
     {
       "name": "evaluation/intent-development-v1.json",
@@ -763,8 +763,8 @@
     },
     {
       "name": "test_candidate_pool.py",
-      "sha256": "968dcc292f42d12fa2eea0d362b7bc2c1352a0d6a6e6c645232d22b2e4dfebae",
-      "bytes": 13925
+      "sha256": "81c4abafe5095efe81f78e7dfff16bbb46972170b6e5e32f3faebd388a504a61",
+      "bytes": 14013
     },
     {
       "name": "test_captcha_browser.cjs",
@@ -833,8 +833,8 @@
     },
     {
       "name": "test_discovery_tracking.py",
-      "sha256": "f2d3b161eeb1e01085ae679fdfea176ba3a77b67e8e9eb662eb5eac484bc05da",
-      "bytes": 9374
+      "sha256": "ef7c336a330d7aa5a94cc6920e0c23359216aca0e298330cbc092f76a1d29d58",
+      "bytes": 15065
     },
     {
       "name": "test_frontend.cjs",

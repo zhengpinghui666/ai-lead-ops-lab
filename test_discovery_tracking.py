@@ -101,10 +101,92 @@ class DiscoveryTrackingTests(unittest.TestCase):
     def test_focus_new_works_prioritized_and_author_pause_preserves_library(self):
         self.save();self.record([work(i,author='MS4wLjABAAAA_NORMAL_AUTHOR') for i in range(2)])
         self.record([work(i+10) for i in range(10)])
-        _,job=self.choose();self.assertTrue(all(int(v)>=int(VID)+10 for v in job['target'].splitlines()))
+        _,job=self.choose()
+        self.assertEqual(sum(int(v)>=int(VID)+10 for v in job['target'].splitlines()),2,'Focus retains most exploration slots; ordinary assets still receive a turn')
         discovery.author_command(dict(sec_uid=AUTHOR,enabled=False,priority='auto'))
         _,job=self.choose();self.assertTrue(all(int(v)<int(VID)+10 for v in job['target'].splitlines()))
         self.assertEqual(discovery.state()['counts']['related'],12)
+
+    def finish_work_job(self,job,number,instant=NOW):
+        ids=job['target'].splitlines()
+        task=col.start(dict(kind='video',target=job['target'],transport='http',video_limit=len(ids),
+                            request_id=f'fair-work-{number}'),discovery_job=job)['id']
+        col.checkpoint(task,dict(type='targets',records=[dict(video_id=v,video_title='合成作品') for v in ids]))
+        for vid in ids:col.checkpoint(task,dict(type='checkpoint',video_id=vid,status='done'))
+        col.update(task,status='completed',finished_at=instant);col.ACTIVE.clear()
+        with app.db() as c:discovery.settle(c,c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone())
+        return ids
+
+    def test_active_work_is_not_starved_by_large_focused_backlog(self):
+        self.save()
+        for start in range(0,600,50):self.record([work(i) for i in range(start,start+50)])
+        active=work(599)['video_id']
+        with app.db() as c:c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=?,new_recent_comments=3 WHERE video_id=?',
+                                      (discovery.future(NOW,-120),discovery.future(NOW,-60),active))
+        _,job=self.choose()
+        self.assertIn(active,job['target'].splitlines(),'Known fresh comments must receive a slot despite continuous new-work arrivals')
+        self.assertEqual(len(set(job['target'].splitlines())),3)
+
+    def test_quiet_work_gets_a_turn_during_continuous_focus_discovery(self):
+        self.save();self.record([work(i) for i in range(20)])
+        quiet=work(1000,author='MS4wLjABAAAA_NORMAL_AUTHOR')
+        self.record([quiet])
+        active=[work(i)['video_id'] for i in (18,19)]
+        with app.db() as c:c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=? WHERE video_id=?',
+                                      (discovery.future(NOW,-3600),discovery.future(NOW,-1800),quiet['video_id']))
+        selected=[]
+        for turn in range(3):
+            instant=discovery.future(NOW,turn*180)
+            with app.db() as c:
+                for vid in active:c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=?,new_recent_comments=3,quiet_streak=0 WHERE video_id=?',
+                                              (discovery.future(instant,-120),discovery.future(instant,-60),vid))
+            self.record([work(100+turn*3+i) for i in range(3)])
+            _,job=self.choose(instant=instant)
+            selected.extend(self.finish_work_job(job,turn,instant))
+        self.assertIn(quiet['video_id'],selected,'Old work must get a bounded exploration turn even while hot and focused work remain due')
+        self.assertTrue(set(active)<=set(selected))
+
+    def test_single_work_budget_rotates_all_groups_and_survives_reload(self):
+        self.save();self.record([work(i) for i in range(12)])
+        quiet=work(1000,author='MS4wLjABAAAA_NORMAL_AUTHOR');self.record([quiet])
+        active=work(11)['video_id'];groups=[]
+        for turn in range(4):
+            instant=discovery.future(NOW,turn*180)
+            with app.db() as c:
+                c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=?,new_recent_comments=2,quiet_streak=0 WHERE video_id=?',
+                          (discovery.future(instant,-120),discovery.future(instant,-60),active))
+                c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=?,quiet_streak=5 WHERE video_id=?',
+                          (discovery.future(NOW,-3600),discovery.future(NOW,-1800),quiet['video_id']))
+            _,job=self.choose(self.plan(video_limit=1),instant)
+            self.assertEqual(len(job['target'].splitlines()),1)
+            self.assertEqual(job['work_selection']['turn'],turn)
+            groups.extend(r['group'] for r in job['work_selection']['slots'])
+            self.finish_work_job(job,turn,instant)
+        self.assertEqual(groups.count('active'),2)
+        self.assertIn('focused_new',groups);self.assertIn('rotation',groups)
+
+    def test_reserved_slots_fill_without_selecting_future_or_disabled_work(self):
+        self.save();self.record([work(i) for i in range(12)])
+        with app.db() as c:
+            c.execute('UPDATE discovery_works SET last_checked_at=?,new_recent_comments=2',(discovery.future(NOW,-120),))
+            c.execute('UPDATE discovery_works SET next_check_at=? WHERE video_id=?',(discovery.future(NOW,60),VID))
+            c.execute('UPDATE discovery_works SET enabled=0 WHERE video_id=?',(work(1)['video_id'],))
+            c.execute('UPDATE videos SET enabled=0 WHERE external_id=?',(work(2)['video_id'],))
+        _,job=self.choose(self.plan(video_limit=5))
+        ids=job['target'].splitlines()
+        self.assertEqual(len(set(ids)),5)
+        self.assertFalse({VID,work(1)['video_id'],work(2)['video_id']}&set(ids))
+        self.assertTrue(all(r['group']=='active' for r in job['work_selection']['slots']))
+
+    def test_failed_work_retry_keeps_selection_and_turn_frozen(self):
+        self.save();self.record([work(i) for i in range(10)])
+        _,job=self.choose()
+        task=col.start(dict(kind='video',target=job['target'],transport='http',request_id='retry-fair-work'),discovery_job=job)['id']
+        col.update(task,status='network_error',finished_at=NOW);col.ACTIVE.clear()
+        with app.db() as c:discovery.settle(c,c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone())
+        self.record([work(100+i) for i in range(10)])
+        _,retry=self.choose(self.plan(run_count=3,last_task_id=task),discovery.future(NOW,300))
+        self.assertEqual(retry,job)
 
     def test_paused_fixed_work_is_not_automatically_reenabled(self):
         scheduler.save(dict(kind='video',target=VID,transport='http'))

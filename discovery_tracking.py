@@ -3,6 +3,7 @@
 Catalog entries are observed candidates, not comments or customer judgments.
 Author relevance ratios use author-feed samples, never biased search hits.
 """
+from collections import deque
 import json
 import re
 from datetime import datetime, timedelta
@@ -154,6 +155,53 @@ def record(c,rows,*,source,target,task=None):
             if row.get('metrics'):video_metadata.save(c,pk,row['metrics'])
 
 
+def select_work_targets(c,plan,instant,focused,paused):
+    """Reserve fresh-comment capacity and rotate exploration within the budget."""
+    blocked_sql=','.join('?' for _ in paused) or "''"
+    focused_sql=','.join('?' for _ in focused) or "''"
+    limit=plan['video_limit']
+    # Only return at most limit rows per group, even for a large durable library.
+    rows=c.execute(f'''WITH eligible AS (
+      SELECT DISTINCT w.*,CASE
+        WHEN w.last_checked_at IS NOT NULL AND w.new_recent_comments>0 AND w.quiet_streak<2 THEN 'active'
+        WHEN w.last_checked_at IS NULL AND w.author_sec_uid IN ({focused_sql}) THEN 'focused_new'
+        ELSE 'rotation' END AS selection_group
+      FROM discovery_works w JOIN videos v ON v.external_id=w.video_id
+      WHERE w.relevant=1 AND w.enabled=1 AND v.enabled=1 AND (w.author_sec_uid IS NULL OR NOT EXISTS
+        (SELECT 1 FROM discovery_authors a WHERE a.sec_uid=w.author_sec_uid AND a.enabled=0))
+      AND w.video_id NOT IN ({blocked_sql})
+      AND (w.next_check_at IS NULL OR julianday(w.next_check_at)<=julianday(?))
+    ), ranked AS (
+      SELECT *,ROW_NUMBER() OVER(PARTITION BY selection_group ORDER BY
+        julianday(COALESCE(next_check_at,first_seen_at)),julianday(published_at) DESC,video_id) AS selection_rank
+      FROM eligible
+    ) SELECT * FROM ranked WHERE selection_rank<=? ORDER BY selection_group,selection_rank''',
+      (*focused,*paused,instant,limit)).fetchall()
+    queues={name:deque(r for r in rows if r['selection_group']==name) for name in ('active','focused_new','rotation')}
+    # Count settled work batches, independent of intervening author/search turns.
+    turn=c.execute("SELECT COUNT(*) FROM discovery_jobs WHERE kind='work' AND settled=1").fetchone()[0]
+    selected=[]
+    def take(name):
+        if queues[name]:selected.append(queues[name].popleft());return True
+        return False
+    if limit==1:
+        cycle=('active','active','focused_new','rotation')
+        for offset in range(len(cycle)):
+            if take(cycle[(turn+offset)%len(cycle)]):break
+    else:
+        reserved=int(bool(queues['focused_new'] or queues['rotation']))
+        while len(selected)<limit-reserved and take('active'):pass
+        exploration=0
+        while len(selected)<limit and (queues['focused_new'] or queues['rotation']):
+            preferred='rotation' if (turn+exploration)%3==2 else 'focused_new'
+            if not take(preferred):take('focused_new' if preferred=='rotation' else 'rotation')
+            exploration+=1
+        while len(selected)<limit and take('active'):pass
+    audit=dict(version='work-fair-rotation-v1',turn=turn,
+               slots=[dict(video_id=r['video_id'],group=r['selection_group']) for r in selected])
+    return selected,audit
+
+
 def choose(c,plan,instant):
     """Return (enabled, job). Weighted rotation prevents either layer starving."""
     cfg=config(c)
@@ -182,17 +230,8 @@ def choose(c,plan,instant):
     if query:jobs['search']=dict(kind='search',target=query['keyword'],transport=plan['transport'] if plan['kind']=='search' else 'local_browser',key=query['keyword'],channel='search')
     paused=paused_targets(c)
     focused={r['sec_uid'] for r in authors if r['focused'] and r['enabled']}
-    blocked_sql=','.join('?' for _ in paused) or "''"
-    focused_sql=','.join('?' for _ in focused) or "''"
-    rows=c.execute(f'''SELECT DISTINCT w.* FROM discovery_works w JOIN videos v ON v.external_id=w.video_id
-      WHERE w.relevant=1 AND w.enabled=1 AND v.enabled=1 AND (w.author_sec_uid IS NULL OR NOT EXISTS
-      (SELECT 1 FROM discovery_authors a WHERE a.sec_uid=w.author_sec_uid AND a.enabled=0))
-      AND w.video_id NOT IN ({blocked_sql})
-      AND (w.next_check_at IS NULL OR julianday(w.next_check_at)<=julianday(?))
-      ORDER BY CASE WHEN w.last_checked_at IS NULL AND w.author_sec_uid IN ({focused_sql}) THEN 0
-      WHEN w.new_recent_comments>0 AND w.quiet_streak<2 THEN 1 WHEN w.last_checked_at IS NULL THEN 2 ELSE 3 END,
-      COALESCE(w.next_check_at,w.first_seen_at),julianday(w.published_at) DESC,w.video_id LIMIT ?''',(*paused,instant,*focused,plan['video_limit'])).fetchall()
-    if rows:jobs['work']=dict(kind='video',target='\n'.join(r['video_id'] for r in rows),transport='http',key='work',channel='work')
+    rows,selection=select_work_targets(c,plan,instant,focused,paused)
+    if rows:jobs['work']=dict(kind='video',target='\n'.join(r['video_id'] for r in rows),transport='http',key='work',channel='work',work_selection=selection)
     rotation=['work','author','work','search'];start=plan['run_count']%len(rotation)
     chosen=next((jobs[rotation[(start+i)%len(rotation)]] for i in range(len(rotation)) if rotation[(start+i)%len(rotation)] in jobs),None)
     return True,{**chosen,'policy':cfg} if chosen else None

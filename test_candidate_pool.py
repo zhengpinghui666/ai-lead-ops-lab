@@ -216,7 +216,8 @@ class CandidateTests(unittest.TestCase):
                 def page(self,operation,**kw):
                     calls.append(operation)
                     return {'rows':[],'skipped':0,'has_more':False,'cursor':0,'reply_targets':[],'skipped_reasons':{}}
-            result={'candidates':ROWS,'scope':'bounded_author_candidates','failures':failures}
+            result={'candidates':ROWS,'seed_details':[], 'status':'partial' if failures else 'completed',
+                    'scope':'bounded_author_candidates','failures':failures}
             events=[]
             with patch('video_discovery.discover',return_value=result):
                 worker.collect({'kind':'author','target':IDS[0],'video_limit':3,'comment_limit':10,'page_concurrency':1,
