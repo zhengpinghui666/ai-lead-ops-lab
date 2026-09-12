@@ -148,8 +148,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "a7c1ce2f27eb66fd2c6c4ae65a9c8537d48c83b096a8c46adb943dd221335d2d",
-      "bytes": 14558
+      "sha256": "8720405a41d566190eafb8ffa4e37d1c106011876d6121ae0d5864f621a082bc",
+      "bytes": 16020
     },
     {
       "name": "UID_HTTP.md",
@@ -158,8 +158,8 @@
     },
     {
       "name": "UID_INBOX.md",
-      "sha256": "a0624b22e256af68f3c43f427b3ab9b774620ad7b435aaebf83185d980f77b60",
-      "bytes": 12358
+      "sha256": "e7f61b74499c5a6cd0d10bf89b5e85384ed714a3de22741538b147fa2de27909",
+      "bytes": 13492
     },
     {
       "name": "UID_SESSION.md",
