@@ -201,6 +201,21 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(result['status'], 'failed')
         self.assertNotIn('private response', json.dumps(store.history('comment',self.id)))
 
+    def test_potential_demand_extension_preserves_prior_buyer_and_evidence(self):
+        with patch.object(model, 'PROMPT_VERSION', 'intent-prompt-v7'):
+            with patch.object(SyntheticAdapter, 'predict', side_effect=lambda s:(prediction(s, 'buyer'), 'a'*64)):
+                model.analyze_one(self.body(), adapter_factory=SyntheticAdapter)
+            previous = app.state()['comments'][0]
+        history = store.history('comment', self.id)
+        with patch.object(model, 'PROMPT_VERSION', 'intent-prompt-v8'), patch.object(SyntheticAdapter, 'predict') as predict:
+            current = app.state()['comments'][0]
+            self.assertEqual((current['category'], current['analysis_method']), ('buyer', 'model'))
+            self.assertEqual(current['model_result'], previous['model_result'])
+            self.assertEqual(store.history('comment', self.id), history)
+            predict.assert_not_called()
+        self.assertFalse(store.compatible_engine('x:intent-prompt-v7:f', 'y:intent-prompt-v8:f'))
+        self.assertFalse(store.compatible_engine('x:intent-prompt-v8:f', 'x:intent-prompt-v7:f'))
+
     def test_source_change_while_running_makes_result_historical(self):
         def changing(source):
             app.ingest({'records':[dict(comment_id='comment1',video_id='v1',user_id='20001',text='无畏契约免费组队')]})

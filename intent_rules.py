@@ -15,7 +15,7 @@ REQUEST = (rf'(?:预约|需要|想要|想买|想购买|购买|找|求|(?<![原�
 GROUP = r'(?:找|来|求|缺|差)[^，,。.!?！？；;\n]{0,8}?(?:搭子|队友|个人|人|一位|两位|组队)|带我|带一下|一起(?:玩|开黑|匹配)|组队|互带互学|互学互带|[双三五]排'
 PRODUCT = r'皮肤|枪皮|外设|键盘|鼠标|显卡|显示器|电脑|账号|通行证'
 AMOUNT = r'\d+(?:\.\d+)?(?:\s*[-–到至]\s*\d+(?:\.\d+)?)?'
-RELEVANCE_VERSION = 'comment-relevance-v1'
+RELEVANCE_VERSION = 'comment-relevance-v2'
 COMPANION = r'陪玩|陪练|陪打|陪排|带练|代练|代打|男陪|女陪|技术陪|娱乐陪|点陪|陪\s*[wW]'
 HELP = (r'求带|带带我|带我(?:打|玩|上分|排位|开黑)|带我[啊呀吧呗吗么?？!！\s]*$'
         r'|(?:找|求|来|缺|有没有|一起)[^，,。.!?！？；;\n]{0,8}(?:搭子|队友|组队|开黑|[双三五]排)'
@@ -25,6 +25,9 @@ SERVICE_ACTION = (rf'(?:找|求|请|约|预约|购买|付费|有偿|招聘|招�
                   r'|教教我|教我(?:打|玩|练枪|上分)|接单|找(?:个|位)?老板|有老板吗'
                   r'|多少(?:钱|米).{0,4}(?:一小时|每小时|一局)|(?:一小时|每小时|一局).{0,4}多少(?:钱|米)')
 SERVICE_QUESTION = r'多少(?:钱|米)|怎么收费|如何收费|什么价格|价格多少|怎么下单|如何下单|在哪下单|怎么买|怎么约|能约|预约|怎么联系|怎么找你|在哪找你|还接吗|接吗|来一个'
+PLAY_INVITATION = (r'(?:有人|有没有人|谁|有无)(?:要|想|能|来|一起)?(?:打|玩)(?:瓦|排位|匹配)?(?:不|吗|么|嘛|啊|呀|没|$)'
+                   r'|(?:排位|匹配|开黑|打瓦|玩瓦)[^，,。.!?！？；;\n]{0,6}(?:来不|玩不|打不|缺人|缺[一二两三四五1-5])'
+                   r'|(?:找|缺|来|求)(?:个|一[个位]|两[个位])?人(?:一起)?(?:打|玩)(?:瓦|排位|匹配|游戏|不|吗|$)')
 
 
 def companion_relevance(raw, video_context='', parent_context=''):
@@ -43,6 +46,14 @@ def companion_relevance(raw, video_context='', parent_context=''):
     payment=matches(raw,r'付费|有偿|预算\s*\d|花钱|付钱','companion_payment')
     if play and payment:
         return decision(True,'原文同时有游戏协作和费用线索，交由模型确认服务对象与意图。',play[:2]+payment[:2])
+    invitations = matches(raw, PLAY_INVITATION, 'play_invitation')
+    if invitations:
+        # A literal invitation plus game context only opens model analysis. It
+        # never claims payment intent, nor allows the title alone to pass.
+        for source, text in (('comment', raw), ('parent', parent_context), ('video', video_context)):
+            context = matches(text, GAME_PATTERN.pattern, 'game_context', source=source)
+            if context:
+                return decision(True, '原文有游戏邀约，且已保存上下文指向瓦；交由模型判断是否存在可争取的陪玩需求。', invitations[:2]+context[:2])
     questions=matches(raw,SERVICE_QUESTION,'companion_question')
     if questions:
         # Resolve the nearest named object; a keyboard question must not borrow

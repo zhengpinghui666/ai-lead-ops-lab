@@ -24,11 +24,16 @@ def owner(value):
     return value
 
 
-def join_body(group_id,sender,ticket,inviter):
+def join_body(group_id,sender,ticket,inviter,answer=''):
     for value in (group_id,sender,inviter):wire.numeric_uid(value)
-    if not isinstance(ticket,str) or not 1<=len(ticket)<=4096:raise ValueError('加群凭据无效')
+    # The observed official applyJoinGroup wrapper defaults ticket to "".
+    # Public verification legitimately returns an empty string; keep that exact
+    # server value, while rejecting absent/non-string/oversized values.
+    if not isinstance(ticket,str) or len(ticket)>4096:raise ValueError('加群凭据无效')
     ext={'invitation':json.dumps({'invitee':{'source_app_id':6383},'invitor':{'im_user_id':int(inviter)},'source_type':50},separators=(',',':')),
          'source_type':'50','ticket':ticket}
+    if not isinstance(answer,str) or len(answer)>500:raise ValueError('入群回答无效')
+    if answer:ext['group_audit_answer']=answer
     payload=wire.field(1,group_id)+wire.field(2,int(group_id))+wire.field(3,2)+wire.field(4,int(sender))
     return wire.field(650,payload+b''.join(wire.field(5,wire.field(1,k)+wire.field(2,v)) for k,v in ext.items()))
 
@@ -45,10 +50,11 @@ def validate_join_body(body,sender):
         entry=wire.decode(raw);key=wire.text(entry,1)
         if key in ext or set(entry)!={1,2}:raise ValueError('加群参数无效')
         ext[key]=wire.text(entry,2)
-    if set(ext)!={'invitation','source_type','ticket'} or ext['source_type']!='50':raise ValueError('加群来源无效')
+    required={'invitation','source_type','ticket'}
+    if not required<=set(ext) or set(ext)-required-{'group_audit_answer'} or ext['source_type']!='50':raise ValueError('加群来源无效')
     invitation=json.loads(ext['invitation']);inviter=invitation.get('invitor',{}).get('im_user_id')
     if type(inviter) is not int:raise ValueError('邀请来源无效')
-    if body!=join_body(group_id,sender,ext['ticket'],str(inviter)):raise ValueError('加群业务体无效')
+    if body!=join_body(group_id,sender,ext['ticket'],str(inviter),ext.get('group_audit_answer','')):raise ValueError('加群业务体无效')
     return group_id
 
 
@@ -120,25 +126,32 @@ class Client:
         return result
 
     def join(self,verification):
+        self.join_evidence = dict(phase='conditions', submission_started=False)
         if (verification.get('code') not in (0,7602) or str(verification.get('category'))!='2' or
-                verification.get('question') or verification.get('join_allowance') not in ('-1','1') or
+                verification.get('question') and not verification.get('group_audit_answer','').strip() or verification.get('join_allowance') not in ('-1','1') or
                 any(not isinstance(v,dict) or v.get('status')!=1 for v in verification.get('entry_limit',[None]))):
             raise ValueError('公开群条件未通过，未提交申请')
-        gid=verification['group_id'];body=join_body(gid,self.sender,verification['ticket'],verification['inviter'])
+        self.join_evidence['phase']='prepare'
+        gid=verification['group_id'];body=join_body(gid,self.sender,verification['ticket'],verification['inviter'],verification.get('group_audit_answer',''))
         prepared=self.provider.prepare('group_join',body,dict(sender_uid=self.sender,command=650))
         sequence=uid_transport.validate_envelope(prepared,650,body)
+        self.join_evidence.update(phase='transport',submission_started=True)
         status,mime,raw=self.exchange('group_join',prepared)
         proof=dict(http_status=status,response_bytes=len(raw),response_sha256=hashlib.sha256(raw).hexdigest())
+        self.join_evidence.update(proof,phase='response')
         if status!=200 or 'protobuf' not in mime.lower():raise ValueError('加群响应未确认；禁止自动重发')
         root=wire.decode(raw)
         if (wire.one(root,1,0)!=650 or wire.one(root,2,0)!=sequence or wire.one(root,13,0)!=int(self.sender)
                 or wire.one(root,5,0,0)!=0):raise ValueError('加群响应关联不一致；禁止自动重发')
+        self.join_evidence['phase']='platform_result'
         proof['platform_code']=wire.one(root,3,0,0)
+        self.join_evidence['platform_code']=proof['platform_code']
         if proof['platform_code']!=0:return dict(status='rejected',proof=proof)
         if wire.text(root,4)!='OK':raise ValueError('加群平台状态未确认；禁止自动重发')
         outer=wire.decode(wire.one(root,6,2,b''))
         if set(outer)!={650}:raise ValueError('加群响应结构未确认；禁止自动重发')
         result=wire.decode(wire.one(outer,650,2));proof['business_code']=wire.one(result,3,0,0)
+        self.join_evidence.update(phase='business_result',business_code=proof['business_code'])
         check=wire.text(result,6)
         try:code=json.loads(check).get('status_code') if check else None
         except (ValueError,AttributeError):code=None

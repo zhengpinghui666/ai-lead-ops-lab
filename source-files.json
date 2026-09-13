@@ -84,6 +84,7 @@
   "game_scope.json",
   "game_scope.py",
   "github_backup.py",
+  "group_answers.py",
   "group_discovery.py",
   "group_inbox.py",
   "group_monitor.py",

@@ -280,6 +280,9 @@ class Handler(BaseHTTPRequestHandler):
             elif action == 'group-discovery-control':
                 import group_discovery
                 result = group_discovery.control(body,mode)
+            elif action in ('group-question','group-answer'):
+                import group_discovery
+                result = group_discovery.question(body,mode) if action=='group-question' else group_discovery.answer(body,mode)
             elif action == 'uid-inbox-read':
                 import uid_inbox_store
                 result = uid_inbox_store.read(body,mode)

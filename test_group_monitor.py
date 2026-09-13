@@ -172,6 +172,27 @@ class MonitorTests(unittest.TestCase):
             c.execute('UPDATE monitored_groups SET member=0')
             self.assertFalse(monitor.eligible(c,raw,semantic.state()['engine'],SENDER))
 
+    def test_old_invitation_gate_rescreens_once_and_waits_for_model(self):
+        texts = ('一会有人要玩吗', '有人打不', '匹配你玩不', '我青铜')
+        self.add([msg(20+i, text, age=7200) for i, text in enumerate(texts)])
+        self.add([msg(30, '有人打不', age=86401), msg(31, '有人打不', uid=SENDER)])
+        with app.db() as c:
+            old = dict(version='comment-relevance-v1', passed=False, reason='old gate', evidence=[])
+            c.execute("UPDATE group_messages SET filter_reason='未通过陪玩需求初筛',relevance=?,person_id=NULL", (json.dumps(old),))
+            before = [tuple(r) for r in c.execute('SELECT id,raw_text,published_at,observed_at,category,reason,facts FROM group_messages ORDER BY id')]
+        self.assertEqual(set(monitor.reconsider_keyword_filters()), {1, 2, 3, 4, 6})
+        self.assertEqual(monitor.reconsider_keyword_filters(), [])
+        with app.db() as c:
+            after = [tuple(r) for r in c.execute('SELECT id,raw_text,published_at,observed_at,category,reason,facts FROM group_messages ORDER BY id')]
+            self.assertEqual(before, after)
+            passed = [r[0] for r in c.execute("SELECT id FROM group_messages WHERE filter_reason=''")]
+            self.assertEqual(passed, [1, 2, 3])
+            self.assertFalse(monitor.eligible(c, self.raw(c), semantic.state()['engine'], SENDER))
+            audit = [json.loads(r[0]) for r in c.execute("SELECT detail FROM group_reads WHERE operation='rescreen'")]
+            self.assertTrue(all(r['previous_relevance']==old for r in audit))
+            self.assertEqual(len(audit), 5)
+        self.assertEqual(queue.enqueue('group', passed)['queued'], 3)
+
     def test_paging_restarts_from_committed_cursor_and_never_reingests(self):
         calls=[]
         def read(account,group,cursor=0):

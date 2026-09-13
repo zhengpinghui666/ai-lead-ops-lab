@@ -57,6 +57,29 @@ class ProtocolTests(unittest.TestCase):
             with self.assertRaises(ValueError):self.client(exchange=exchange).join(dict(VERIFIED,**changes))
             exchange.assert_not_called()
 
+    def test_empty_ticket_matches_official_wrapper_but_missing_ticket_fails_locally(self):
+        self.assertEqual(self.client(exchange=self.response()).join(dict(VERIFIED,ticket=''))['status'],'accepted')
+        exchange=Mock()
+        client=self.client(exchange=exchange)
+        with self.assertRaises(ValueError):client.join(dict(VERIFIED,ticket=None))
+        exchange.assert_not_called()
+        self.assertEqual(client.join_evidence,dict(phase='prepare',submission_started=False))
+
+    def test_question_answer_is_encoded_only_for_current_self_join(self):
+        answer='年龄信息暂未提供。'
+        body=public.join_body(GID,SENDER,'',RECEIVER,answer)
+        self.assertEqual(public.validate_join_body(body,SENDER),GID)
+        self.assertIn(answer.encode(),body)
+        self.assertEqual(self.client(exchange=self.response(code=7601)).join(dict(VERIFIED,ticket='',question='多少岁？',group_audit_answer=answer))['status'],'pending')
+
+    def test_unconfirmed_response_keeps_safe_stage_and_digest(self):
+        client=self.client(exchange=lambda *a:(200,'text/html',b'synthetic-secret'))
+        with self.assertRaises(ValueError):client.join(VERIFIED)
+        self.assertTrue(client.join_evidence['submission_started'])
+        self.assertEqual(client.join_evidence['phase'],'response')
+        self.assertEqual(client.join_evidence['response_bytes'],16)
+        self.assertNotIn('synthetic-secret',json.dumps(client.join_evidence))
+
     def test_catalog_missing_or_malformed_is_not_empty_success(self):
         client=self.client()
         for rows in ({'group_list':{}},{'group_list':''},{}, {'group_list':[dict(group_id=GID)]}):
@@ -149,6 +172,63 @@ class DiscoveryTests(unittest.TestCase):
     def test_existing_paused_group_is_preserved(self):
         self.members=[self.group()];monitor.discover(reader=self.catalog);monitor.control({'id':1,'enabled':False})
         self.tick();self.assertNotIn('join',self.calls);self.assertEqual(monitor.state()['enabled'],0)
+
+    def test_model_answer_binds_question_and_can_then_apply_once(self):
+        import group_answers
+        import semantic
+        group_answers.STOP.clear()
+        semantic.save(dict(semantic.DEFAULTS,enabled=True,model='synthetic:1'))
+        self.verification=dict(VERIFIED,question='多少岁？')
+        self.tick();self.assertNotIn('join',self.calls)
+        draft=lambda question,settings:dict(answer='年龄暂未提供',fact_keys=[],unknown=True)
+        self.assertTrue(group_answers.tick(predictor=draft))
+        self.assertFalse(group_answers.tick(predictor=draft))
+        self.tick();self.assertEqual(self.calls.count('join'),1)
+        self.assertEqual(discovery.state()['candidates'][0]['answer'],'年龄信息暂未提供。')
+        self.tick();self.assertEqual(self.calls.count('join'),1)
+
+    def test_question_change_and_unknown_facts_cannot_reuse_or_invent_age(self):
+        import group_answers
+        result=group_answers.validate(dict(answer='我十八岁',fact_keys=['game'],unknown=False),'多少岁？')
+        self.assertEqual(result['answer'],'年龄信息暂未提供。')
+        with app.db() as c:
+            discovery.record(c,SENDER,[CANDIDATE])
+            discovery.remember_question(c,SENDER,GID,'多少岁？')
+        discovery.answer(dict(group_id=GID,question='多少岁？',answer='合成答案'))
+        with app.db() as c:
+            self.assertEqual(discovery.remember_question(c,SENDER,GID,'玩什么游戏？'),'')
+        with self.assertRaises(ValueError):discovery.answer(dict(group_id=GID,question='多少岁？',answer='旧题答案'))
+
+    def test_model_answer_after_pause_is_historical_only(self):
+        import group_answers
+        import semantic
+        group_answers.STOP.clear()
+        semantic.save(dict(semantic.DEFAULTS,enabled=True,model='synthetic:1'))
+        self.verification=dict(VERIFIED,question='多少岁？');self.tick()
+        def pause(question,settings):
+            discovery.control({'enabled':False})
+            return dict(answer='相关信息暂未提供。',fact_keys=[],unknown=True)
+        self.assertTrue(group_answers.tick(predictor=pause))
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT answer FROM public_group_questions').fetchone()[0],'')
+            self.assertEqual(c.execute('SELECT status FROM public_group_answer_runs').fetchone()[0],'stale')
+
+    def test_readonly_verification_proves_pending_without_rejoining(self):
+        with app.db() as c:
+            discovery.record(c,SENDER,[CANDIDATE])
+            proof=dict(phase='platform_result',submission_started=True,http_status=200)
+            c.execute("INSERT INTO public_group_attempts VALUES(?,?,?,?,?,?)",(SENDER,GID,app.now(),app.now(),'uncertain',json.dumps(proof)))
+        self.verification=dict(VERIFIED,code=7601)
+        discovery.reconcile_application_status(SENDER,client_factory=self.client)
+        self.assertEqual(self.calls,['verify'])
+        with app.db() as c:
+            row=c.execute('SELECT status,proof FROM public_group_attempts').fetchone()
+            self.assertEqual(row['status'],'pending')
+            saved=json.loads(row['proof'])
+            self.assertEqual({k:saved[k] for k in proof},proof)
+            self.assertEqual(saved['status_verification']['code'],7601)
+        discovery.reconcile_application_status(SENDER,client_factory=self.client)
+        self.assertEqual(self.calls,['verify'])
 
     def test_pause_and_account_change_stop_public_discovery(self):
         discovery.control({'enabled':False});self.tick();self.assertEqual(self.calls,[])

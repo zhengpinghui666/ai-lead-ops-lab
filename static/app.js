@@ -211,12 +211,13 @@ async function refreshGroups(){
 }
 function groupDiscoveryPanel(d){
   d=d||{enabled:false,candidates:[],detail:'等待开启公开群筛选'};
-  const rows=d.candidates||[],pending=rows.filter(g=>['pending','accepted','uncertain'].includes(g.status)).length;
-  return `<section class="card section-gap"><div class="card-head"><div><h2>公开群筛选</h2><small>瓦搭子群、瓦开黑群、无畏契约开黑群</small></div><div class="actions">${badge(d.enabled?'筛选中':'未开启',d.enabled?'good':'')}${button(d.enabled?'暂停筛选':'开启筛选','group-discovery-toggle',d.enabled?'small':'primary small',`data-enabled="${!d.enabled}"`)}${button(`候选群${rows.length?' '+rows.length:''}`,'group-public-list','small')}</div></div><div class="card-body"><p class="muted">${esc(d.detail||'等待下一轮筛选')}${pending?` · ${pending} 个申请等待确认`:''}</p><small>从相关招群作品查找公开群，符合条件后申请加入；确认加入后开启监控，群内不发言。</small></div></section>`;
+  const rows=d.candidates||[],counts=d.counts||rows.reduce((a,g)=>(a[g.status]=(a[g.status]||0)+1,a),{});
+  const stages=[['pending','待审核'],['accepted','待确认加入'],['uncertain','结果未确认'],['question','入群问答'],['full','群已满'],['not_submitted','准备失败']].filter(([key])=>counts[key]);
+  return `<section class="card section-gap"><div class="card-head"><div><h2>公开群筛选</h2><small>瓦搭子群、瓦开黑群、无畏契约开黑群</small></div><div class="actions">${badge(d.enabled?'筛选中':'未开启',d.enabled?'good':'')}${button(d.enabled?'暂停筛选':'开启筛选','group-discovery-toggle',d.enabled?'small':'primary small',`data-enabled="${!d.enabled}"`)}${button(`候选群${rows.length?' '+rows.length:''}`,'group-public-list','small')}</div></div><div class="card-body"><p class="muted">${esc(d.detail||'等待下一轮筛选')}</p>${stages.length?`<div class="collection-counts">${stages.map(([key,label])=>`<span>${label} <b>${fmt(counts[key])}</b></span>`).join('')}</div>`:''}<small>监控数量只计已确认加入的对口群；入群问题交给模型回答，群内不发言。</small></div></section>`;
 }
 function showPublicGroups(){
-  const rows=groupState?.discovery?.candidates||[],names={candidate:'待核验',unmatched:'不对口',full:'群已满',restricted:'条件未通过',question:'需要回答问题',pending:'等待审核',accepted:'等待确认加入',uncertain:'结果待核对',rejected:'申请未通过',joined:'已确认加入',observed:'已在群内',unavailable:'当前不可用'};
-  showModal('公开群候选',`<p class="muted">申请提交后保留记录；等待审核或结果不明的申请不会重复提交。</p>${rows.map(g=>`<article class="group-target"><div class="row spread"><h3>${esc(g.name)}</h3>${badge(names[g.status]||'待核验',g.status==='joined'?'good':'')}</div><p>${fmt(g.participants)} 人${g.description?' · '+esc(g.description):''}</p><p>${esc(g.detail)}</p><small>最近核验 ${date(g.checked_at)}</small></article>`).join('')||'<p>尚未发现公开群。开启筛选后，将持续从相关作品的作者主页查找。</p>'}<div class="actions">${button('刷新候选','group-public-list','small')}</div>`);
+  const rows=groupState?.discovery?.candidates||[],names={candidate:'待核验',unmatched:'不对口',full:'群已满',restricted:'条件未通过',question:'模型问答',pending:'等待审核',accepted:'等待确认加入',uncertain:'结果待核对',rejected:'申请未通过',joined:'已确认加入',observed:'已在群内',unavailable:'当前不可用',not_submitted:'准备失败 · 未提交'};
+  showModal('公开群候选',`<p class="muted">申请提交后保留记录；等待审核或结果不明的申请不会重复提交。</p>${rows.map(g=>`<article class="group-target"><div class="row spread"><h3>${esc(g.name)}</h3>${badge(names[g.status]||'待核验',g.status==='joined'?'good':'')}</div><p>${fmt(g.participants)} 人${g.description?' · '+esc(g.description):''}</p><p>${esc(g.detail)}</p>${g.question?`<p>入群问题：${esc(g.question)}</p><p>回答：${g.answer?esc(g.answer):'等待模型作答'}</p>`:''}${g.status==='question'&&!g.question?button('读取问题并交给模型','group-question','small',`data-id="${esc(g.group_id)}"`):''}<small>最近核验 ${date(g.checked_at)}</small></article>`).join('')||'<p>尚未发现公开群。开启筛选后，将持续从相关作品的作者主页查找。</p>'}<div class="actions">${button('刷新候选','group-public-list','small')}</div>`);
 }
 function groupMessageStage(m){const model=m.model_result;return m.filter_reason?'初筛未通过':model?.status==='completed'&&m.analysis_method==='model'?labels[m.category]||'已分析':model?.status==='running'?'模型分析中':model?.status==='failed'?'模型失败 · 未私信':model&&model.status!=='completed'?'模型未生效 · 未私信':'初筛通过 · 待模型';}
 function groupMessageDetail(m){
@@ -525,6 +526,7 @@ case 'group-refresh':groupBefore=0;await refreshGroups();break;
 case 'group-older':groupBefore=groupState?.next_before||0;await refreshGroups();break;
 case 'group-public-list':await refreshGroups();showPublicGroups();break;
 case 'group-discovery-toggle':await api('group-discovery-control',{enabled:el.dataset.enabled==='true'});await refreshGroups();toast(el.dataset.enabled==='true'?'已开启公开群筛选':'已暂停公开群筛选');break;
+case 'group-question':await api('group-question',{group_id:el.dataset.id});await refreshGroups();showPublicGroups();break;
 case 'group-discover':await api('group-discover');groupBefore=0;await refreshGroups();toast('已刷新当前账号的已加入群；未执行加群');break;
 case 'group-toggle':await api('group-control',{id,enabled:el.dataset.enabled==='true'});await refreshGroups();break;
 case 'uid-inbox-read':case 'uid-inbox-older': await uidInboxRead('messages',id,el.dataset.action==='uid-inbox-older');break;

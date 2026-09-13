@@ -80,13 +80,18 @@ def latest(c, kind, record_id, method, input_hash):
 
 
 def compatible_engine(recorded, current):
-    """The v7 alias extension retains v6 decisions for identical source inputs.
+    """Recall extensions retain earlier decisions for identical source inputs.
 
     Other model, provider, schema or prompt changes still require a new result.
     This never rewrites historical records or schedules another model request.
     """
-    return bool(current and recorded and (recorded == current or
-        ':intent-prompt-v6:' in recorded and recorded.replace(':intent-prompt-v6:', ':intent-prompt-v7:') == current))
+    if not current or not recorded:
+        return False
+    if recorded == current:
+        return True
+    return any(f':intent-prompt-v{old}:' in recorded and
+               recorded.replace(f':intent-prompt-v{old}:', f':intent-prompt-v{new}:') == current
+               for old, new in ((6, 7), (6, 8), (7, 8)))
 
 
 def project(c, row, *, model_engine=None):

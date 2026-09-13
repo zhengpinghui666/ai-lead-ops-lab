@@ -50,7 +50,11 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.ok(groupSources.includes('data-action="group-discovery-toggle"'));
   assert.ok(groupSources.includes('data-enabled="true"'));
   const publicHtml=run(`groupDiscoveryPanel({enabled:true,detail:'<script>bad</script>',candidates:[{status:'pending'},{status:'joined'}]})`);
-  assert.ok(publicHtml.includes('1 个申请等待确认'));
+  assert.ok(publicHtml.includes('待审核 <b>1</b>'));
+  const uncertainGroups=run(`groupDiscoveryPanel({enabled:true,counts:{uncertain:3,question:1,full:1},candidates:[]})`);
+  assert.ok(uncertainGroups.includes('结果未确认 <b>3</b>'));
+  assert.ok(uncertainGroups.includes('入群问答 <b>1</b>'));
+  assert.ok(!uncertainGroups.includes('待审核 <b>3</b>'));
   assert.ok(publicHtml.includes('暂停筛选'));
   assert.ok(publicHtml.includes('&lt;script&gt;bad'));
   assert.ok(!groupHtml.includes('data-action="group-send"'));

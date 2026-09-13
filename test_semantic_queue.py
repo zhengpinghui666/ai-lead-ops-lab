@@ -108,6 +108,26 @@ class QueueTests(unittest.TestCase):
         self.add('new')
         self.assertEqual(len(self.jobs()),1)
 
+    def test_recall_upgrade_only_requeues_current_uncertain_records(self):
+        from datetime import datetime, timezone, timedelta
+        ids = []
+        with patch.object(semantic, 'PROMPT_VERSION', 'intent-prompt-v7'):
+            for i, category in enumerate(('buyer', 'noise', 'uncertain', 'uncertain')):
+                self.add(str(i))
+                with patch.object(SyntheticAdapter, 'predict', side_effect=lambda s, k=category:(prediction(s, k), 'a'*64)):
+                    self.assertTrue(queue.run_one(adapter_factory=SyntheticAdapter))
+                ids.append(self.jobs()[-1]['record_id'])
+        with app.db() as c:
+            c.execute('UPDATE comments SET published_at=?', (app.now(),))
+            c.execute('UPDATE comments SET published_at=? WHERE id=?', ((datetime.now(timezone.utc)-timedelta(hours=25)).isoformat(), ids[-1]))
+            history = [tuple(r) for r in c.execute('SELECT * FROM intent_results')]
+        with patch.object(semantic, 'PROMPT_VERSION', 'intent-prompt-v8'):
+            self.assertEqual(queue.enqueue('comment', ids)['queued'], 1)
+            self.assertEqual(self.jobs()[-1]['record_id'], ids[2])
+            self.assertEqual(queue.enqueue('comment', ids)['queued'], 0)
+        with app.db() as c:
+            self.assertEqual(history, [tuple(r) for r in c.execute('SELECT * FROM intent_results')])
+
     def test_capacity_overflow_keeps_rules_and_reports_backpressure(self):
         with patch.object(queue,'CAPACITY',1):
             self.add('one')

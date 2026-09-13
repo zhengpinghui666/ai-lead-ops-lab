@@ -177,6 +177,36 @@ def transient_data_wait(connection, task):
         return None
 
 
+def transient_browser_body_wait(connection, task):
+    """A single timed-out body amid proven valid pages, never a parser bypass."""
+    if not task or task['transport']!='local_browser' or task['status']!='partial' or not task['finished_at']:
+        return None
+    if sum(task[k] for k in ('comments','filtered_old','filtered_unknown','filtered_future','filtered_keyword','filtered_blocked'))<=0:
+        return None
+    count=0
+    try:
+        for row in connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=?',(task['id'],)):
+            snapshot=json.loads(row['snapshot'])
+            if row['stage'] in ('search-scope','candidate_selection'):continue
+            if row['stage']!='comment-read' or snapshot.get('navigation_error') or snapshot.get('navigation_http_status')!=200:return None
+            info=snapshot.get('processing',{})
+            if (info.get('version')!='comment-quality-v1' or info.get('recognized') is not True or info.get('invalid_records')!=0
+                    or info.get('skipped')!=info.get('non_text_skipped') or not re.fullmatch(r'https://www\.douyin\.com/video/\d{5,30}/?',snapshot.get('page_url',''))):return None
+            responses=snapshot.get('responses')
+            if not isinstance(responses,list) or not responses:return None
+            failures=0;successes=0
+            for item in responses:
+                if item.get('kind')!='comment' or item.get('status')!=200 or item.get('content_kind')!='json':return None
+                if item.get('body_error')=='body_timeout':failures+=1
+                elif (item.get('body_error') or item.get('status_code')!=0 or item.get('comments_type')!='array'
+                      or type(item.get('comments_count')) is not int or item['comments_count']<0 or item.get('invalid_records')!=0):return None
+                else:successes+=item['comments_count']
+            if info.get('parse_errors')!=failures or failures and successes<=0:return None
+            count+=failures
+        return 0 if count==1 else None
+    except (ValueError,TypeError,AttributeError):return None
+
+
 def transient_batch_wait(connection, task):
     """Keep ordinary incomplete page reads distinct from parser/auth failures."""
     if task and task['status'] == 'schema_changed':
@@ -188,6 +218,8 @@ def transient_batch_wait(connection, task):
         return transient_http_wait(connection, task)
     if task['transport'] != 'local_browser' or not task['finished_at']:
         return None
+    body_wait=transient_browser_body_wait(connection,task)
+    if body_wait is not None:return body_wait
     observed = sum(task[k] for k in ('comments','filtered_old','filtered_unknown','filtered_future','filtered_keyword','filtered_blocked'))
     if observed <= 0:
         return None

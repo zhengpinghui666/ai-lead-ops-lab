@@ -255,6 +255,7 @@ def tick(*,reader=None,catalog_reader=None):
 def replenish():
     import semantic_queue
     reconsider_legacy_time_filters()
+    reconsider_keyword_filters()
     with app.db() as c:
         ids=[r[0] for r in c.execute("SELECT id FROM group_messages WHERE filter_reason='' AND published_at>=? ORDER BY id DESC LIMIT 200",(stamp_after(-demand_freshness.MAX_AGE_SECONDS),))]
     if ids:semantic_queue.enqueue('group',ids)
@@ -287,6 +288,41 @@ def reconsider_legacy_time_filters():
                       (row['group_id'], account, 'rescreen', 'completed', json.dumps(detail, ensure_ascii=False), app.now()))
             c.execute('UPDATE group_messages SET filter_reason=?,relevance=?,person_id=? WHERE id=?',
                       (filtered, json.dumps(relevance, ensure_ascii=False), person_id, row['id']))
+            changed.append(row['id'])
+    return changed
+
+
+def reconsider_keyword_filters():
+    """Versioned recall upgrade; retain source, classifications and prior gate."""
+    import asset_keywords
+    from intent_rules import RELEVANCE_VERSION
+    account = uid_inbox_store._account()
+    changed = []
+    with GUARD, app.LOCKS['live'], app.db() as c:
+        rows = c.execute('''SELECT m.*,g.account_uid,g.checked_at FROM group_messages m
+            JOIN monitored_groups g ON g.id=m.group_id
+            WHERE m.filter_reason='未通过陪玩需求初筛'
+            AND COALESCE(json_extract(m.relevance,'$.version'),'')<>?
+            AND julianday(m.published_at) BETWEEN julianday(?)-1 AND julianday(?)+1.0/86400
+            AND g.account_uid=? AND g.enabled=1 AND g.member=1 AND g.matched=1
+            ORDER BY m.id DESC LIMIT 200''', (RELEVANCE_VERSION, app.now(), app.now(), account)).fetchall()
+        for row in rows:
+            timing = demand_freshness.assess(row['published_at'])
+            if not fresh(row['checked_at']) or not timing['eligible']:
+                continue
+            relevance = asset_keywords.message_relevance(c, row['raw_text'], row['group_title'])
+            excluded = record_exclusion(c, 'group', row['id'])
+            filtered = ('自己发送的消息' if row['uid'] == account else excluded or
+                        ('未通过陪玩需求初筛' if not relevance['passed'] else ''))
+            pid = attach(c, row['uid'], row['observed_at']) if not filtered else row['person_id']
+            detail = dict(record_id=row['id'], policy=RELEVANCE_VERSION,
+                          previous_filter_reason=row['filter_reason'], previous_relevance=json.loads(row['relevance']),
+                          filter_reason=filtered, relevance=relevance, timing=timing,
+                          raw_text_preserved=True, classification_preserved=True)
+            c.execute('INSERT INTO group_reads(group_id,account_uid,operation,status,detail,created_at) VALUES(?,?,?,?,?,?)',
+                      (row['group_id'], account, 'rescreen', 'completed', json.dumps(detail, ensure_ascii=False), app.now()))
+            c.execute('UPDATE group_messages SET filter_reason=?,relevance=?,person_id=? WHERE id=?',
+                      (filtered, json.dumps(relevance, ensure_ascii=False), pid, row['id']))
             changed.append(row['id'])
     return changed
 
@@ -325,6 +361,8 @@ def start_service():
     global THREAD
     if THREAD and THREAD.is_alive():return
     STOP.clear()
+    import group_answers
+    group_answers.start_service()
     def loop():
         while not STOP.wait(10):
             try:tick()
@@ -338,4 +376,6 @@ def start_service():
 
 def shutdown():
     STOP.set()
+    import group_answers
+    group_answers.shutdown()
     if THREAD:THREAD.join()

@@ -59,7 +59,7 @@ def enqueue(kind, record_ids, mode='live'):
             existing = c.execute('SELECT 1 FROM semantic_jobs WHERE evidence_type=? AND record_id=? AND input_hash=? AND engine=?',
                                  (kind, record_id, fingerprint, channel['engine'])).fetchone()
             model = store.latest(c, kind, record_id, 'model', fingerprint)
-            if existing or model and model['engine'] == channel['engine']:
+            if existing or model and (model['engine'] == channel['engine'] or retained_result(c, kind, record_id, model, channel['engine'])):
                 summary['existing'] += 1
                 continue
             if pending >= CAPACITY:
@@ -73,6 +73,20 @@ def enqueue(kind, record_ids, mode='live'):
             app.event(c, 'model_queue', f"模型队列新增 {summary['queued']} 条；容量不足 {summary['full']} 条保留规则结果")
     WAKE.set()
     return summary
+
+
+def retained_result(c, kind, record_id, model, engine):
+    """Do not erase or batch re-run established results on a recall extension.
+
+    Only still-current uncertain records qualify for the broader v8 analysis.
+    This predicate grants neither a classification nor outreach permission.
+    """
+    if model['status'] != 'completed' or not store.compatible_engine(model['engine'], engine):
+        return False
+    if model['result'].get('category') != 'uncertain' or ':intent-prompt-v8:' not in engine:
+        return True
+    import demand_freshness
+    return not demand_freshness.record(c, kind, record_id)['eligible']
 
 
 def state(mode='live'):
@@ -157,7 +171,7 @@ def run_one(*, adapter_factory=None):
                 finish(c,job_id,dict(status='skipped',detail=route['reason']+' 未调用模型。'))
                 return True
             existing = store.latest(c, job['evidence_type'], job['record_id'], 'model', job['input_hash'])
-            if existing and existing['engine'] == job['engine']:
+            if existing and (existing['engine'] == job['engine'] or retained_result(c, job['evidence_type'], job['record_id'], existing, job['engine'])):
                 finish(c, job_id, dict(status='skipped', detail='此版本原文已有模型分析记录，未重复调用', id=existing['id']))
                 return True
             event = threading.Event()

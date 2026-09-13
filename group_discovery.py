@@ -26,13 +26,24 @@ CREATE TABLE IF NOT EXISTS public_group_attempts (
  updated_at TEXT NOT NULL,status TEXT NOT NULL,proof TEXT NOT NULL DEFAULT '{}',
  PRIMARY KEY(account_uid,group_id)
 );
+CREATE TABLE IF NOT EXISTS public_group_questions (
+ account_uid TEXT NOT NULL,group_id TEXT NOT NULL,question TEXT NOT NULL,
+ answer TEXT NOT NULL DEFAULT '',updated_at TEXT NOT NULL,
+ PRIMARY KEY(account_uid,group_id)
+);
+CREATE TABLE IF NOT EXISTS public_group_answer_runs (
+ id INTEGER PRIMARY KEY,account_uid TEXT NOT NULL,group_id TEXT NOT NULL,input_hash TEXT NOT NULL,
+ question TEXT NOT NULL,status TEXT NOT NULL,result_json TEXT NOT NULL DEFAULT '{}',
+ created_at TEXT NOT NULL,finished_at TEXT,
+ UNIQUE(account_uid,group_id,input_hash)
+);
 '''
 DETAILS=dict(candidate='等待核验入群条件',unmatched='群名称和介绍不符合范围',full='群已满',
- restricted='入群条件未通过',question='需要回答入群问题，暂未申请',
+ restricted='入群条件未通过',question='需要回答入群问题，等待模型作答',
  pending='已申请，等待群主审核',accepted='申请已被接受，等待成员身份确认',
  uncertain='申请结果未确认；保留记录，不重复提交',rejected='平台未通过申请，不重复提交',
  joined='已从当前账号群目录确认加入',observed='当前账号已在群内',
- unavailable='公开群已不可用')
+ unavailable='公开群已不可用',not_submitted='申请在本地准备阶段失败，尚未提交平台；等待修复')
 
 
 def config(c):
@@ -68,12 +79,15 @@ def state():
     account=uid_inbox_store._account()
     with app.db() as c:
         cfg=config(c)
-        candidates=[dict(r) for r in c.execute('''SELECT g.*,a.status AS application_status,a.updated_at AS application_at
+        counts={r['status']:r['n'] for r in c.execute('SELECT status,COUNT(*) AS n FROM public_group_candidates WHERE account_uid=? GROUP BY status',(account,))}
+        candidates=[dict(r) for r in c.execute('''SELECT g.*,a.status AS application_status,a.updated_at AS application_at,
+          COALESCE(q.question,'') AS question,COALESCE(q.answer,'') AS answer,CASE WHEN COALESCE(q.answer,'')!='' THEN 1 ELSE 0 END AS answered
           FROM public_group_candidates g LEFT JOIN public_group_attempts a
           ON a.account_uid=g.account_uid AND a.group_id=g.group_id
+          LEFT JOIN public_group_questions q ON q.account_uid=g.account_uid AND q.group_id=g.group_id
           WHERE g.account_uid=? ORDER BY g.matched DESC,g.checked_at DESC,g.group_id LIMIT 100''',(account,))]
     return dict(enabled=bool(cfg.get('enabled') and cfg.get('account_uid')==account),detail=cfg.get('detail',''),
-                next_run_at=cfg.get('next_run_at'),candidates=candidates,queries=QUERIES)
+                next_run_at=cfg.get('next_run_at'),candidates=candidates,queries=QUERIES,counts=counts)
 
 
 def record(c,account,rows):
@@ -109,17 +123,88 @@ def reconcile(account,*,reader=None):
                 c.execute("UPDATE monitored_groups SET enabled=1,status='waiting',detail='已确认加入，等待读取；群内不发言',next_run_at=? WHERE id=?",(app.now(),row['id']))
 
 
+def reconcile_application_status(account,*,client_factory=None):
+    """A fresh, associated verification can positively prove pending approval.
+
+    Never infer non-submission from absence, and never repeat a join operation.
+    The original submission proof remains unchanged inside the saved receipt.
+    """
+    with app.db() as c:
+        rows=c.execute('''SELECT g.* FROM public_group_candidates g JOIN public_group_attempts a USING(account_uid,group_id)
+            WHERE a.account_uid=? AND a.status='uncertain'
+            AND json_extract(a.proof,'$.submission_started')=1
+            ORDER BY a.updated_at DESC LIMIT 1''',(account,)).fetchall()
+    if not rows:return
+    client=(client_factory or group_public.Client)(account)
+    for row in rows:
+        value=client.verify(dict(row))
+        # Official PCIM verification maps 7601/7820 to HAS_APPLIED.
+        if value.get('code') not in (7601,7820):continue
+        with app.LOCKS['live'],app.db() as c:
+            current=c.execute("SELECT proof FROM public_group_attempts WHERE account_uid=? AND group_id=? AND status='uncertain'",(account,row['group_id'])).fetchone()
+            if not current:continue
+            proof=json.loads(current['proof'])
+            proof['status_verification']=dict(code=value['code'],checked_at=app.now(),group_id=row['group_id'],
+                                             evidence=getattr(client,'evidence',[])[-1:])
+            c.execute("UPDATE public_group_attempts SET status='pending',proof=?,updated_at=? WHERE account_uid=? AND group_id=?",
+                      (json.dumps(proof,ensure_ascii=False),app.now(),account,row['group_id']))
+            mark(c,account,row['group_id'],'pending')
+
+
 def eligible(value):
     if not monitor.match(value):return 'unmatched'
-    if value.get('question'):return 'question'
+    if value.get('question') and not value.get('group_audit_answer','').strip():return 'question'
     if (value.get('code') not in (0,7602) or str(value.get('category'))!='2' or
             value.get('join_allowance') not in ('-1','1') or not isinstance(value.get('entry_limit'),list) or
             any(not isinstance(v,dict) or v.get('status')!=1 for v in value['entry_limit'])):return 'restricted'
     return ''
 
 
+def remember_question(c,account,gid,question):
+    if not isinstance(question,str) or not question.strip() or len(question)>1000:
+        raise ValueError('入群问题缺失或超出范围')
+    c.execute('''INSERT INTO public_group_questions VALUES(?,?,?,'',?)
+        ON CONFLICT(account_uid,group_id) DO UPDATE SET question=excluded.question,
+        answer=CASE WHEN public_group_questions.question=excluded.question THEN public_group_questions.answer ELSE '' END,
+        updated_at=excluded.updated_at''',(account,gid,question,app.now()))
+    return c.execute('SELECT answer FROM public_group_questions WHERE account_uid=? AND group_id=?',(account,gid)).fetchone()[0]
+
+
+def question(body,mode='live',*,client_factory=None):
+    if mode!='live' or set(body)!={'group_id'}:raise ValueError('请选择有效的公开群')
+    gid=group_public.wire.numeric_uid(body['group_id']);account=uid_inbox_store._account()
+    with monitor.GUARD,uid_messaging.GUARD:
+        with app.db() as c:
+            row=c.execute('SELECT * FROM public_group_candidates WHERE account_uid=? AND group_id=? AND matched=1',(account,gid)).fetchone()
+            if not row or c.execute('SELECT 1 FROM public_group_attempts WHERE account_uid=? AND group_id=?',(account,gid)).fetchone():
+                raise ValueError('该群不存在、范围不符或已有申请记录')
+        value=(client_factory or group_public.Client)(account).verify(dict(row))
+        if not monitor.match(value):raise ValueError('该群当前不符合范围')
+        with app.LOCKS[mode],app.db(mode) as c:
+            saved=remember_question(c,account,gid,value['question'])
+            mark(c,account,gid,'candidate' if saved else 'question')
+    return state()
+
+
+def answer(body,mode='live'):
+    if mode!='live' or set(body)!={'group_id','question','answer'}:raise ValueError('入群回答参数无效')
+    gid=group_public.wire.numeric_uid(body['group_id']);account=uid_inbox_store._account()
+    text=body['answer']
+    if not isinstance(text,str) or not text.strip() or len(text)>500:raise ValueError('请填写真实的入群回答')
+    with monitor.GUARD,app.LOCKS[mode],app.db(mode) as c:
+        row=c.execute('SELECT question FROM public_group_questions WHERE account_uid=? AND group_id=?',(account,gid)).fetchone()
+        if not row or row['question']!=body['question']:raise ValueError('入群问题已变化，请重新读取')
+        if c.execute('SELECT 1 FROM public_group_attempts WHERE account_uid=? AND group_id=?',(account,gid)).fetchone():
+            raise ValueError('已有申请记录，不重复提交')
+        c.execute('UPDATE public_group_questions SET answer=?,updated_at=? WHERE account_uid=? AND group_id=?',(text.strip(),app.now(),account,gid))
+        mark(c,account,gid,'candidate')
+        cfg=config(c);cfg.update(next_run_at=app.now());save(c,cfg)
+    return state()
+
+
 def run(account,*,client_factory=None,catalog_reader=None):
     reconcile(account,reader=catalog_reader)
+    reconcile_application_status(account,client_factory=client_factory)
     with app.db() as c:
         source=c.execute('''SELECT w.author_sec_uid,w.video_id FROM discovery_works w
           JOIN discovery_authors a ON a.sec_uid=w.author_sec_uid
@@ -149,7 +234,11 @@ def run(account,*,client_factory=None,catalog_reader=None):
           ORDER BY g.checked_at DESC,g.group_id LIMIT 1''',(account,monitor.stamp_after(-21600))).fetchone()
     if not candidate:return
     client=client or (client_factory or group_public.Client)(account)
-    value=client.verify(dict(candidate));reason=eligible(value)
+    value=client.verify(dict(candidate))
+    if value.get('question'):
+        with app.LOCKS['live'],app.db() as c:
+            value['group_audit_answer']=remember_question(c,account,candidate['group_id'],value['question'])
+    reason=eligible(value)
     if reason:
         with app.LOCKS['live'],app.db() as c:mark(c,account,candidate['group_id'],reason)
         return
@@ -161,7 +250,12 @@ def run(account,*,client_factory=None,catalog_reader=None):
         if not inserted:return
         mark(c,account,candidate['group_id'],'uncertain')
     try:result=client.join(value)
-    except Exception:result=dict(status='uncertain',proof={})
+    except Exception:
+        # Fixed fields only: never save tickets, cookies or exception text.
+        evidence=getattr(client,'join_evidence',{})
+        fields=('phase','submission_started','http_status','response_bytes','response_sha256','platform_code','business_code')
+        proof={k:evidence[k] for k in fields if k in evidence}
+        result=dict(status='not_submitted' if proof.get('submission_started') is False else 'uncertain',proof=proof)
     with app.LOCKS['live'],app.db() as c:
         c.execute('UPDATE public_group_attempts SET status=?,updated_at=?,proof=? WHERE account_uid=? AND group_id=?',
                   (result['status'],app.now(),json.dumps(result['proof']),account,candidate['group_id']))

@@ -9,6 +9,19 @@ from intent_rules import RULESET_VERSION,companion_relevance
 
 
 class IntentRuleTests(unittest.TestCase):
+    def test_contextual_play_invitations_reach_model_without_becoming_rule_buyers(self):
+        for text in ('一会有人要玩吗', '有人打不', '匹配你玩不', '有人打瓦吗', '找个人一起打瓦'):
+            with self.subTest(text=text):
+                result = companion_relevance(text, '瓦搭子群')
+                self.assertTrue(result['passed'])
+                self.assertTrue(any(e['source']=='comment' for e in result['evidence']))
+                self.assertNotEqual(app.classify(text, '瓦搭子群')['category'], 'buyer')
+        for text, title in (('有人打不', '朋友聚会'), ('有人打麻将吗', '瓦搭子群'),
+                            ('有人打我', '瓦搭子群'), ('今天天气很好', '瓦搭子群'),
+                            ('匹配', '瓦搭子群'), ('有人要玩吗', '瓦工交流群')):
+            with self.subTest(text=text, title=title):
+                self.assertFalse(companion_relevance(text, title)['passed'])
+
     def test_companion_gate_distinguishes_context_from_the_commenters_expression(self):
         for raw in ('预测一手 tyloo 2:0 jdg 1:2','刚好完成所有比分[憨笑]','昨天比赛太精彩了','教练赶紧下课','这场比赛复盘很到位','哈哈哈','谢谢','怎么练枪',''):
             with self.subTest(raw=raw):

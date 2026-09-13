@@ -363,6 +363,27 @@ class MonitorTests(unittest.TestCase):
         sch.recover();self.assertFalse(mon.state()['enabled'])
         self.assertIsNone(self.at('2026-09-09T12:00:00+00:00'))
 
+    def test_single_body_timeout_requires_good_same_page_and_preserves_failure(self):
+        task=self.task();self.incomplete_page(task)
+        snapshot=dict(page_url='https://www.douyin.com/video/'+VIDEO,navigation_error='',navigation_http_status=200,
+            processing=dict(version='comment-quality-v1',recognized=True,skipped=0,non_text_skipped=0,invalid_records=0,parse_errors=1),
+            responses=[dict(kind='comment',status=200,content_kind='json',body_error='body_timeout'),
+                       dict(kind='comment',status=200,content_kind='json',status_code=0,comments_type='array',comments_count=3,invalid_records=0)])
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            def save(value):
+                c.execute('DELETE FROM collection_diagnostics WHERE task_id=?',(task,))
+                c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(task,'comment-read',json.dumps(value),NOW))
+            save(snapshot);self.assertEqual(sch.transient_batch_wait(c,row),0)
+            for change in (dict(status=403),dict(body_error='invalid_json'),dict(content_kind='html')):
+                changed={**snapshot,'responses':[{**snapshot['responses'][0],**change},snapshot['responses'][1]]}
+                save(changed);self.assertIsNone(sch.transient_browser_body_wait(c,row))
+            save({**snapshot,'responses':[snapshot['responses'][0]]});self.assertIsNone(sch.transient_browser_body_wait(c,row))
+            save(snapshot)
+            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(task,'needs_verification','{}',NOW))
+            self.assertIsNone(sch.transient_batch_wait(c,row))
+            self.assertEqual(c.execute('SELECT status FROM collection_tasks WHERE id=?',(task,)).fetchone()[0],'partial')
+
     def test_nontext_quality_allows_retry_but_requires_complete_consistent_evidence(self):
         task=self.task();self.incomplete_page(task)
         page='https://www.douyin.com/video/'+VIDEO
