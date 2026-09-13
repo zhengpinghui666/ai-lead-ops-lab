@@ -16,6 +16,48 @@ NOW='2026-09-11T03:00:00+00:00'
 
 
 class CommentHistoryTests(unittest.TestCase):
+    def test_first_observation_orders_timezone_offsets_without_rewriting_timestamps(self):
+        first=self.batch(VIDEO,[('7600000000000000011','合成广告')],excluded='广告')
+        second=self.batch(VIDEO,[('7600000000000000011','合成广告')],excluded='广告')
+        with app.db() as c:
+            c.execute("UPDATE collection_observations SET observed_at='2026-09-10T23:30:00-04:00' WHERE task_id=?",(first,))
+            c.execute("UPDATE collection_observations SET observed_at='2026-09-11T11:00:00+08:00' WHERE task_id=?",(second,))
+        row=comments.history({})['rows'][0]
+        self.assertEqual(row['collected_at'],'2026-09-11T11:00:00+08:00')
+        self.assertEqual(row['task_id'],second)
+
+    def test_archive_fallback_keeps_one_latest_identity_across_import_sources(self):
+        for number,stamp in [(1,'2026-09-11T03:00:00+00:00'),(2,'2026-09-11T04:00:00+00:00')]:
+            with app.db() as c:
+                sid=c.execute("INSERT INTO sources(name,kind,status,notes) VALUES(?,'file','local','')",('synthetic'+str(number),)).lastrowid
+            with patch('clubops.now',return_value=stamp):
+                app.ingest({'source_id':sid,'records':[dict(video_id=VIDEO,video_url='https://www.douyin.com/video/'+VIDEO,
+                    comment_id='7600000000000000011',text='合成文本'+str(number),user_id='123456789012',published_at=NOW)]})
+        result=comments.history({})
+        self.assertEqual(result['total'],1)
+        self.assertEqual(result['rows'][0]['text'],'合成文本2')
+
+    def test_compact_lists_keep_classification_and_scoped_detail_keeps_other_users_parent(self):
+        self.batch(VIDEO,[('7600000000000000011','找陪练')])
+        semantic.state.return_value={'engine':None,'can_analyze':False,'mode':'rules'}
+        with app.db() as c:
+            source=c.execute("SELECT id FROM sources WHERE kind='browser'").fetchone()[0]
+        app.ingest({'source_id':source,'records':[dict(video_id=VIDEO,comment_id='7600000000000000012',
+            user_id='123456789013',nickname='另一个人',text='本店国服瓦陪玩',published_at=NOW)]},allow_browser_source=True)
+        with app.db() as c:
+            c.execute("UPDATE comments SET parent_external_id='7600000000000000012' WHERE external_id='7600000000000000011'")
+        full=app.state();compact=app.state(compact=True)
+        self.assertEqual(full['stats'],compact['stats'])
+        for before,after in zip(full['leads'],compact['leads']):
+            self.assertEqual(before['category'],after['category'])
+            self.assertEqual(before['game'],after['game'])
+            self.assertEqual(before['latest']['raw_text'],after['latest']['raw_text'])
+        child=next(r for r in full['leads'] if r['external_id']=='123456789012')
+        detail=app.state(lead_id=child['id'])
+        self.assertEqual(detail['leads'],[child])
+        self.assertEqual(detail['comments'],[r for r in full['comments'] if r['person_id']==child['person_id']])
+        self.assertEqual(detail['comments'][0]['parent_context']['raw_text'],'本店国服瓦陪玩')
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

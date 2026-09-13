@@ -14,6 +14,83 @@ RUNTIME_KEY = 'intent_outreach_runtime'
 GUARD = threading.Lock()
 STOP = threading.Event()
 THREAD = None
+GREETING_TEMPLATE = '你好{称呼}，想点个陪陪吗？感兴趣可以看看我主业～'
+LEGACY_CONTENT = '点陪🥣看我主业'
+
+
+def rendered_content(c, policy, recipient):
+    if policy.get('template') != 'public_gender_greeting_v1':
+        return policy['content']
+    # Only an explicit profile field collected with a numeric UID is usable.
+    # Missing, hidden, stale or conflicting values use a neutral greeting.
+    from datetime import datetime, timedelta, timezone
+    since = (datetime.now(timezone.utc)-timedelta(days=30)).isoformat()
+    rows = c.execute('''SELECT p.profile_gender,p.profile_gender_observed_at FROM people p
+        JOIN sources s ON s.id=p.source_id WHERE p.external_id=? AND s.kind='browser'
+        AND p.profile_gender_observed_at>=? ORDER BY p.profile_gender_observed_at DESC''',
+        (recipient, since)).fetchall()
+    genders = {r['profile_gender'] for r in rows if r['profile_gender_observed_at']==rows[0]['profile_gender_observed_at']} if rows else set()
+    gender = next(iter(genders)) if len(genders)==1 else 0
+    return GREETING_TEMPLATE.replace('{称呼}', {1:'小哥哥', 2:'小姐姐'}.get(gender, '呀'))
+
+
+def replace_greeting(instruction):
+    """Local operator change: retain sender, exclusions and unrelated policy flags."""
+    if not isinstance(instruction,str) or not 1<=len(instruction.strip())<=1000:
+        raise ValueError('需要明确的文案替换与回退授权')
+    with GUARD, app.LOCKS['live'], app.db() as c:
+        policy = read(c, POLICY_KEY)
+        if not policy or policy.get('content') != LEGACY_CONTENT or policy.get('template'):
+            raise ValueError('当前文案与预期旧版不一致；未覆盖配置')
+        previous_revision = policy['revision']
+        policy.update(content=GREETING_TEMPLATE, template='public_gender_greeting_v1',
+            instruction=instruction.strip(), granted_at=app.now(), revision=str(uuid.uuid4()),
+            content_fallback=dict(content=LEGACY_CONTENT, status='armed', previous_revision=previous_revision))
+        write(c, POLICY_KEY, policy)
+        app.event(c,'intent_outreach','新开场模板已启用；明确内容拒绝或风控时回退旧版，失败对象不换文案补发')
+    return state()
+
+
+def rejection_kind(result):
+    """Classify only a definite, correlated send rejection; never guess from a generic code."""
+    e = result.get('evidence', {})
+    if (result.get('status')!='failed' or e.get('phase')!='send'
+            or e.get('submission_reserved') is not True or e.get('server_message_id')):
+        return None
+    if e.get('http_status')==429:
+        return 'rate_limit'
+    if e.get('http_status') not in (200,403) or e.get('platform_reason_code')=='7173':
+        return None
+    text = e.get('platform_message','')
+    if not isinstance(text,str):return None
+    if any(word in text for word in ('风控','风险','账号异常','帐号异常','发送频繁','操作频繁','发送过于频繁','操作过于频繁','发送太频繁','私信功能已被限制','私信功能被封禁')):
+        return 'account_risk'
+    if any(word in text for word in ('敏感词','敏感内容','内容违规','违规内容','内容不符合','内容违反','不当内容','违禁内容')):
+        return 'content_rejected'
+    return None
+
+
+def rollback_rejected_template(c, policy):
+    """Also handles a restart between storing a rejected receipt and rolling back."""
+    if policy.get('content_fallback',{}).get('status')!='armed':return None
+    for raw in c.execute('''SELECT a.* FROM uid_message_attempts a JOIN message_jobs j ON j.id=a.job_id
+        WHERE a.sender_uid=? AND j.request_id LIKE 'intent-outreach-v1-%' AND a.status='failed'
+        ORDER BY a.updated_at DESC''', (policy['sender_uid'],)):
+        evidence = json.loads(raw['evidence'])
+        if evidence.get('operator_authorization',{}).get('policy_revision')!=policy['revision']:continue
+        kind = rejection_kind(dict(status=raw['status'],evidence=evidence))
+        if not kind:continue
+        fallback = dict(policy['content_fallback'], status='rolled_back', reason=kind,
+            job_id=raw['job_id'], at=app.now(), rejected_revision=policy['revision'])
+        policy.update(content=fallback['content'], template=None, revision=str(uuid.uuid4()), content_fallback=fallback)
+        write(c,POLICY_KEY,policy)
+        detail = '新文案收到明确内容拒绝，已回退旧版；该对象不补发'
+        if kind!='content_rejected':detail='平台限制了发送，已回退旧版并暂停自动私信，等待核对限制'
+        write(c,RUNTIME_KEY,dict(status='waiting' if kind=='content_rejected' else 'attention',
+            checked_at=app.now(),last_job_id=raw['job_id'],detail=detail))
+        app.event(c,'intent_outreach',detail+'；发送记录 #'+str(raw['job_id']))
+        return kind
+    return None
 
 
 def read(c, key):
@@ -75,7 +152,8 @@ def state(mode='live'):
     return dict(configured=bool(policy), enabled=bool(policy.get('enabled')), content=policy.get('content', ''),
         retry_rejected=bool(policy.get('retry_rejected')), max_retries=2,
         status=runtime.get('status', 'paused'), detail=runtime.get('detail', ''), counts=counts,
-        checked_at=runtime.get('checked_at'), last_job_id=runtime.get('last_job_id'))
+        checked_at=runtime.get('checked_at'), last_job_id=runtime.get('last_job_id'),
+        template=policy.get('template'), content_fallback=policy.get('content_fallback',{}))
 
 
 def retry_candidate(c, policy):
@@ -87,6 +165,7 @@ def retry_candidate(c, policy):
             WHERE j.request_id LIKE 'intent-outreach-v1-%' AND a.sender_uid=? AND a.status='failed' AND a.phase='send'
             ORDER BY a.updated_at,a.job_id""",(policy['sender_uid'],)):
         evidence=json.loads(raw['evidence'])
+        if rejection_kind(dict(status=raw['status'],evidence=evidence)):continue
         if evidence.get('platform_reason_code')=='7173':continue
         if evidence.get('http_status') not in (200,429) or evidence.get('server_message_id') or evidence.get('submission_reserved') is not True:continue
         retries=len(evidence.get('delivery_history',[]))
@@ -166,6 +245,9 @@ def tick():
     try:
         if uid_session_renewal.pending():
             return
+        with app.LOCKS['live'], app.db() as c:
+            policy = read(c, POLICY_KEY)
+            if rollback_rejected_template(c,policy):return
         with app.db() as c:
             policy, runtime = read(c, POLICY_KEY), read(c, RUNTIME_KEY)
             if not policy.get('enabled') or runtime.get('status') == 'attention':
@@ -173,16 +255,17 @@ def tick():
             retry = retry_candidate(c, policy)
             if retry and retry.get('cooldown'):return
             row = None if retry else candidate(c, policy)
+            content = rendered_content(c,policy,row['recipient_uid']) if row else None
         if (not row and not retry) or STOP.is_set():
             return
         if retry:
             job,grant=retry['job'],retry['grant']
         else:
             job = app.mutate('draft', dict(lead_id=row['lead_id'],
-                request_id='intent-outreach-v1-'+policy['sender_uid']+'-'+row['recipient_uid'], content=policy['content']))
+                request_id='intent-outreach-v1-'+policy['sender_uid']+'-'+row['recipient_uid'], content=content))
             kind = row['evidence_type']
             grant = dict(job_id=job['id'], sender_uid=policy['sender_uid'], recipient_uid=row['recipient_uid'],
-                content_sha256=hashlib.sha256(policy['content'].encode()).hexdigest(),
+                content_sha256=hashlib.sha256(content.encode()).hexdigest(),
                 granted_at=policy['granted_at'], instruction=policy['instruction'], policy_revision=policy['revision'])
             grant[kind+'_id'] = row['id']
             grant[kind+'_sha256'] = hashlib.sha256(row['raw_text'].encode()).hexdigest()
@@ -203,6 +286,8 @@ def tick():
             or evidence.get('http_status')==429 and (not policy.get('retry_rejected') or len(evidence.get('delivery_history',[]))>=2)
             or result['status'] == 'failed' and evidence.get('phase') != 'send')
         with app.LOCKS['live'], app.db() as c:
+            current_policy=read(c,POLICY_KEY)
+            if rollback_rejected_template(c,current_policy):return
             write(c, RUNTIME_KEY, dict(status='attention' if attention else 'waiting', checked_at=app.now(),
                 last_job_id=job['id'], detail='发送通道需要处理，请查看发送记录' if attention else '等待新的意向用户'))
     finally:

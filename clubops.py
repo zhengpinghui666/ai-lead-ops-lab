@@ -116,12 +116,13 @@ def init(mode='live'):
             paging_missing = 'collection_page_progress' not in known_tables
             inbox_missing = not {'uid_inbox_conversations','uid_inbox_messages','uid_inbox_reads','uid_reply_links','uid_inbox_sync'} <= known_tables
             group_missing = not {'monitored_groups','group_messages','group_reads'} <= known_tables
+            profile_missing = not {'profile_gender','profile_gender_observed_at'} <= {r[1] for r in source.execute('PRAGMA table_info(people)')}
             live_columns = {r[1] for r in source.execute('PRAGMA table_info(live_messages)')}
             collection_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_tasks)')}
             plan_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_plans)')}
             observation_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_observations)')}
             activity_index_missing = not source.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_observation_published_activity'").fetchone()
-            if not {'uid_message_attempts', 'live_sessions', 'live_links', 'live_judgments', 'live_reviews', 'intent_results', 'semantic_jobs', 'video_metadata', 'live_tracks', 'live_rooms', 'live_pool_checks', 'collection_candidates', 'collection_candidate_reads', 'discovery_authors', 'discovery_works', 'discovery_jobs', 'discovery_queries'} <= known_tables or not {'outer_message_id', 'game'} <= live_columns or 'transport' not in collection_columns or 'intent_version' not in plan_columns or 'ingest_disposition' not in observation_columns or activity_index_missing or verticality_missing or inbox_missing or keyword_sources_missing or paging_missing or group_missing:
+            if not {'uid_message_attempts', 'live_sessions', 'live_links', 'live_judgments', 'live_reviews', 'intent_results', 'semantic_jobs', 'video_metadata', 'live_tracks', 'live_rooms', 'live_pool_checks', 'collection_candidates', 'collection_candidate_reads', 'discovery_authors', 'discovery_works', 'discovery_jobs', 'discovery_queries'} <= known_tables or not {'outer_message_id', 'game'} <= live_columns or 'transport' not in collection_columns or 'intent_version' not in plan_columns or 'ingest_disposition' not in observation_columns or activity_index_missing or verticality_missing or inbox_missing or keyword_sources_missing or paging_missing or group_missing or profile_missing:
                 backup_dir = DATA_DIR / 'backups'
                 backup_dir.mkdir(parents=True, exist_ok=True)
                 label = ('before-uid-http-' if 'uid_message_attempts' not in known_tables else
@@ -133,6 +134,7 @@ def init(mode='live'):
                 if label=='before-candidate-pool-' and keyword_sources_missing:label='before-comment-keywords-'
                 if label=='before-candidate-pool-' and paging_missing:label='before-comment-paging-'
                 if label=='before-candidate-pool-' and group_missing:label='before-group-monitor-'
+                if label=='before-candidate-pool-' and profile_missing:label='before-profile-greeting-'
                 backup = sqlite3.connect(backup_dir / (filename + '.' + label + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f') + '.bak'))
                 try:
                     source.backup(backup)
@@ -141,6 +143,11 @@ def init(mode='live'):
     with LOCKS[mode], db(mode) as c:
         c.execute('PRAGMA journal_mode=WAL')
         c.executescript(SCHEMA)
+        person_columns={r[1] for r in c.execute('PRAGMA table_info(people)')}
+        if 'profile_gender' not in person_columns:
+            c.execute('ALTER TABLE people ADD COLUMN profile_gender INTEGER NOT NULL DEFAULT 0')
+        if 'profile_gender_observed_at' not in person_columns:
+            c.execute("ALTER TABLE people ADD COLUMN profile_gender_observed_at TEXT NOT NULL DEFAULT ''")
         import candidate_pool
         c.executescript(candidate_pool.SCHEMA)
         import discovery_tracking
@@ -358,6 +365,9 @@ def ingest(payload, mode='live', *, allow_browser_source=False, connection=None)
             if user_id:
                 c.execute("INSERT INTO people(source_id,external_id,nickname) VALUES(?,?,?) ON CONFLICT(source_id,external_id) DO UPDATE SET nickname=CASE WHEN excluded.nickname='未提供昵称' THEN people.nickname ELSE excluded.nickname END", (source_id, user_id, clean(row.get('nickname')) or '未提供昵称'))
                 person_id = c.execute('SELECT id FROM people WHERE source_id=? AND external_id=?', (source_id, user_id)).fetchone()[0]
+                if source['kind']=='browser' and allow_browser_source and type(row.get('profile_gender')) is int and row['profile_gender'] in (0,1,2):
+                    c.execute('UPDATE people SET profile_gender=?,profile_gender_observed_at=? WHERE id=?',
+                        (row['profile_gender'],t,person_id))
                 c.execute('INSERT OR IGNORE INTO leads(person_id,updated_at) VALUES(?,?)', (person_id, t))
             if existing:
                 c.execute("UPDATE comments SET person_id=COALESCE(person_id,?),published_at=COALESCE(published_at,?),parent_external_id=CASE WHEN parent_external_id='' THEN ? ELSE parent_external_id END WHERE id=?", (person_id, published, parent_id, existing['id']))
@@ -418,7 +428,7 @@ def analyze(mode='live', *, comment_ids=None):
         return {'analyzed': len(rows), 'method': 'rules', 'model_queue': queued}
 
 
-def shell_state(mode='live'):
+def shell_state(mode='live', *, include_videos=True):
     """Configuration for monitoring views, without unrelated lead histories.
 
     These pages read their records through their own paginated endpoints. Full
@@ -433,7 +443,7 @@ def shell_state(mode='live'):
         sources = [dict(r) for r in c.execute('SELECT * FROM sources')]
         videos = [dict(r) for r in c.execute('''SELECT v.*,s.name AS source_name,
             (SELECT COUNT(*) FROM comments x WHERE x.video_id=v.id) AS comment_count
-            FROM videos v JOIN sources s ON s.id=v.source_id ORDER BY v.id DESC''')]
+            FROM videos v JOIN sources s ON s.id=v.source_id ORDER BY v.id DESC''')] if include_videos else []
         stats = {name: c.execute('SELECT COUNT(*) FROM '+name).fetchone()[0] for name in ('videos','comments')}
         stats['pending'] = c.execute("SELECT COUNT(*) FROM comments WHERE analysis_method='pending'").fetchone()[0]
         events = [dict(r) for r in c.execute('SELECT * FROM events ORDER BY id DESC LIMIT 60')]
@@ -443,7 +453,7 @@ def shell_state(mode='live'):
         connections={'collector':'not_connected','messaging':'not_connected','ai':model['mode'] if mode=='live' else 'rules'})
 
 
-def state(mode='live'):
+def state(mode='live', *, compact=False, lead_id=None):
     import semantic
     import analysis_store
     model_state = semantic.state()
@@ -451,10 +461,12 @@ def state(mode='live'):
     model_state['queue'] = semantic_queue.state(mode)
     model_engine = model_state['engine'] if mode == 'live' else None
     with db(mode) as c:
+        c.execute('BEGIN')
+        person_id=required(c,'leads',lead_id)['person_id'] if lead_id is not None else None
         settings = {r['key']: json.loads(r['value']) for r in c.execute('SELECT * FROM settings')}
         sources = [dict(r) for r in c.execute('SELECT * FROM sources')]
         videos = [dict(r) for r in c.execute("SELECT v.*,s.name AS source_name,(SELECT COUNT(*) FROM comments x WHERE x.video_id=v.id) AS comment_count,(SELECT COUNT(*) FROM comments x WHERE x.video_id=v.id AND x.category='buyer') AS demand_count FROM videos v JOIN sources s ON s.id=v.source_id ORDER BY v.id DESC")]
-        comments = [dict(r) for r in c.execute("SELECT x.*,v.title AS video_title,v.url AS video_url,COALESCE(NULLIF(x.observed_nickname,''),p.nickname) AS nickname,l.id AS lead_id,s.name AS source_name FROM comments x JOIN videos v ON v.id=x.video_id JOIN sources s ON s.id=x.source_id LEFT JOIN people p ON p.id=x.person_id LEFT JOIN leads l ON l.person_id=p.id ORDER BY COALESCE(julianday(x.published_at),julianday(x.discovered_at)) DESC,x.id DESC")]
+        comments = [dict(r) for r in c.execute("SELECT x.*,v.title AS video_title,v.url AS video_url,COALESCE(NULLIF(x.observed_nickname,''),p.nickname) AS nickname,l.id AS lead_id,s.name AS source_name FROM comments x JOIN videos v ON v.id=x.video_id JOIN sources s ON s.id=x.source_id LEFT JOIN people p ON p.id=x.person_id LEFT JOIN leads l ON l.person_id=p.id"+(' WHERE x.person_id=? OR x.id IN (SELECT parent.id FROM comments child JOIN comments parent ON parent.source_id=child.source_id AND parent.video_id=child.video_id AND parent.external_id=child.parent_external_id AND parent.id!=child.id WHERE child.person_id=?)' if person_id is not None else '')+" ORDER BY COALESCE(julianday(x.published_at),julianday(x.discovered_at)) DESC,x.id DESC",(person_id,person_id) if person_id is not None else ())]
         by_person = defaultdict(list)
         reviews = defaultdict(list)
         for review in c.execute('SELECT * FROM (SELECT r.*,ROW_NUMBER() OVER(PARTITION BY comment_id ORDER BY id DESC) AS recent FROM comment_reviews r) WHERE recent<=10 ORDER BY id DESC'):
@@ -473,18 +485,18 @@ def state(mode='live'):
             row['facts'] = {**row['rule_facts'], **{k: v for k, v in row['manual_fields'].items() if k != 'game'}}
             row['game'] = row['manual_fields'].get('game', row['game'])
             row['review_history'] = reviews[row['id']]
-            analysis_store.project(c, row, model_engine=model_engine)
+            analysis_store.project(c, row, model_engine=model_engine,details=not compact or row['person_id'] is None)
             by_person[row['person_id']].append(row)
         import live_workflow
-        live_messages, live_counts = live_workflow.latest_by_person(c)
+        live_messages, live_counts = live_workflow.latest_by_person(c,details=not compact,person_id=person_id)
         for row in live_messages:
             by_person[row['person_id']].append(row)
         import group_monitor
         group_counts=dict(c.execute('SELECT person_id,COUNT(*) FROM group_messages WHERE person_id IS NOT NULL GROUP BY person_id').fetchall())
         group_messages=[group_monitor.project(c,r,engine=model_engine) for r in c.execute(group_monitor.SELECT+''' WHERE m.id IN
-          (SELECT MAX(id) FROM group_messages WHERE person_id IS NOT NULL GROUP BY person_id)''')]
+          (SELECT MAX(id) FROM group_messages WHERE person_id IS NOT NULL GROUP BY person_id)''') if person_id is None or r['person_id']==person_id]
         for row in group_messages:by_person[row['person_id']].append(row)
-        leads = [dict(r) for r in c.execute('SELECT l.*,p.nickname,p.external_id,p.contact_basis,p.contact_note,p.do_not_contact,s.kind AS source_kind FROM leads l JOIN people p ON p.id=l.person_id JOIN sources s ON s.id=p.source_id ORDER BY l.id DESC')]
+        leads = [dict(r) for r in c.execute('SELECT l.*,p.nickname,p.external_id,p.contact_basis,p.contact_note,p.do_not_contact,s.kind AS source_kind FROM leads l JOIN people p ON p.id=l.person_id JOIN sources s ON s.id=p.source_id'+(' WHERE l.id=?' if lead_id is not None else '')+' ORDER BY l.id DESC',(lead_id,) if lead_id is not None else ())]
         for lead in leads:
             related = by_person[lead['person_id']]
             related.sort(key=lambda r: (datetime.fromisoformat((r['published_at'] or r['discovered_at']).replace('Z', '+00:00')).timestamp(), r['evidence_type'], r['id']), reverse=True)
@@ -494,6 +506,7 @@ def state(mode='live'):
             group_count=group_counts.get(lead['person_id'],0)
             lead.update({'latest': latest, 'comment_count': comment_count, 'live_count': live_count, 'group_count':group_count, 'evidence_count': comment_count + live_count + group_count,
                          'category': latest.get('category', 'uncertain'), 'game': latest.get('game', '')})
+        if person_id is not None:comments=[r for r in comments if r['person_id']==person_id]
         members = [dict(r) for r in c.execute('SELECT * FROM members ORDER BY available DESC,id')]
         for member in members:
             member['service_types'] = json.loads(member['service_types'])
@@ -515,7 +528,14 @@ def state(mode='live'):
             video['demand_count'] = demands[video['id']]
         stats = {'videos': len(videos), 'comments': len(comments), 'pending': sum(x['analysis_method'] == 'pending' for x in comments), 'buyers': sum(x['category'] == 'buyer' for x in leads), 'sellers': sum(x['category'] == 'seller' for x in leads), 'available': sum(x['available'] for x in members), 'won': sum(x['stage'] == 'won' for x in leads), 'referred': sum(x['stage'] == 'referred' for x in leads), 'submitted': sum(x['status'] in ('accepted', 'delivered', 'replied') and x['source_kind'] != 'uid_test' for x in jobs), 'drafts': sum(x['status'] == 'draft' for x in jobs), 'category_counts': counts}
         stats['live_messages'] = c.execute('SELECT COUNT(*) FROM live_messages').fetchone()[0]
-    return {'mode': mode, 'profile': {'game': TARGET_GAME, 'services': list(SERVICE_TYPES)}, 'settings': settings, 'sources': sources, 'videos': videos, 'comments': comments, 'live_messages': live_messages, 'leads': leads, 'members': members, 'jobs': jobs, 'messages': messages, 'events': events, 'stats': stats, 'semantic': model_state, 'connections': {'collector': 'not_connected', 'messaging': 'demo' if mode == 'demo' else 'not_connected', 'ai': model_state['mode'] if mode == 'live' else 'rules'}}
+    if compact:
+        def brief(row):
+            keys=('id','person_id','external_id','evidence_type','raw_text','published_at','discovered_at','category','game','analysis_method','source_url','source_title','video_url','nickname','lead_id')
+            return {**{k:row[k] for k in keys if k in row},'facts':{k:row.get('facts',{}).get(k) for k in REVIEW_FIELDS if k!='game'}}
+        comments=[brief(row) if row['person_id'] is not None else row for row in comments]
+        for lead in leads:lead['latest']=brief(lead['latest'])
+        live_messages=[]
+    return {'mode': mode, 'profile': {'game': TARGET_GAME, 'services': list(SERVICE_TYPES)}, 'settings': settings, 'sources': sources, 'videos': videos, 'comments': comments, 'live_messages': live_messages, 'leads': leads, 'members': members, 'jobs': jobs, 'messages': messages, 'events': events, 'stats': stats, 'semantic': model_state, 'list_compact':compact, 'connections': {'collector': 'not_connected', 'messaging': 'demo' if mode == 'demo' else 'not_connected', 'ai': model_state['mode'] if mode == 'live' else 'rules'}}
 
 
 def required(c, table, row_id):

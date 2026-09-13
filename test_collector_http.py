@@ -46,6 +46,10 @@ class FakeSigner:
 
 
 class HTTPReadTests(unittest.TestCase):
+    def test_profile_gender_is_explicit_numeric_only(self):
+        for gender in [0,1,2,3,None,True,'2']:
+            row=http.parse_page(body([record(user={'uid':'358898446378682','gender':gender})]),'comments',VIDEO)['rows'][0]
+            self.assertEqual(row['profile_gender'],gender if type(gender) is int and gender in (0,1,2) else None)
     def test_status_file_transient_sharing_failure_retries_only_local_rename(self):
         with tempfile.TemporaryDirectory() as td, patch.object(sessions.runtime,'data_dir',return_value=Path(td)):
             replace=Path.replace;calls=[]
@@ -766,13 +770,16 @@ class HTTPIntegrationTests(unittest.TestCase):
         task = collector.start({'kind':'video', 'target':VIDEO, 'transport':'http', 'request_id':'dedupe-fixture'})['id']
         source = collector.ACTIVE[task]['source_id']
         collector.observe(task, source, {'type':'video', 'record':{'video_id':VIDEO}})
-        row = http.parse_page(body(), 'comments', VIDEO)['rows'][0]
+        row = http.parse_page(body([record(user={'uid':'358898446378682','gender':2})]), 'comments', VIDEO)['rows'][0]
         collector.observe(task, source, {'type':'comment', 'record':row})
         collector.observe(task, source, {'type':'comment', 'record':row})
         with app.db() as connection:
             self.assertEqual(connection.execute('SELECT COUNT(*) FROM comments').fetchone()[0], 1)
             self.assertEqual(connection.execute('SELECT COUNT(*) FROM message_jobs').fetchone()[0], 0)
             self.assertEqual(connection.execute('SELECT COUNT(*) FROM collection_observations').fetchone()[0], 2)
+            person=connection.execute('SELECT profile_gender,profile_gender_observed_at FROM people').fetchone()
+            self.assertEqual(person['profile_gender'],2)
+            self.assertTrue(person['profile_gender_observed_at'])
 
 
 if __name__ == '__main__':

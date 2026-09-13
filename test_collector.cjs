@@ -27,6 +27,10 @@ assert.equal(results.length,1);assert.equal(results[0].video_id,vid);
 assert.deepEqual(p.searchVideos({recommendations:[{aweme_id:vid}]}),[]);
 const fixture={comments:[{cid,aweme_id:vid,text:'测试夹具：国服找陪练',create_time:1750000000,user:{uid,nickname:'测试用户'}}],has_more:1};
 let r=p.comments(fixture,vid);assert.equal(r.rows.length,1);assert.equal(r.rows[0].published_at,1750000000);assert.equal(r.rows[0].user_id,uid);assert.equal(r.hasMore,true);
+for(const gender of [0,1,2,null,undefined,true,'2',3]){
+  const observed=p.comments({comments:[{...fixture.comments[0],user:{uid,nickname:'合成',gender}}]},vid).rows[0];
+  assert.equal(observed.profile_gender,Number.isInteger(gender)&&[0,1,2].includes(gender)?gender:null);
+}
 assert.equal(p.comments(fixture,'7600000000000000009').rows.length,0);
 assert.equal(p.comments({comments:[{cid,text:'测试夹具',user:{sec_uid:'opaque-id'}}]},vid).rows[0].user_id,'');
 assert.equal(p.comments({comments:[{cid,text:'测试夹具'}]},vid).rows[0].published_at,null);

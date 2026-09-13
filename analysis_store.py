@@ -94,7 +94,7 @@ def compatible_engine(recorded, current):
                for old, new in ((6, 7), (6, 8), (7, 8)))
 
 
-def project(c, row, *, model_engine=None):
+def project(c, row, *, model_engine=None, details=True):
     kind = row.get('evidence_type', 'comment')
     source = dict(kind=kind, text=row['raw_text'], parent='', title='')
     if kind == 'comment':
@@ -106,7 +106,7 @@ def project(c, row, *, model_engine=None):
     else:source['title']=row.get('room_title','')
     fingerprint = digest(source)
     row['analysis_input_hash'] = fingerprint
-    rule = latest(c, kind, row['id'], 'rules', fingerprint)
+    rule = latest(c, kind, row['id'], 'rules', fingerprint) if details else None
     if rule:
         row['rule_result'] = rule
         row['rule_category'], row['rule_reason'] = rule['result']['category'], rule['result']['reason']
@@ -119,6 +119,7 @@ def project(c, row, *, model_engine=None):
     row['model_result'] = model
     if model and model['status'] == 'completed' and compatible_engine(model['engine'], model_engine) and row['analysis_method'] not in ('human', 'pending'):
         row.update(model['result'])
+    if not details:return row
     if kind == 'comment':
         import asset_keywords
         relevance=asset_keywords.message_relevance(c,source['text'],source['title'],source['parent'])

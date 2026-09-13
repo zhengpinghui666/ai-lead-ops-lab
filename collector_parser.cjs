@@ -89,6 +89,7 @@ function comments(body, expectedVideo, context={}) {
     const uid=id(c.user?.uid);
     const timestamp=Number.isSafeInteger(c.create_time)&&c.create_time>0 ? c.create_time : null;
     rows.push({comment_id:cid,video_id:vid,text:raw,user_id:uid,nickname:text(c.user?.nickname,120),
+      profile_gender:Number.isInteger(c.user?.gender)&&[0,1,2].includes(c.user.gender)?c.user.gender:null,
       published_at:timestamp,parent_comment_id:parent,video_title:context.video_title||vid,
       video_url:`https://www.douyin.com/video/${vid}`});
     return true;

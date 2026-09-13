@@ -82,7 +82,7 @@ def connection_engine(c):
     return semantic.state()['engine'] if filename.endswith('clubops-live.db') else None
 
 
-def project(c, row, *, history=True, model_engine=_UNSET_ENGINE):
+def project(c, row, *, history=True, model_engine=_UNSET_ENGINE, details=True):
     result = dict(row)
     result['review_token'] = token(row)
     result['rule_facts'] = json.loads(row['facts'])
@@ -103,7 +103,7 @@ def project(c, row, *, history=True, model_engine=_UNSET_ENGINE):
     # Determine workspace from this connection, never apply real configuration to demo.
     if model_engine is _UNSET_ENGINE:
         model_engine = connection_engine(c)
-    analysis_store.project(c, result, model_engine=model_engine)
+    analysis_store.project(c, result, model_engine=model_engine, details=details)
     return result
 
 
@@ -120,7 +120,7 @@ def detail(message_id, mode='live'):
         return rows[0]
 
 
-def latest_by_person(c):
+def latest_by_person(c, *, details=True, person_id=None):
     # One representative per person; full live history is fetched in bounded pages.
     rows = c.execute(SELECT + ''' WHERE m.id IN (
       SELECT id FROM (SELECT x.id,ROW_NUMBER() OVER(PARTITION BY k.person_id
@@ -129,7 +129,8 @@ def latest_by_person(c):
       ORDER BY m.id DESC''').fetchall()
     counts = {r[0]: r[1] for r in c.execute('SELECT person_id,COUNT(*) FROM live_links GROUP BY person_id')}
     engine = connection_engine(c)
-    return [project(c, r, model_engine=engine) for r in rows], counts
+    return [project(c, r, model_engine=engine, history=details, details=details) for r in rows
+        if person_id is None or r['person_id']==person_id], counts
 
 
 def history(lead_id, offset=0, mode='live'):

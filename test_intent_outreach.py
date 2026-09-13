@@ -9,6 +9,88 @@ SENDER = fixtures.SENDER
 
 
 class OutreachTests(unittest.TestCase):
+    def test_greeting_uses_only_public_gender_and_unknown_is_neutral(self):
+        outreach.replace_greeting('合成：替换模板，明确内容拒绝或风控时回退')
+        from datetime import datetime,timedelta,timezone
+        with app.db() as c:
+            policy=outreach.read(c,outreach.POLICY_KEY)
+            for value,expected in [(0,'你好呀'),(1,'你好小哥哥'),(2,'你好小姐姐')]:
+                c.execute('UPDATE people SET profile_gender=?,profile_gender_observed_at=?',(value,app.now()))
+                self.assertTrue(outreach.rendered_content(c,policy,fixtures.RECEIVER).startswith(expected+'，'))
+            c.execute('UPDATE people SET profile_gender_observed_at=?',((datetime.now(timezone.utc)-timedelta(days=31)).isoformat(),))
+            self.assertTrue(outreach.rendered_content(c,policy,fixtures.RECEIVER).startswith('你好呀，'))
+        with patch('uid_transport.send',wraps=self.accepted) as transport:
+            outreach.tick();outreach.tick()
+        transport.assert_called_once()
+        self.assertEqual(transport.call_args.args[2],'你好呀，想点个陪陪吗？感兴趣可以看看我主业～')
+
+    def test_template_change_preserves_account_exclusions_and_pause(self):
+        outreach.control(False)
+        with app.db() as c:
+            policy=outreach.read(c,outreach.POLICY_KEY)
+            policy['prior_sender_uids']=['99999999999']
+            outreach.write(c,outreach.POLICY_KEY,policy)
+        outreach.replace_greeting('合成：改模板并回退')
+        with app.db() as c:
+            current=outreach.read(c,outreach.POLICY_KEY)
+        self.assertFalse(current['enabled'])
+        self.assertEqual(current['prior_sender_uids'],policy['prior_sender_uids'])
+        self.assertEqual(current['sender_uid'],policy['sender_uid'])
+        with self.assertRaises(ValueError):outreach.replace_greeting('不覆盖已更改的模板')
+
+    def test_explicit_content_rejection_rolls_back_without_replaying_recipient(self):
+        import json
+        outreach.authorize_retries('合成：旧授权允许有限重试')
+        outreach.replace_greeting('合成：新文案被拒绝时回退旧版')
+        def reject(config,receiver,message,client,before):
+            before()
+            return dict(status='failed',phase='send',http_status=200,check_code='2',platform_message='消息包含敏感词，未发送')
+        with patch('uid_transport.send',side_effect=reject) as transport:
+            outreach.tick();outreach.tick()
+        transport.assert_called_once()
+        self.assertEqual(outreach.state()['content'],outreach.LEGACY_CONTENT)
+        self.assertEqual(outreach.state()['content_fallback']['reason'],'content_rejected')
+        self.assertEqual(outreach.state()['status'],'waiting')
+        with app.db() as c:
+            job=c.execute('SELECT content FROM message_jobs WHERE request_id LIKE ?',('intent-outreach-v1-%',)).fetchone()
+            self.assertIn('你好呀',job['content'])
+            evidence=json.loads(c.execute('SELECT evidence FROM uid_message_attempts').fetchone()[0])
+            self.assertEqual(evidence['platform_message'],'消息包含敏感词，未发送')
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM messages').fetchone()[0],0)
+
+    def test_risk_rolls_back_and_stops_instead_of_trying_old_copy(self):
+        outreach.replace_greeting('合成：风控回退')
+        def reject(config,receiver,message,client,before):
+            before();return dict(status='failed',phase='send',http_status=200,platform_message='账号存在风险，私信功能已被限制')
+        with patch('uid_transport.send',side_effect=reject) as transport:
+            outreach.tick();outreach.tick()
+        transport.assert_called_once()
+        self.assertEqual(outreach.state()['content'],outreach.LEGACY_CONTENT)
+        self.assertEqual(outreach.state()['status'],'attention')
+
+    def test_generic_failure_privacy_and_uncertainty_do_not_claim_content_rejection(self):
+        base=dict(phase='send',http_status=200,submission_reserved=True)
+        for status,evidence in [
+            ('failed',base),
+            ('failed',dict(base,platform_reason_code='7173',platform_message='对方只允许关注的人发消息')),
+            ('failed',dict(base,http_status=403)),
+            ('unknown',dict(base,platform_message='敏感词')),
+            ('accepted',dict(base,server_message_id='123',platform_message='敏感词')),
+            ('failed',dict(base,phase='identity',submission_reserved=False,platform_message='风险'))]:
+            with self.subTest(status=status,evidence=evidence):
+                self.assertIsNone(outreach.rejection_kind(dict(status=status,evidence=evidence)))
+        self.assertEqual(outreach.rejection_kind(dict(status='failed',evidence=dict(base,http_status=429))),'rate_limit')
+
+    def test_persisted_rejection_is_reconciled_before_next_dispatch(self):
+        outreach.replace_greeting('合成：进程中断后继续回退')
+        def reject(config,receiver,message,client,before):
+            before();return dict(status='failed',phase='send',http_status=200,platform_message='内容违反规范')
+        with patch.object(outreach,'rollback_rejected_template',return_value=None),patch('uid_transport.send',side_effect=reject):
+            outreach.tick()
+        self.assertEqual(outreach.state()['content_fallback']['status'],'armed')
+        with patch('uid_transport.send') as transport:outreach.tick();transport.assert_not_called()
+        self.assertEqual(outreach.state()['content_fallback']['status'],'rolled_back')
+
     def test_empty_manual_allowlist_does_not_allow_manual_messages_but_keeps_scoped_grants(self):
         self.settings['allowed_recipient_uids']=[];self.configure()
         with app.db() as c:c.execute("UPDATE people SET contact_basis='opt_in',contact_note='合成测试同意'")

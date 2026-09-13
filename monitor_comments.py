@@ -5,41 +5,48 @@ import monitoring
 import semantic
 
 
-HISTORY = """WITH raw AS (
- SELECT o.external_id,o.page_url AS video_url,o.comment_text AS text,
- o.user_identifier,o.observed_at,o.filter_reason,o.task_id,NULL AS archive_id
- FROM collection_observations o JOIN collection_tasks t ON t.id=o.task_id
- WHERE o.kind='comment' AND trim(o.comment_text)!='' AND (:video='' OR o.page_url=:video)
- UNION ALL
- SELECT x.external_id,v.url,x.raw_text,p.external_id,x.discovered_at,'',NULL,x.id
+# Group once, then use indexed task identities to prefer an accepted matching snapshot.
+# The padded Julian-day prefix preserves chronological ordering across UTC offsets;
+# the suffix preserves the original timestamp and tie order. MATERIALIZED prevents
+# SQLite from re-running the correlated preference lookup through the outer joins.
+HISTORY = """WITH observed_groups AS (
+ SELECT page_url,external_id,MAX(task_id) AS latest_task_id,
+ substr(MIN(printf('%030.17f',julianday(observed_at)) || observed_at),31) AS earliest_observed_at
+ FROM collection_observations
+ WHERE kind='comment' AND trim(comment_text)!='' AND (:video='' OR page_url=:video)
+ GROUP BY page_url,external_id
+), observed_latest AS (
+ SELECT o.page_url,o.external_id,o.task_id,o.comment_text,o.user_identifier,g.earliest_observed_at FROM observed_groups g
+ JOIN collection_observations o ON o.kind='comment' AND o.task_id=g.latest_task_id
+ AND o.external_id=g.external_id AND o.page_url=g.page_url
+), preferred AS MATERIALIZED (
+ SELECT l.*,COALESCE((SELECT MAX(p.task_id) FROM collection_observations p
+ WHERE p.kind='comment' AND p.page_url=l.page_url AND p.external_id=l.external_id
+ AND p.filter_reason='' AND p.comment_text=l.comment_text
+ AND COALESCE(p.user_identifier,'')=COALESCE(l.user_identifier,'')),l.task_id) AS chosen_task_id
+ FROM observed_latest l
+), archive_fallback AS (
+ SELECT x.*,v.url,v.title,p.external_id AS user_identifier,
+ ROW_NUMBER() OVER(PARTITION BY v.url,x.external_id ORDER BY x.discovered_at DESC) AS archive_rank
  FROM comments x JOIN videos v ON v.id=x.video_id LEFT JOIN people p ON p.id=x.person_id
  WHERE trim(x.raw_text)!='' AND (:video='' OR v.url=:video) AND NOT EXISTS (
-  SELECT 1 FROM collection_observations o WHERE o.kind='comment'
-  AND o.external_id=x.external_id AND o.page_url=v.url AND trim(o.comment_text)!='')
-), latest AS (
- SELECT *,FIRST_VALUE(text) OVER(PARTITION BY video_url,external_id ORDER BY task_id DESC,observed_at DESC) AS latest_text,
- FIRST_VALUE(user_identifier) OVER(PARTITION BY video_url,external_id ORDER BY task_id DESC,observed_at DESC) AS latest_user
- FROM raw
-), ranked AS (
- SELECT *,ROW_NUMBER() OVER(PARTITION BY video_url,external_id ORDER BY
- CASE WHEN filter_reason='' AND text=latest_text AND COALESCE(user_identifier,'')=COALESCE(latest_user,'') THEN 0 ELSE 1 END,
- task_id DESC,observed_at DESC) AS rank,
- FIRST_VALUE(observed_at) OVER(PARTITION BY video_url,external_id ORDER BY julianday(observed_at),observed_at) AS earliest_observed_at FROM latest
-), chosen AS (SELECT * FROM ranked WHERE rank=1), scoped AS (
- SELECT r.external_id,r.video_url,r.text,o.nickname,r.user_identifier,o.published_at,r.observed_at,
- r.filter_reason,r.task_id,o.ingest_disposition,t.include_keywords,t.exclude_keywords,
+ SELECT 1 FROM collection_observations o WHERE o.kind='comment' AND o.external_id=x.external_id
+ AND o.page_url=v.url AND trim(o.comment_text)!='')
+), scoped AS (
+ SELECT o.external_id,o.page_url AS video_url,o.comment_text AS text,o.nickname,o.user_identifier,
+ o.published_at,o.observed_at,o.filter_reason,o.task_id,o.ingest_disposition,t.include_keywords,t.exclude_keywords,
  'observation' AS text_origin,x.id AS comment_id,x.discovered_at AS first_seen_at,v.title AS video_title,
- r.latest_text,r.latest_user,r.rank,COALESCE(x.discovered_at,r.earliest_observed_at) AS collected_at
- FROM chosen r JOIN collection_observations o ON o.task_id=r.task_id AND o.kind='comment' AND o.external_id=r.external_id
- JOIN collection_tasks t ON t.id=r.task_id
- LEFT JOIN comments x ON x.source_id=:source AND x.external_id=r.external_id
- LEFT JOIN videos v ON v.source_id=:source AND v.url=r.video_url
- WHERE r.archive_id IS NULL
+ l.comment_text AS latest_text,l.user_identifier AS latest_user,1 AS rank,
+ COALESCE(x.discovered_at,l.earliest_observed_at) AS collected_at
+ FROM preferred l JOIN collection_observations o ON o.task_id=l.chosen_task_id AND o.kind='comment'
+ AND o.external_id=l.external_id AND o.page_url=l.page_url
+ JOIN collection_tasks t ON t.id=o.task_id
+ LEFT JOIN comments x ON x.source_id=:source AND x.external_id=o.external_id
+ LEFT JOIN videos v ON v.source_id=:source AND v.url=o.page_url
  UNION ALL
- SELECT r.external_id,r.video_url,r.text,x.observed_nickname,r.user_identifier,x.published_at,r.observed_at,
- r.filter_reason,r.task_id,'','','','archive',x.id,x.discovered_at,v.title,
- r.latest_text,r.latest_user,r.rank,x.discovered_at
- FROM chosen r JOIN comments x ON x.id=r.archive_id JOIN videos v ON v.id=x.video_id
+ SELECT external_id,url,raw_text,observed_nickname,user_identifier,published_at,discovered_at,
+ '',NULL,'','','','archive',id,discovered_at,title,raw_text,user_identifier,1,discovered_at
+ FROM archive_fallback WHERE archive_rank=1
 )
 """
 
@@ -70,7 +77,7 @@ def history(query, mode='live'):
         current, valuable = {}, set()
         for accepted in c.execute("SELECT * FROM monitor_comment_scope WHERE filter_reason=''"):
             key = (accepted['video_url'],accepted['external_id'])
-            current[key] = monitoring.observation_analysis(c,accepted['comment_id'],accepted['text'],engine)
+            current[key] = monitoring.observation_analysis(c,accepted['comment_id'],accepted['text'],engine,summary=True)
             if current[key].get('category') == 'buyer' and current[key].get('analysis_method') in ('model','human'):
                 valuable.add(key)
         where = " WHERE (:state='all' OR (:state IN ('accepted','valuable') AND filter_reason='') OR (:state='filtered' AND filter_reason!='')) AND (:query='' OR instr(lower(text || ' ' || nickname || ' ' || COALESCE(user_identifier,'') || ' ' || external_id),lower(:query))>0)"
@@ -89,7 +96,7 @@ def history(query, mode='live'):
         for source_row in source_rows:
             row = dict(source_row)
             row.pop('rank');row.pop('latest_text');row.pop('latest_user')
-            row.update(current[(row['video_url'],row['external_id'])] if not row['filter_reason'] else dict(category=None,analysis_method=None,analysis_state=None))
+            row.update(monitoring.observation_analysis(c,row['comment_id'],row['text'],engine) if not row['filter_reason'] else dict(category=None,analysis_method=None,analysis_state=None))
             row['include_matches'] = comment_filters.matches(row['text'],row.pop('include_keywords'))
             row['exclude_matches'] = comment_filters.matches(row['text'],row.pop('exclude_keywords'))
             row['timing'] = monitoring.timing(row,target)

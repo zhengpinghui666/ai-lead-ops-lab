@@ -40,14 +40,14 @@ PORT = int(os.getenv('LEADOPS_PORT', '8765'))
 CSRF = secrets.token_urlsafe(32)
 
 
-def collection_state(mode, view=None):
+def collection_state(mode, view=None, section=''):
     import monitor_board
     result = collector.state(mode)
     result['plans'] = collection_scheduler.state(mode)
     result['monitor'] = monitoring.state(mode)
     result['results'] = monitoring.results(mode)
     if view in (None, 'monitor', 'monitor-settings'):
-        result['board'] = monitor_board.build(result['tasks'],result['plans'],mode)
+        result['board'] = monitor_board.build(result['tasks'],result['plans'],mode,compact=view is not None,include_rows=view is None or section=='sources')
     result['live_monitor'] = live_monitor.state(mode)
     result['model_queue'] = semantic_queue.state(mode)
     result['login_recovery'] = login_recovery.state(mode)
@@ -55,19 +55,23 @@ def collection_state(mode, view=None):
     result['discovery'] = discovery_tracking.state(mode)
     result['inbox_sync'] = uid_inbox_sync.state(mode)
     result['intent_outreach'] = intent_outreach.state(mode)
+    if view is not None:
+        result['results']['rows']=[]
+        if view!='live':
+            result['live_monitor']={k:v for k,v in result['live_monitor'].items() if k not in ('library','messages','history','discovery')}
     return result
 
 
 VIEWS = {'overview','monitor','monitor-settings','live','groups','leads','inbox','analytics','settings','recruit','roster'}
 
 
-def workbench_state(mode, view=None):
+def workbench_state(mode, view=None, section='', lead_id=None, work_id=None, selected=None):
     if view is not None and view not in VIEWS:
         raise ValueError('页面不存在')
     if view == 'overview' and mode == 'live':
         return {**daily_dashboard.workbench(mode), 'csrf': CSRF, 'view': view}
     light = view in {'monitor','monitor-settings','live','groups','settings'} and mode == 'live'
-    result = clubops.shell_state(mode) if light else clubops.state(mode)
+    result = clubops.shell_state(mode,include_videos=False) if light else clubops.state(mode,compact=view is not None and lead_id is None,lead_id=lead_id)
     if view == 'overview':
         result['dashboard'] = daily_dashboard.snapshot(mode)
         result['leads'] = sorted((r for r in result['leads'] if r['category']=='buyer' and r['game']==clubops.TARGET_GAME),
@@ -77,10 +81,30 @@ def workbench_state(mode, view=None):
         # The full live archive is separately paginated. The representative
         # source in each lead remains intact, including its analysis evidence.
         result['live_messages'] = []
+    if result.get('list_compact'):
+        if view=='inbox':
+            contacts={r['lead_id'] for r in result['jobs']+result['messages']}
+            result['leads']=[r for r in result['leads'] if r['category']=='buyer' or r['source_kind']=='uid_test' or r['id'] in contacts or r['id']==selected]
+            result['comments']=[]
+        elif view in ('leads','recruit'):
+            for lead in result['leads']:
+                row=lead['latest']
+                lead['latest']={k:v for k,v in row.items() if k in ('id','evidence_type','raw_text','published_at','discovered_at','analysis_method')}
+                lead['latest']['facts']={'service_type':row.get('facts',{}).get('service_type')}
+        elif view=='analytics':
+            result['leads']=[{k:r[k] for k in ('id','source_kind','stage')} for r in result['leads']]
+            result['comments']=[{k:r.get(k) for k in ('analysis_method','video_url','published_at','discovered_at')} for r in result['comments']]
     result['messaging_test'] = messaging_http.state(clubops.DATA_DIR, mode)
     result['uid_messaging'] = uid_messaging.state(mode)
     result['csrf'] = CSRF
-    result['collector'] = collection_state(mode, view)
+    result['collector'] = collection_state(mode, view, section)
+    if view is not None:result['videos']=[]
+    if work_id is not None:
+        import monitor_board
+        board=monitor_board.build(result['collector']['tasks'],result['collector']['plans'],mode)
+        result['work_details']=next((r for r in board['rows'] if r['id']==work_id),None)
+        if result['work_details'] is None:raise ValueError('作品不存在')
+        result['collector'].pop('board',None)
     result['connections']['collector'] = 'observed' if result['collector']['last_received'] else 'unverified'
     if view is not None:
         result['view'] = view
@@ -145,7 +169,8 @@ class Handler(BaseHTTPRequestHandler):
                 view = parse_qs(urlparse(self.path).query).get('view', [None])[0]
                 if view is not None and view not in VIEWS:
                     raise ValueError('页面不存在')
-                return self.respond(collection_state(self.mode(), view))
+                section=parse_qs(urlparse(self.path).query).get('section',[''])[0]
+                return self.respond(collection_state(self.mode(), view, section))
             if path == '/api/groups':
                 query=parse_qs(urlparse(self.path).query)
                 return self.respond(group_monitor.state(self.mode(),int(query.get('before',['0'])[0])))
@@ -175,8 +200,14 @@ class Handler(BaseHTTPRequestHandler):
                     d['snapshot'] = json.loads(d['snapshot'])
                 return self.respond({'observations': rows, 'diagnostics': diagnostics})
             if path == '/api/state':
-                view = parse_qs(urlparse(self.path).query).get('view', [None])[0]
-                return self.respond(workbench_state(self.mode(), view))
+                query=parse_qs(urlparse(self.path).query)
+                view=query.get('view',[None])[0]
+                lead_id=int(query['lead_id'][0]) if 'lead_id' in query else None
+                work_id=int(query['work_id'][0]) if 'work_id' in query else None
+                if lead_id is not None and (view!='leads' or lead_id<=0):raise ValueError('需求详情参数无效')
+                if work_id is not None and (view!='monitor' or work_id<=0):raise ValueError('作品详情参数无效')
+                selected=int(query['selected'][0]) if query.get('selected') else None
+                return self.respond(workbench_state(self.mode(),view,query.get('section',[''])[0],lead_id,work_id,selected))
             if path == '/api/export':
                 result = clubops.state(self.mode())
                 return self.respond({'exported_at': clubops.now(), 'mode': result['mode'], 'comments': result['comments'], 'leads': result['leads']})

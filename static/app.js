@@ -131,19 +131,20 @@ function recordLoadTiming(name,started,sequence){
   if(name==='appFrameMountedMs'&&typeof requestAnimationFrame==='function')requestAnimationFrame(()=>requestAnimationFrame(()=>{if(sequence===loadSequence)data.appFramePaintMs=String(Math.round(loadingClock()-started));}));
 }
 async function load(){
-  const requestedMode=mode,requestedPage=pages[page]?page:'overview',sequence=++loadSequence,started=loadingClock();
+  const requestedMode=mode,requestedPage=pages[page]?page:'overview',requestedSection=section,sequence=++loadSequence,started=loadingClock();
   renderNavigation();
   if(!S||S.view&&S.view!==requestedPage){rememberViewScroll();renderedViewKey='';$('#main').className='app-page page-'+requestedPage+' loading-page';$('#main').innerHTML=loadingFrame(requestedPage);icons();recordLoadTiming('appFrameMountedMs',started,sequence);}
-  const controller=typeof AbortController==='function'?new AbortController():null;
+  load.controller?.abort();
+  const controller=typeof AbortController==='function'?new AbortController():null;load.controller=controller;
   const timeout=controller?setTimeout(()=>controller.abort(),20000):null;
   const prefetchHistory=requestedPage==='monitor'&&!section;
   if(prefetchHistory)void refreshMonitorHistory();
   try{
-    const r=await fetch(`/api/state?mode=${requestedMode}&view=${encodeURIComponent(requestedPage)}`,controller?{signal:controller.signal}:undefined);
+    const r=await fetch(`/api/state?mode=${requestedMode}&view=${encodeURIComponent(requestedPage)}&section=${encodeURIComponent(requestedSection)}${requestedPage==='inbox'?'&selected='+(requestedSection.startsWith('contact/')?Number(requestedSection.split('/')[1]):conversation||0):''}${requestedPage==='leads'&&requestedSection.startsWith('detail/')?'&lead_id='+Number(requestedSection.split('/')[1]):''}`,controller?{signal:controller.signal}:undefined);
     const responseAt=loadingClock(),v=await r.json(),parsedAt=loadingClock();if(!r.ok)throw Error(v.error||'读取失败');
-    if(requestedMode!==mode||sequence!==loadSequence||requestedPage!==page)return;
+    if(requestedMode!==mode||sequence!==loadSequence||requestedPage!==page||requestedSection!==section)return;
     const timing=document.documentElement?.dataset;if(timing&&!timing.appInitialDataReadyAtMs){timing.appInitialResponseMs=String(Math.round(responseAt-started));timing.appInitialJsonMs=String(Math.round(parsedAt-responseAt));timing.appInitialRequestStartedAtMs=String(Math.round(started));}
-    S=v;render(!prefetchHistory);recordLoadTiming('appDataReadyMs',started,sequence);queueCollectionPoll();
+    S=v;S._pageDataSignal=JSON.stringify([v.collector?.model_queue,v.collector?.intent_outreach?.last_job_id,v.collector?.intent_outreach?.counts]);render(!prefetchHistory);recordLoadTiming('appDataReadyMs',started,sequence);queueCollectionPoll();
     if(timing&&!timing.appInitialRenderMs)timing.appInitialRenderMs=String(Math.round(loadingClock()-parsedAt));
   }catch(error){
     if(requestedMode===mode&&sequence===loadSequence&&requestedPage===page)throw error;
@@ -509,6 +510,7 @@ function reviewDialog(id,provided=null){
 }
 async function historyDialog(id,offset=0){
   const l=S.leads.find(x=>x.id===id);if(!l)throw Error('线索不存在');
+  if(S.list_compact){const response=await fetch(`/api/state?mode=${mode}&view=leads&lead_id=${id}`),detail=await response.json();if(!response.ok)throw Error(detail.error||'历史读取失败');const ids=new Set(detail.comments.map(c=>c.id));S.comments=[...S.comments.filter(c=>!ids.has(c.id)),...detail.comments];}
   const comments=S.comments.filter(c=>c.person_id===l.person_id);let live={rows:[],total:0,offset:0,limit:50};
   if(l.live_count){const response=await fetch(`/api/lead-live-history?mode=${mode}&lead_id=${id}&offset=${offset}`);live=await response.json();if(!response.ok)throw Error(live.error||'直播历史读取失败');}
   const item=c=>`<div class="history-item"><div class="row spread">${category(c.category)}<small>${date(c.published_at)}</small></div><p>${esc(c.raw_text)}</p><small>${evidenceName(c)}来源：${esc(c.source_title||c.video_title)} · ID ${esc(c.external_id||'未知')}</small><small>入库 ${date(c.discovered_at)} · ${esc(c.source_name)}</small>${parentEvidence(c)}${ruleEvidence(c)}<div class="row spread" style="font-size:.875rem;margin-top:10px">${sourceLink(c)}${button('核对分类',c.evidence_type==='live'?'live-review':'history-review','small',`data-id="${c.id}"`)}</div></div>`;
@@ -571,7 +573,7 @@ case 'work-page': workPage+=Number(el.dataset.step)||0;redrawWorkPool();break;
 case 'work-comments': if(section){monitorResultVideo=el.dataset.url;monitorResultPage=1;navigate('monitor');}else await changeMonitorSelection(el.dataset.url);break;
 case 'work-clear': if(section){monitorResultVideo='';monitorResultPage=1;navigate('monitor');}else await changeMonitorSelection('');break;
 case 'monitor-history-retry': await refreshMonitorHistory();break;
-case 'work-details': workDetailDialog(el.dataset.url);break;
+case 'work-details': await workDetailDialog(el.dataset.url);break;
 case 'comment-details': commentDetailDialog(el.dataset.url,el.dataset.key);break;
 case 'comment-filter-help': showModal('筛选说明','<p>采集通过：符合当批时间、关键词等采集条件。</p><p>垂直作品的新评论直接进入模型；普通作品仅做关键词匹配。有意向仅展示模型或人工确认的客户需求；规则初筛结果留在采集通过中。</p><p>采集未通过的原文仍保留在全部观察中，不等于内容没有价值。</p>');break;
 case 'work-log': navigate('monitor/runs');break;
@@ -581,7 +583,7 @@ case 'freshness-preset': {const input=$('[name="freshness_target_seconds"]');if(
 case 'monitor-reset': monitorDraftDirty=false;$('#monitor-settings').outerHTML=monitorSettingsPanel();syncCollectionForms();icons();break;
 case 'monitor-start': monitorStartDialog();break;
 case 'monitor-stop': await save('monitor-stop',{},'监控已关闭，正在停止关联任务；历史记录保留');break;
-case 'collector-video': collectorDialog(S.videos.find(v=>v.id===id));break;
+case 'collector-video': collectorDialog(S.videos.find(v=>v.id===id)||workBoard().rows.find(v=>v.id===id));break;
 case 'collector-retry': {const t=collectionState().tasks.find(t=>t.id===id);collectorDialog(null,t);break;}
 case 'collector-cancel': await save('collector-cancel',{id},'正在停止，已入库数据会保留');break;
 case 'collector-resume': await save('collector-resume',{id},'继续检查当前页面');break;
@@ -605,7 +607,7 @@ case 'live-library-filter':liveLibraryFilter=el.dataset.filter;liveLibraryDialog
 case 'live-room-toggle': await api('live-room-toggle',{room_url:el.dataset.room,enabled:el.dataset.enabled==='true'});await load();liveLibraryDialog();toast('房间关注已更新，下批生效');break;
 case 'live-archive-refresh': liveArchiveAnchor=null;livePage=1;await refreshLiveArchive(true);break;
 case 'live-result-filter': liveFilter=el.dataset.filter;livePage=1;liveArchiveAnchor=null;await refreshLiveArchive();redrawLiveResults();break;
-case 'intent-outreach-settings': {const o=collectionState().intent_outreach||{};showSettingsModal('意向用户自动私信',`<p>发送文案：${esc(o.content||'尚未配置')}</p><p>新意向用户自动发送，成功后不重复发送。${o.retry_rejected?"明确拒绝最多重试 2 次，间隔 1 分钟、5 分钟；频率限制至少等待 15 分钟。已知互关限制等待关系条件改变。":"明确拒绝的自动重试尚未开启。"}</p>${button(o.enabled?'关闭自动发送':'开启自动发送','intent-outreach-toggle','primary',`data-enabled="${!o.enabled}" ${!o.configured?'disabled':''}`)}`);break;}
+case 'intent-outreach-settings': {const o=collectionState().intent_outreach||{},f=o.content_fallback||{};showSettingsModal('意向用户自动私信',`<p>发送文案：${esc(o.content||'尚未配置')}</p>${o.template?'<p>按已采集的公开性别称呼“小哥哥／小姐姐”；未提供时使用“你好呀”。</p>':''}${f.status==='armed'?`<p>明确内容拒绝或风控时自动回退：${esc(f.content)}。失败对象不换文案补发；账号风险或频率限制时暂停，等待核对。</p>`:f.status==='rolled_back'?`<p class="notice">已自动回退旧版 · 发送记录 #${esc(f.job_id)}${o.status==='attention'?' · 发送仍暂停，等待核对平台限制':''}</p>`:''}<p>新意向用户自动发送，已有接受或结果未知的记录不重复发送。${o.retry_rejected?"其他明确拒绝最多重试 2 次，间隔 1 分钟、5 分钟；已知互关限制不重试。内容拒绝、风控和频率限制不自动重试。":"明确拒绝的自动重试尚未开启。"}</p>${button(o.enabled?'关闭自动发送':'开启自动发送','intent-outreach-toggle','primary',`data-enabled="${!o.enabled}" ${!o.configured?'disabled':''}`)}`);break;}
 case 'intent-outreach-toggle': await save('intent-outreach-control',{enabled:el.dataset.enabled==='true'},'自动私信设置已更新');$('#modal').close();break;
 case 'live-discover': {const value=await api('live-discover');S.collector.live_monitor.discovery=value;const panel=$('#live-discovery'),opened=!!panel?.open;if(panel){panel.outerHTML=liveDiscoveryPanel();$('#live-discovery').open=opened;icons();}toast(value.status==='ready'?'直播候选已更新；选择房间后保存配置':'未更新候选，请查看具体状态',value.status!=='ready');break;}
 case 'live-use-room': {const row=liveState().discovery?.rows?.[Number(el.dataset.index)];if(row&&!$('#live-form'))liveSettingsDialog();const form=$('#live-form');if(row&&form){form.elements.namedItem('room_url').value=row.room_url;markMonitorDraft(form.elements.namedItem('room_url'));form.scrollIntoView({behavior:'smooth',block:'start'});toast('直播间已填入；保存配置后再开启读取');}break;}
@@ -681,7 +683,7 @@ window.addEventListener('hashchange',()=>{
   monitorDraftDirty=false;liveDraftDirty=false;semanticDraftDirty=false;stashDraft();
   const same=next===page;page=next;section=sectionSets[page]?.includes(nextSection.split('/')[0])?nextSection:'';
   if(!same){gameFilter='';query='';}setMobileNavigation(false,false);
-  if(same&&S){render();queueCollectionPoll();}else void load().catch(loadError);
+  void load().catch(loadError);
   window.scrollTo({top:0});$('#main')?.focus?.({preventScroll:true});
 });
 function modalBackdrop(event){const d=$('#modal'),r=d.getBoundingClientRect();return event.target===d&&(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom);}
@@ -704,7 +706,7 @@ function workBoard(){return S.collector?.board||{rows:[],summary:{tracked:0,read
 function monitorOverview(){
   const board=workBoard(),n=board.summary,t=S.collector?.results?.timeliness,latest=collectionState().tasks[0];
   const blocked=latest&&['resource_limited','needs_verification','needs_login','rate_limited','schema_changed','identity_failed','failed','network_error','access_denied'].includes(latest.status);
-  const cards=[['跟踪中作品',board.rows.filter(workIsTracked).length,'含持续轮询、待首次采集与当前读取','radar'],['当前读取',n.reading,'此刻正在读取的作品','activity'],['近 1 小时新评论',n.fresh_comments,'发布与首次采集均在近 1 小时','message-circle'],['等待模型处理',n.model_pending,'排队与分析中的评论','brain-circuit'],['采集时效达标率',t?.measured?`${Math.round(t.within_target/t.measured*100)}%`:'待测',`目标 ${durationText(monitorConfig().freshness_target_seconds||60)} · ${t?.measured?`最近批次 ${t.measured} 条样本`:'暂无新样本'}`,'timer']];
+  const cards=[['跟踪中作品',n.covered??board.rows.filter(workIsTracked).length,'含持续轮询、待首次采集与当前读取','radar'],['当前读取',n.reading,'此刻正在读取的作品','activity'],['近 1 小时新评论',n.fresh_comments,'发布与首次采集均在近 1 小时','message-circle'],['等待模型处理',n.model_pending,'排队与分析中的评论','brain-circuit'],['采集时效达标率',t?.measured?`${Math.round(t.within_target/t.measured*100)}%`:'待测',`目标 ${durationText(monitorConfig().freshness_target_seconds||60)} · ${t?.measured?`最近批次 ${t.measured} 条样本`:'暂无新样本'}`,'timer']];
   return `<section id="monitor-overview" aria-label="监控全局状态">${monitorControls()}<div class="${section==='runs'?'monitor-metrics':'monitor-inline-metrics'}">${cards.map(([label,value,note,ico])=>`<article class="monitor-metric"><div>${icon(ico)}<span>${label}</span></div><strong>${typeof value==='number'?fmt(value):value}</strong><small>${note}</small></article>`).join('')}</div>${blocked?`<div class="monitor-attention" role="status">${icon('circle-alert')}<div><strong>最近批次 #${latest.id} · ${esc(collectionLabels[latest.status]||latest.status)}</strong><span>${esc(latest.detail)}</span></div>${button('查看运行记录','work-log','small')}</div>`:''}</section>`;
 }
 function workMetrics(r){const m=r.metrics;return `<span class="work-platform-metrics">${[['likes','点赞','heart'],['comments','平台评论','message-circle'],['shares','分享','share'],['favorites','收藏','bookmark']].map(([key,label,ico])=>`<span>${icon(ico)}${label}<b>${m&&typeof m[key]==='number'?fmt(m[key]):'未获取'}</b></span>`).join('')}</span><small class="work-metrics-time">${m?.updated_at?`数据更新 ${date(m.updated_at)}`:'平台数据尚未获取'}</small>`;}
@@ -724,8 +726,9 @@ function workPool(){
     return `<article class="work-item ${selected?'work-selected':''}"><button class="work-select" data-action="work-comments" data-url="${esc(r.url)}" aria-pressed="${selected}"><span class="work-item-status">${badge(names[r.state]||'状态未知',['reading','monitoring'].includes(r.state)?'good':r.state==='attention'?'warn':'')}${r.verticality?badge(r.verticality.label,r.verticality.matched?'good':''):''}</span><strong class="work-item-title" title="${esc(title)}">${esc(title)}</strong>${r.author_name?`<small class="cell-sub">${esc(r.author_name)}</small>`:''}<span class="work-item-counts">已采集评论 <b>${fmt(r.archived_comments)}</b>${r.fresh_comments?` · 近 1 小时新增 <b>${fmt(r.fresh_comments)}</b>`:''}</span></button><div class="work-item-actions"><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">原作品 ↗</a>${button('查看详情','work-details','small subtle',`data-url="${esc(r.url)}"`)}</div></article>`;
   }).join(''):`<p class="work-empty">${workFilter==='tracked'?'当前没有持续跟踪或正在读取的作品。':'暂无对应作品。'}</p>`}</div><div class="result-footer"><small>${workQuery?`${filtered.length} 条匹配 · `:''}已收录作品长期保留</small><div class="actions">${button('上一页','work-page','small',`data-step="-1" ${workPage===1?'disabled':''}`)}<span>${workPage}/${pageCount}</span>${button('下一页','work-page','small',`data-step="1" ${workPage===pageCount?'disabled':''}`)}</div></div></section>`;
 }
-function workDetailDialog(url){
-  const r=workBoard().rows.find(row=>row.url===url);if(!r)throw Error('作品已更新，请重新选择');
+async function workDetailDialog(url){
+  let r=workBoard().rows.find(row=>row.url===url);if(!r)throw Error('作品已更新，请重新选择');
+  if(mode==='live'&&r.id){const response=await fetch(`/api/state?mode=${mode}&view=monitor&work_id=${r.id}`),value=await response.json();if(!response.ok)throw Error(value.error||'作品详情读取失败');r=value.work_details;}
   showModal('作品详情',`<h3>${esc(r.title===r.external_id?'标题待补全':r.title)}</h3><p class="muted">${esc(r.author_name||'作者未获取')}</p>${verticalityDetails(r.verticality)}${button('加入参考评审','asset-reference-propose','small',`data-key="${esc(r.external_id)}" ${mode==='demo'?'disabled':''}`)}<dl class="record-metadata"><dt>作品 ID</dt><dd class="mono">${esc(r.external_id)}</dd><dt>发布时间</dt><dd>${date(r.published_at)}</dd><dt>最近检查</dt><dd>${r.last_checked_at?date(r.last_checked_at):'尚未检查'}</dd><dt>下次检查</dt><dd>${r.active_task_id?'本批进行中':r.next_check_at?date(r.next_check_at):r.continuous_monitoring?'等待调度':'未安排'}</dd><dt>采集方式</dt><dd>${r.transport==='http'?'HTTP':r.transport?'浏览器':'待分配'}</dd><dt>已采集评论</dt><dd>${fmt(r.archived_comments)}</dd>${r.model_pending?`<dt>模型待处理</dt><dd>${fmt(r.model_pending)}</dd>`:''}</dl>${workMetrics(r)}<div class="actions record-actions"><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">原作品 ↗</a>${r.id?button('采集一批','collector-video','small',`data-id="${r.id}" ${mode==='demo'||!r.enabled||collectionState().active?'disabled':''}`):''}</div>`);
 }
 function redrawWorkPool(){const panel=$('#work-pool');if(!panel)return;const top=$('.work-list')?.scrollTop||0;panel.outerHTML=workPool();const list=$('.work-list');if(list)list.scrollTop=top;icons();}
@@ -1015,7 +1018,7 @@ function schedulePanel(){const plans=(S.collector?.plans||[]).filter(p=>!p.conti
 function planDialog(id){if(mode!=='live')throw Error('演示区不创建真实计划');const p=S.collector?.plans?.find(p=>p.id===id)||{};showModal(p.id?'修改有限采集计划':'新建有限采集计划',`<input name="id" type="hidden" value="${p.id||''}">`+notice('保存不会启动。启用后按所选通道读取；验证、限制或失败时暂停，最多执行指定批次数。')+field('name','计划名称',p.name||'无畏契约需求发现','text','required maxlength="100"')+transportField(p.transport)+select('kind','采集方式',opts({search:'关键词搜索',video:'指定视频',author:'从作品作者发现'},p.kind||'search'))+collectionTargetField(p.target||'无畏契约陪玩','关键词或完整视频链接')+`<div class="fields-2">${field('video_limit','发现后作品上限',p.video_limit||1,'number','required min="1" max="5"')}${field('comment_limit','每视频评论上限',p.comment_limit||10,'number','required min="1" max="100"')}${field('interval_seconds','批次结束后的间隔 / 秒',p.interval_seconds||600,'number','required min="300" max="86400"')}${field('run_limit','计划总批次数',p.run_limit||3,'number','required min="1" max="24"')}</div>`+field('page_concurrency','每批视频读取并发',p.page_concurrency||1,'number','required min="1" max="4"')+select('priority','调度优先级',opts({3:'高',2:'标准',1:'低'},p.priority||2)),'plan-form',submit('保存为暂停计划'));}
 async function pollCollection(){
   if(collectionPolling||mode!=='live'||document.hidden){queueCollectionPoll();return;}
-  collectionPolling=true;const requestedMode=mode,requestedPage=page,sequence=loadSequence;
+  collectionPolling=true;const requestedMode=mode,requestedPage=page,requestedSection=section,sequence=loadSequence;
   try{
     if(requestedPage==='overview'){
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
@@ -1036,8 +1039,8 @@ async function pollCollection(){
       }finally{clearTimeout(timer);}
       return;
     }
-    const r=await fetch(`/api/collector?mode=${requestedMode}&view=${encodeURIComponent(requestedPage)}`);if(!r.ok)throw Error('采集状态读取失败');
-    const value=await r.json();if(mode!==requestedMode||requestedPage!==page||sequence!==loadSequence)return;
+    const r=await fetch(`/api/collector?mode=${requestedMode}&view=${encodeURIComponent(requestedPage)}&section=${encodeURIComponent(requestedSection)}`);if(!r.ok)throw Error('采集状态读取失败');
+    const value=await r.json();if(mode!==requestedMode||requestedPage!==page||requestedSection!==section||sequence!==loadSequence)return;
     const stable=v=>({...v,board:v?.board?{...v.board,updated_at:null}:undefined});
     const changed=JSON.stringify(stable(S.collector))!==JSON.stringify(stable(value));
     collectionPanelPending ||= changed;
@@ -1045,7 +1048,8 @@ async function pollCollection(){
     if(page==='inbox'&&$('#intent-outreach-status'))$('#intent-outreach-status').outerHTML=intentOutreachPanel();
     if(page==='inbox'&&$('#uid-inbox-sync-status'))$('#uid-inbox-sync-status').outerHTML=uidInboxSyncStatus(conversation);
     if(S.semantic&&value.model_queue)S.semantic.queue=value.model_queue;
-    if(changed&&!value.tasks.some(t=>t.active))collectionReloadPending=true;
+    // Collection batch changes do not invalidate unrelated page archives.
+    if(['leads','recruit','inbox','analytics'].includes(page)&&changed){const before=S._pageDataSignal,signal=JSON.stringify([value.model_queue,value.intent_outreach?.last_job_id,value.intent_outreach?.counts]);if(before&&before!==signal)collectionReloadPending=true;S._pageDataSignal=signal;}
     const editing=busy||document.body.classList.contains?.('menu-open')||semanticDraftDirty||(page.startsWith('monitor')&&monitorDraftDirty)||(page==='live'&&liveDraftDirty)||$('#modal')?.open||document.activeElement?.matches('input,textarea,select,[contenteditable="true"]');
     if(changed&&page==='settings'&&!editing&&$('#model-queue-panel')){$('#model-queue-panel').outerHTML=modelQueuePanel();icons();}
     if(page==='live'&&changed){if($('#live-results'))redrawLiveResults();if($('#live-status'))$('#live-status').outerHTML=liveStatus();if($('#live-tracking'))$('#live-tracking').outerHTML=liveTrackingPanel();icons();}

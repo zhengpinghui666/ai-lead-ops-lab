@@ -7,7 +7,7 @@ import video_metadata
 from collector import video_targets
 
 
-def build(tasks, plans, mode='live'):
+def build(tasks, plans, mode='live', *, compact=False, include_rows=True):
     instant = app.now()
     cutoff = (datetime.fromisoformat(instant)-timedelta(hours=1)).isoformat()
     active = {t['id']:t for t in tasks if t.get('active')}
@@ -90,8 +90,12 @@ def build(tasks, plans, mode='live'):
                 model_pending=pending.get(row['id'],0),transport=latest['transport'] if latest else None)
     priority={'reading':0,'queued':1,'pending_read':2,'monitoring':3,'attention':4,'paused':5,'history':6}
     rows.sort(key=lambda r:(priority[r['state']],-(r['id'] or 0)))
-    return dict(updated_at=instant,rows=rows,scope='configured_and_archived_works',
+    output_rows=rows if include_rows else []
+    if compact:
+        output_rows=[{**r,'verticality':{k:r['verticality'][k] for k in ('matched','label') if k in r['verticality']} if r.get('verticality') else None} for r in output_rows]
+    return dict(updated_at=instant,rows=output_rows,scope='configured_and_archived_works',
         summary=dict(tracked=sum(r['continuous_monitoring'] for r in rows),
+            covered=sum(bool(r['continuous_monitoring'] or r['state'] in ('reading','queued','pending_read')) for r in rows),
             reading=sum(r['state']=='reading' for r in rows),works=len(rows),
             fresh_comments=sum(r['fresh_comments'] or 0 for r in rows),
             model_pending=sum(r['model_pending'] for r in rows),

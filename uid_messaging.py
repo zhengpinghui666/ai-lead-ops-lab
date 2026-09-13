@@ -138,7 +138,8 @@ def authorized_outreach(c, authorization, job, person, settings):
         import intent_outreach
         policy = intent_outreach.read(c, intent_outreach.POLICY_KEY)
         if (not policy.get('enabled') or policy.get('revision') != authorization['policy_revision']
-                or policy.get('sender_uid') != settings.get('sender_uid') or policy.get('content') != job['content']):
+                or policy.get('sender_uid') != settings.get('sender_uid')
+                or intent_outreach.rendered_content(c,policy,person['external_id']) != job['content']):
             raise ValueError('自动发送授权已关闭或变更；未发送')
         if intent_outreach.previously_contacted(c,policy,person['external_id']):
             raise ValueError('该对象已有换号前的联系记录；不会因换号重复发送')

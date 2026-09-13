@@ -97,7 +97,7 @@ def command(action, mode='live'):
         return state()
 
 
-def observation_analysis(c, comment_id, text, model_engine):
+def observation_analysis(c, comment_id, text, model_engine, *, summary=False):
     """Read the same current analysis as demand details, bound to the visible text."""
     import analysis_store
     empty = dict(category=None, analysis_method=None, analysis_state='missing',
@@ -109,8 +109,9 @@ def observation_analysis(c, comment_id, text, model_engine):
         return {**empty, 'analysis_state': 'snapshot_changed'}
     projected = dict(archive, video_title=source['title'],
                      parent_context={'status': 'available', 'raw_text': source['parent']})
-    analysis_store.project(c, projected, model_engine=model_engine)
+    analysis_store.project(c, projected, model_engine=model_engine,details=not summary)
     method = projected['analysis_method']
+    if summary:return dict(category=projected['category'],analysis_method=method)
     state = method
     if method not in ('human', 'pending', 'model') and model_engine:
         model = projected.get('model_result')
