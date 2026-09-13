@@ -143,13 +143,13 @@
     },
     {
       "name": "SERVICE_LIFECYCLE.md",
-      "sha256": "47c706d4ca782c42eaade27b6d9c651a93f87e77c786aa35821686d9b06448c5",
-      "bytes": 2153
+      "sha256": "e39b6dff1c4ab10ccba7c06b0de73f3b7c1602302790e24c09c204c395a709e5",
+      "bytes": 3123
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "8720405a41d566190eafb8ffa4e37d1c106011876d6121ae0d5864f621a082bc",
-      "bytes": 16020
+      "sha256": "d095490d611146e075974278d70c7f018cdae777778b784bf1d552a1e54c3413",
+      "bytes": 23735
     },
     {
       "name": "UID_HTTP.md",
@@ -158,13 +158,13 @@
     },
     {
       "name": "UID_INBOX.md",
-      "sha256": "e7f61b74499c5a6cd0d10bf89b5e85384ed714a3de22741538b147fa2de27909",
-      "bytes": 13492
+      "sha256": "d4269ecd00ac11ca80160d299f6b6186a7ab208359af1dfc90768b207275f04f",
+      "bytes": 15467
     },
     {
       "name": "UID_SESSION.md",
-      "sha256": "8c788042ccc941efd24d3a701b5636cc2ef102d0702a7ce2d76368910d2f6095",
-      "bytes": 13763
+      "sha256": "69e05a3a7faf09dbed212874145399b980b8e65f8dadf9c7151ca094ad0352f7",
+      "bytes": 14383
     },
     {
       "name": "VALIDATION.md",
@@ -268,8 +268,8 @@
     },
     {
       "name": "collector.py",
-      "sha256": "4878c80c6e2600413be541911941f7e93fd737481c672fc51f8a38edd5bea8c4",
-      "bytes": 40338
+      "sha256": "7f77439192395f65bf9c5fd1d5419fdef06f1a423d36447e96ca1caca9512858",
+      "bytes": 40890
     },
     {
       "name": "collector_http.py",
@@ -283,8 +283,8 @@
     },
     {
       "name": "collector_http_worker.py",
-      "sha256": "869f5fb605523478ef5fbb72803a15c768cbeabff3c358398e928bb43b014313",
-      "bytes": 19780
+      "sha256": "5aa45f2d0be417b73858c15306bd32bde8fddd08fb45eeb9d6da7d50a745d398",
+      "bytes": 20060
     },
     {
       "name": "collector_parser.cjs",
@@ -363,8 +363,8 @@
     },
     {
       "name": "discovery_tracking.py",
-      "sha256": "b330e9915f8e18a64439909b23e05bd34fb08888b2ecd9e9038b959b192a8805",
-      "bytes": 27835
+      "sha256": "36fa34d0f6e9efad327b258f0d845a6bd3df31f38225bc58ecf11a7143a176e3",
+      "bytes": 28316
     },
     {
       "name": "evaluation/intent-development-v1.json",
@@ -673,8 +673,8 @@
     },
     {
       "name": "scripts/monitor-health.py",
-      "sha256": "be1c6aa98ce68d7fc2e308eeee683235ea4c643734e2307dbd637287a621ed4a",
-      "bytes": 4066
+      "sha256": "d6a94125ff7edb43684a0dfcd86645a1ac4a648165b0304d6b7a6cbbfec1a63c",
+      "bytes": 5692
     },
     {
       "name": "scripts/prepare-collection-session.cjs",
@@ -923,8 +923,8 @@
     },
     {
       "name": "test_discovery_tracking.py",
-      "sha256": "40bfc97c8337e6cd99e560f42acdf348940c74692285c61ec6266ef4e8ac6009",
-      "bytes": 35635
+      "sha256": "1343ab2b63d94e4c377fd913243dfc2a5a4c2b2722c5af1441d7415b8ba0f444",
+      "bytes": 36804
     },
     {
       "name": "test_freshness_audit.py",
@@ -1078,8 +1078,8 @@
     },
     {
       "name": "test_monitor_health.py",
-      "sha256": "4f2878b924b2b5d00b6a3b00c8006c921cf09621acad77d8d185d77ff42509ff",
-      "bytes": 1679
+      "sha256": "29d2017adf6d3b045adc9e2f1cbda61831dc6da85f1b392e9ac6701f7b275a9c",
+      "bytes": 5028
     },
     {
       "name": "test_monitoring.py",
@@ -1168,18 +1168,18 @@
     },
     {
       "name": "test_uid_inbox.py",
-      "sha256": "f5fcce97b5aee8461cd8a3293f0fd81b616ddd935f365c7c07c1aa6c55ca949d",
-      "bytes": 10584
+      "sha256": "15e18456446101fd886183c7647706e9a2943a6009e635d8df75759b9838fba0",
+      "bytes": 13878
     },
     {
       "name": "test_uid_inbox_store.py",
-      "sha256": "8585c15c5e588d949ba9c214cd0b7ccdc07effc98afc968da34b7f5395c8c785",
-      "bytes": 16253
+      "sha256": "7c677ad7d7c1008449a9efde1ac5d8908c47cbe9f2f038f4594ac2b26a8bc435",
+      "bytes": 17241
     },
     {
       "name": "test_uid_inbox_sync.py",
-      "sha256": "60600f881e56d643813c010d3fec0360b6548b7c2679b2461c1937d2e6685930",
-      "bytes": 11219
+      "sha256": "64de8f21a7f7a76bb6453b94c23c1086044d164e338fe5a88cb980f88142c40d",
+      "bytes": 12521
     },
     {
       "name": "test_uid_messaging.py",
@@ -1203,8 +1203,8 @@
     },
     {
       "name": "test_video_discovery.py",
-      "sha256": "219386ab565a3bb96eac12d70381c90a3c0f92c34965f22d23368218f7514360",
-      "bytes": 20544
+      "sha256": "717829e1175a294bafa480d7aafd1b0236524a9bea1e7f2d88ef3635d11dc127",
+      "bytes": 23276
     },
     {
       "name": "test_video_metadata.py",
@@ -1253,18 +1253,18 @@
     },
     {
       "name": "uid_inbox.py",
-      "sha256": "b1afffe6dd9d673dd17a3bad3bbe9f9aba879dfe29d671fa08b6ea36e693707a",
-      "bytes": 12928
+      "sha256": "dde695c0eb7e02fa75e5f23d20d8292461e430a30ce44000bfd091db3d3f66bb",
+      "bytes": 14854
     },
     {
       "name": "uid_inbox_store.py",
-      "sha256": "140f54e43fc0c49b34116309b4b080e66ab015e5c7af61b450cc9ba5c16ec731",
-      "bytes": 17487
+      "sha256": "9447d0f5e2b45439a98b8cf7db55749dee9bc5fbf6c3343e4867d99c91a5740d",
+      "bytes": 17499
     },
     {
       "name": "uid_inbox_sync.py",
-      "sha256": "19b7bd1be02770534af87b19ec33c1be6543c40f96d5240093a4629054efcb8d",
-      "bytes": 10119
+      "sha256": "cb7ce6a74a27065c50fd51ef926ea002df2c97165a63253e0eab300612f8a791",
+      "bytes": 10237
     },
     {
       "name": "uid_messaging.py",
@@ -1283,13 +1283,13 @@
     },
     {
       "name": "uid_transport.py",
-      "sha256": "45a4712d0ed2a3f8afd29a2a2f35984e70b40913dd59d21a2dc941d388ce575a",
-      "bytes": 11952
+      "sha256": "c20e9853f2e5411a25c0b491680a252ace39c115dd7608c69352382216ed4602",
+      "bytes": 13031
     },
     {
       "name": "video_discovery.py",
-      "sha256": "593e970d716f02ed4e3fef1806390a90ef8a1f60ffa3fed90e57b0ff208912e0",
-      "bytes": 9829
+      "sha256": "37afa79636f2110ad40e607a8c225d75ad11136a92f8e17857ce25e31d98f119",
+      "bytes": 10621
     },
     {
       "name": "video_metadata.py",

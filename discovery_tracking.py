@@ -72,6 +72,13 @@ def author_rows(c,cfg):
       LEFT JOIN discovery_works w ON w.author_sec_uid=a.sec_uid AND w.author_sample=1
       LEFT JOIN asset_verticality v ON v.kind='work' AND v.asset_key=w.video_id GROUP BY a.sec_uid''')]
     for r in rows:
+        seed = c.execute('SELECT enabled FROM discovery_works WHERE video_id=?', (r['seed_video_id'],)).fetchone()
+        if seed and not seed['enabled']:
+            replacement = c.execute('SELECT video_id FROM discovery_works WHERE author_sec_uid=? AND enabled=1 ORDER BY last_seen_at DESC,video_id LIMIT 1', (r['sec_uid'],)).fetchone()
+            if replacement:
+                r['seed_video_id'] = replacement['video_id']
+            else:
+                r['enabled'] = 0
         r['reference_focused']=r['sec_uid'] in reference_authors
         r['ratio']=round(r['related']/r['sampled']*100,1) if r['sampled'] else None
         r['vertical_ratio']=round(r['vertical']/r['sampled']*100,1) if r['sampled'] else None

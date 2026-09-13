@@ -233,7 +233,7 @@ def read(body, mode='live', *, provider=None, exchange=None, _cursor=None):
             if operation=='scan':result=uid_inbox.scan(account,[peer],provider=provider,exchange=exchange,max_pages=3,page_size=20)
             else:result=uid_inbox.messages(account,_conversation(conversation),provider=provider,exchange=exchange,limit=20,cursor=int(cursor))
         # Never persist credential envelopes. Only the existing reader's bounded diagnostics.
-        detail={k:result[k] for k in ('status','error','scopes','evidence','returned_count','skipped_count','output_truncated','has_more','next_cursor') if k in result}
+        detail={k:result[k] for k in ('status','error','scopes','evidence','transport','returned_count','skipped_count','output_truncated','has_more','next_cursor') if k in result}
         added=0;new_inbound=0;stamp=app.now()
         with app.LOCKS[mode],app.db(mode) as c:
             if _account()!=account or _target(c,body['lead_id'])!=peer:raise ValueError('读取期间账号或线索改变，未保存消息')

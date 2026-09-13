@@ -11,6 +11,7 @@ import uid_inbox_store as inbox
 import uid_messaging
 import test_uid_inbox_store as fixture
 from test_uid_inbox import SENDER,RECEIVER
+from uid_session import Provider as SessionProvider
 
 class InboxSyncTests(unittest.TestCase):
     scan=fixture.InboxStoreTests.scan
@@ -115,6 +116,26 @@ class InboxSyncTests(unittest.TestCase):
         self.provider.current.side_effect=ValueError('not ready')
         with self.assertRaises(ValueError):sync.control({'id':rid},True)
         self.assertFalse(self.row()['enabled'])
+
+    def test_recover_preserves_stopped_failure_and_manual_pause_summaries(self):
+        rid=self.enable()
+        self.page([],effect=lambda *a,**k:dict(status='read_failed',error='identity_check_failed',messages=[]))
+        failed=self.row();self.assertEqual(failed['status'],'attention')
+        sync.recover();self.assertEqual(self.row(),failed)
+        sync.control({'id':rid},False);paused=self.row()
+        sync.recover();self.assertEqual(self.row(),paused)
+
+    def test_identity_network_retry_is_bounded_and_rechecks_identity_each_time(self):
+        import uid_transport
+        from test_uid_session import data
+        self.enable();before=self.protected();calls=[]
+        def failed(operation,prepared):
+            calls.append(operation);raise uid_transport.TransportError('timeout','response_headers')
+        with patch.object(inbox.uid_session,'Provider',return_value=SessionProvider(memory=data())),patch.object(uid_transport,'request',side_effect=failed):
+            for n in range(4):
+                self.ready();sync.tick();self.assertEqual(bool(self.row()['enabled']),n<3)
+        self.assertEqual(calls,['identity']*4);self.assertEqual(self.row()['status'],'attention')
+        self.assertEqual(self.protected(),before)
 
     def test_shared_guard_and_shutdown_admission_prevent_overlap(self):
         self.enable()

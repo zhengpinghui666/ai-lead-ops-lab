@@ -171,6 +171,53 @@ class InboxTests(unittest.TestCase):
         self.assertEqual(result['error'], 'unrecognized_read_failure')
         self.assertNotIn('synthetic-private-cookie', json.dumps(result))
 
+    def test_identity_transport_diagnostic_survives_without_reading_messages(self):
+        for reason, expected in [('timeout', 'transport_failed'), ('connection_failed', 'transport_failed'),
+                                 ('tls_verification_failed', 'identity_check_failed')]:
+            with self.subTest(reason=reason):
+                calls=[]
+                def fail(operation, prepared):
+                    calls.append(operation)
+                    raise uid_transport.TransportError(reason, 'response_headers', http_status=200, response_bytes=0)
+                result=inbox.messages(SENDER, CONVERSATION, provider=self.provider, exchange=fail)
+                self.assertEqual(calls, ['identity'])
+                self.assertEqual(result['error'], expected)
+                proof=result['evidence'][0]
+                self.assertEqual(proof['operation'], 'identity')
+                self.assertFalse(proof['identity_verified'])
+                self.assertEqual(proof['identity_reason'], 'transport_failed')
+                self.assertEqual(proof['transport_error'], reason)
+                self.assertEqual(proof['transport_phase'], 'response_headers')
+                self.assertFalse(result['messages'])
+
+    def test_identity_rejections_have_fixed_reasons_and_never_read_inboxes(self):
+        cases=[(403, 'application/json', b'{}', 'http_status_rejected'),
+               (200, 'text/html', b'synthetic-private-profile', 'unexpected_content_type'),
+               (200, 'application/json', b'synthetic-private-profile', 'invalid_json'),
+               (200, 'application/json', b'[]', 'invalid_profile'),
+               (200, 'application/json', json.dumps({'status_code':409,'user':{'uid':SENDER}}).encode(), 'platform_rejected'),
+               (200, 'application/json', json.dumps({'status_code':0,'user':{'uid':OTHER}}).encode(), 'sender_mismatch')]
+        for status, mime, raw, reason in cases:
+            with self.subTest(reason=reason):
+                calls=[]
+                def exchange(operation, prepared):
+                    calls.append(operation);return status,mime,raw
+                result=inbox.scan(SENDER,[RECEIVER],provider=self.provider,exchange=exchange)
+                self.assertEqual(calls,['identity']);self.assertEqual(result['error'],'identity_check_failed')
+                proof=result['evidence'][0]
+                self.assertEqual(proof['identity_reason'],reason);self.assertEqual(proof['http_status'],status)
+                self.assertEqual(len(proof['response_sha256']),64)
+                self.assertNotIn('synthetic-private-profile',json.dumps(result));self.assertNotIn(OTHER,json.dumps(result))
+
+    def test_identity_success_evidence_is_separate_from_message_evidence(self):
+        result=inbox.messages(SENDER,CONVERSATION,provider=self.provider,
+            exchange=self.exchange(lambda op,prep,body:reply(op,prep,wire.field(1,message()))))
+        self.assertEqual(result['status'],'messages_observed')
+        self.assertEqual([p['operation'] for p in result['evidence']],['identity','messages'])
+        self.assertTrue(result['evidence'][0]['identity_verified'])
+        self.assertEqual(result['evidence'][0]['identity_reason'],'identity_verified')
+        self.assertTrue(result['evidence'][1]['sender_matches'])
+
 
 if __name__ == '__main__':
     unittest.main()

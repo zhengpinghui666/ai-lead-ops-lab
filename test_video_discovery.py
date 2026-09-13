@@ -24,6 +24,42 @@ def item(vid=VIDEO, **kwargs):
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_explicit_private_work_is_scoped_and_other_denials_stay_failures(self):
+        denied = {'status_code': 0, 'aweme_detail': None, 'filter_detail': {'aweme_id': VIDEO, 'filter_reason': 'author_secret'}}
+        with self.assertRaises(http.ReadError) as caught:
+            discovery.parse_discovery(denied, 'detail', video=VIDEO)
+        self.assertTrue(discovery.is_private_work(caught.exception, VIDEO))
+        for changed, status in [({'filter_detail': {}}, 'schema_changed'),
+                ({'filter_detail': {'aweme_id': PARENT, 'filter_reason': 'author_secret'}}, 'schema_changed'),
+                ({'filter_detail': {'aweme_id': VIDEO, 'filter_reason': 'unknown'}}, 'schema_changed'),
+                ({'verify_type': 'challenge'}, 'needs_verification'), ({'status_code': 4}, 'upstream_rejected')]:
+            with self.subTest(changed=changed), self.assertRaises(http.ReadError) as caught:
+                discovery.parse_discovery({**denied, **changed}, 'detail', video=VIDEO)
+            self.assertEqual(caught.exception.status, status)
+            self.assertFalse(discovery.is_private_work(caught.exception, VIDEO))
+
+    def test_private_work_does_not_request_comments_or_stop_public_work(self):
+        ids = [VIDEO, str(int(VIDEO)+1), str(int(VIDEO)+2)]
+        for scoped in (True, False):
+            calls = []
+            class Client:
+                def page(self, operation, **kw):
+                    vid = kw['video']; calls.append((operation, vid))
+                    if operation == 'detail':
+                        if vid == ids[1]:
+                            if not scoped: raise http.ReadError('access_denied')
+                            return discovery.parse_discovery({'status_code': 0, 'aweme_detail': None,
+                                'filter_detail': {'aweme_id': vid, 'filter_reason': 'author_secret'}}, operation, video=vid)
+                        return discovery.parse_discovery({'status_code': 0, 'aweme_detail': item(vid)}, operation, video=vid)
+                    return http.parse_page(body([]), operation, vid)
+            events = []
+            worker.collect({'kind': 'video', 'target': '\n'.join(ids), 'video_limit': 3, 'comment_limit': 1,
+                'page_concurrency': 1, 'refresh_video_metrics': True}, events.append, threading.Event(), client=Client())
+            self.assertEqual(events[-1]['status'], 'completed' if scoped else 'access_denied')
+            self.assertEqual([vid for op, vid in calls if op == 'comments'], [ids[0], ids[2]] if scoped else [ids[0]])
+            cp = next(e for e in events if e['type'] == 'checkpoint' and e['video_id'] == ids[1])
+            self.assertEqual(cp['status'], 'unavailable' if scoped else 'partial')
+
     def test_browser_and_http_game_scope_agree(self):
         titles=['無畏契約','无畏契約','VALORANT比赛','瓦羅蘭特','打瓦找队友','瓦陪','陪瓦','#瓦 #端游','手瓦陪玩',
                 '装修瓷砖瓦片','普通健康科普','陪玩聊天截图','','7600000000000000001']

@@ -12,6 +12,13 @@ from collector_http_session import ORIGIN
 
 GAME_PATTERN = re.compile(r'无畏契约|无畏契約|無畏契約|瓦罗兰特|瓦羅蘭特|valorant|瓦陪|陪瓦|打瓦|瓦手游|手瓦|瓦友|(?:^|[\s#＃])瓦(?=$|[\s#＃])', re.I)
 
+PRIVATE_WORK_DETAIL = '平台明确返回该作品受作者隐私设置限制；已停止跟踪该作品，其他公开作品继续采集'
+
+
+def is_private_work(error, video):
+    return (error.status == 'access_denied' and error.evidence.get('reason') == 'author_secret'
+            and error.evidence.get('restriction_scope') == 'work' and error.evidence.get('video_id') == video)
+
 
 def in_search_scope(row, keyword):
     """Game evidence for discovery only; never a paid-intent classification."""
@@ -64,6 +71,11 @@ def parse_discovery(body, operation, *, video='', sec_uid='', requested_cursor=0
     if body['status_code']:
         raise ReadError('upstream_rejected', {'business_code': body['status_code']})
     if operation == 'detail':
+        restriction = body.get('filter_detail')
+        if (body.get('aweme_detail') is None and isinstance(restriction, dict)
+                and restriction.get('filter_reason') == 'author_secret'
+                and numeric(restriction.get('aweme_id')) == video and numeric(video)):
+            raise ReadError('access_denied', {'reason': 'author_secret', 'restriction_scope': 'work', 'video_id': video})
         row = video_row(body.get('aweme_detail'))
         if row is None or row['video_id'] != video:
             raise ReadError('schema_changed', {'reason': 'invalid_video_detail'})

@@ -8,7 +8,11 @@
 
 ## 后续重启
 
-在项目目录运行 `./restart.ps1`。脚本读取当前实例使用的 Python 和数据目录，先备份数据库，再正常关闭旧实例，确认退出后启动新实例，并将结果写入 `artifacts/service-restart-*/result.json`。可以通过 `-Port` 指定当前服务端口。
+非托管启动可在项目目录运行 `./restart.ps1`。脚本读取当前实例使用的 Python 和数据目录，先备份数据库，再正常关闭旧实例，确认退出后启动新实例，并将结果写入 `artifacts/service-restart-*/result.json`。可以通过 `-Port` 指定当前服务端口。
+
+2026-09-13当前正式服务由 Windows 任务 `ClubOps Local Service` 托管，入口显式传入已安装Node路径并保存后台日志。此模式下先保存各监控开启意图与范围，正常暂停／结算、备份，再通过下面的service-stop关闭，核对旧PID及任务已退出后 `Start-ScheduledTask -TaskName 'ClubOps Local Service'`。旧restart.ps1尚未集成托管入口，不能用它替换当前托管进程。维护后仅恢复此前开启且状态允许的项目，保留失败及断点。
+
+独立任务 `ClubOps Local Health` 每分钟只读本机状态与数据库元数据。当前覆盖评论、直播及全部已配置收件同步；不发平台请求、模型调用或业务写入，也不自行恢复监控。加载健康脚本修改只需正常停止并启动这一健康任务，不必借此关闭业务服务。收件关闭恢复逻辑保留已停故障与人工暂停摘要，在途任务仍结算为暂停。
 
 `GET /api/service` 提供实例标识和状态。`POST /api/service-stop?mode=live` 要求本机来源、CSRF 令牌和匹配的实例标识；存在运行采集、自动模型队列、单条模型推理或其他写入时拒绝关闭。关闭通过服务自身的 shutdown 和 finally 完成，释放数据目录锁，不强制终止进程。生命周期测试使用临时数据库验证鉴权、忙碌拒绝、进程退出与锁释放。
 

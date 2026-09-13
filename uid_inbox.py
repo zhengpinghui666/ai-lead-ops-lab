@@ -7,6 +7,7 @@ Message content is returned only for a selected, participant-checked thread.
 import argparse
 import hashlib
 import json
+import re
 
 import uid_protocol as wire
 import uid_session
@@ -65,7 +66,11 @@ def _read(operation, body, sender, provider, exchange, evidence):
     requested_inbox = wire.one(wire.decode(prepared['payload']), 6, 0, 0)
     proof = {'operation': operation, 'command': command}
     evidence.append(proof)
-    status, mime, raw = exchange(operation, prepared)
+    try:
+        status, mime, raw = exchange(operation, prepared)
+    except uid_transport.TransportError as exc:
+        proof.update(exc.evidence)
+        raise
     proof.update(http_status=status, response_bytes=len(raw), response_sha256=hashlib.sha256(raw).hexdigest())
     if status != 200 or 'protobuf' not in mime.lower():
         raise ReadError('http_response_rejected')
@@ -88,12 +93,37 @@ def _read(operation, body, sender, provider, exchange, evidence):
     return wire.decode(wire.one(outer, field, 2))
 
 
-def _identity(sender, provider, exchange):
+def _identity(sender, provider, exchange, evidence):
     wire.numeric_uid(sender)
     if provider.current()['sender_uid'] != sender:
         raise ReadError('configured_identity_mismatch')
     identity = uid_transport.verify_identity({'sender_uid': sender}, provider=provider, exchange=exchange)
+    proof = {'operation': 'identity', 'identity_verified': identity['status'] == 'identity_verified'}
+    evidence.append(proof)
+    if identity.get('identity_reason') in uid_transport.IDENTITY_REASONS:
+        proof['identity_reason'] = identity['identity_reason']
+    for key, minimum, maximum in (('http_status', 100, 599), ('response_bytes', 0, 262145),
+                                  ('platform_code', -(2**63), 2**63-1)):
+        value = identity.get(key)
+        if type(value) is int and minimum <= value <= maximum:
+            proof[key] = value
+    digest = identity.get('response_sha256')
+    if isinstance(digest, str) and re.fullmatch('[0-9a-f]{64}', digest):
+        proof['response_sha256'] = digest
+    if type(identity.get('sender_matches')) is bool:
+        proof['sender_matches'] = identity['sender_matches']
+    if identity.get('transport_error') in {'timeout', 'connection_failed', 'tls_verification_failed',
+            'invalid_response', 'response_exceeds_bound', 'transport_failed'}:
+        proof['transport_error'] = identity['transport_error']
+    if identity.get('transport_phase') in {'connect', 'request', 'response_headers', 'response_body'}:
+        proof['transport_phase'] = identity['transport_phase']
     if identity['status'] != 'identity_verified':
+        # A later attempt still starts with identity verification. Only explicit
+        # connection failures/timeouts enter the existing bounded network retry.
+        if (proof.get('identity_reason') == 'transport_failed'
+                and proof.get('transport_error') in {'timeout', 'connection_failed'}):
+            raise uid_transport.TransportError(proof['transport_error'], proof.get('transport_phase'),
+                http_status=proof.get('http_status'), response_bytes=proof.get('response_bytes'))
         raise ReadError('identity_check_failed')
 
 
@@ -114,7 +144,7 @@ def scan(sender, targets, *, provider=None, exchange=None, max_pages=3, page_siz
               'targets': {uid: {'status': 'unknown', 'conversations': []} for uid in targets},
               'scopes': [], 'evidence': [], 'contacts_checked': False, 'history_exhaustive': False}
     try:
-        _identity(sender, provider, exchange)
+        _identity(sender, provider, exchange, result['evidence'])
         for operation in ('conversations', 'stranger_conversations'):
             stranger = operation == 'stranger_conversations'
             scope = {'inbox': 1 if stranger else 0, 'pages': 0, 'observed': 0, 'complete': False}
@@ -180,7 +210,7 @@ def messages(sender, conversation, *, provider=None, exchange=None, limit=20, cu
     result = {'status': 'read_failed', 'can_send': False, 'browser_started': False, 'messages': [], 'evidence': [],
               'unread_reset_requested': False, 'read_marker_requested': False, 'history_exhaustive': False}
     try:
-        _identity(sender, provider, exchange)
+        _identity(sender, provider, exchange, result['evidence'])
         operation = 'stranger_messages' if stranger else 'messages'
         body = (wire.field(1001, wire.field(1, short) + wire.field(2, 0)) if stranger else
                 wire.field(301, wire.field(1, conversation['conversation_id']) + wire.field(2, 1) + wire.field(3, short)

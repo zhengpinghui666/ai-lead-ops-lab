@@ -50,6 +50,20 @@ class DiscoveryTrackingTests(unittest.TestCase):
               VALUES(?,'comment',?,?,?,?,?,?,?)''',
               (self.base,'activity-'+vid+suffix,'https://www.douyin.com/video/'+vid,observed,'synthetic',text,published,reason))
 
+    def test_private_checkpoint_retires_only_its_work_and_replaces_author_seed(self):
+        self.save(); self.record([work(), work(1)])
+        task = col.start(dict(kind='video',target=VID,transport='http',request_id='private-work'))['id']
+        col.checkpoint(task, dict(type='targets', records=[work()]))
+        col.checkpoint(task, dict(type='checkpoint',video_id=VID,status='unavailable',reason='author_secret',detail='作者隐私设置'))
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT enabled FROM discovery_works WHERE video_id=?', (VID,)).fetchone()[0], 0)
+            self.assertEqual(c.execute('SELECT enabled FROM discovery_works WHERE video_id=?', (work(1)['video_id'],)).fetchone()[0], 1)
+            self.assertEqual(discovery.author_rows(c, discovery.config(c))[0]['seed_video_id'], work(1)['video_id'])
+        self.record([work()])
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT enabled FROM discovery_works WHERE video_id=?', (VID,)).fetchone()[0], 0)
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM collection_observations WHERE task_id=?', (self.base,)).fetchone()[0], 2)
+
     def test_recent_comment_keeps_priority_after_many_quiet_checks(self):
         self.save()
         for start in range(0,600,50):self.record([work(i) for i in range(start,start+50)])

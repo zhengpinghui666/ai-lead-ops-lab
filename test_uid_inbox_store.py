@@ -47,6 +47,17 @@ class InboxStoreTests(unittest.TestCase):
     def protected(self):
         with app.db() as c:return {table:[tuple(r) for r in c.execute('SELECT * FROM '+table)] for table in ('people','leads','messages','message_jobs','uid_message_attempts')}
 
+    def test_transport_diagnostics_are_persisted_without_response_or_credentials(self):
+        self.scan();before=self.protected()
+        transport={'transport_error':'timeout','transport_phase':'response_headers','response_bytes':0}
+        result=dict(status='read_failed',messages=[],error='transport_failed',transport=transport,
+                    evidence=[dict(operation='identity',identity_verified=True)],raw='synthetic-private-profile')
+        with patch.object(store.uid_inbox,'messages',return_value=result):
+            response=store.read(dict(lead_id=self.lead,account_uid=SENDER,operation='messages',conversation_id=1,older=False),provider=self.provider)
+        with app.db() as c:detail=json.loads(c.execute('SELECT detail FROM uid_inbox_reads WHERE id=?',(response['read_id'],)).fetchone()[0])
+        self.assertEqual(detail['transport'],transport);self.assertNotIn('synthetic-private-profile',json.dumps(detail))
+        self.assertEqual(self.protected(),before)
+
     def reply_fixture(self):
         self.scan()
         outbound={**self.message('9007199254741100','合成发送内容'),'sender_uid':SENDER,'direction':'outbound','index':'100','created_at_raw':'1789214400000'}

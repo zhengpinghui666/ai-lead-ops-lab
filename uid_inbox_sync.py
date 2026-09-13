@@ -136,7 +136,9 @@ def tick():
 
 def recover():
     with GUARD,app.LOCKS['live'],app.db() as c:
-        c.execute("UPDATE uid_inbox_sync SET enabled=0,status='paused',next_run_at=NULL,detail='服务已重启或关闭；断点保留，需重新开启',updated_at=?",(app.now(),))
+        c.execute("""UPDATE uid_inbox_sync SET enabled=0,status='paused',next_run_at=NULL,
+            detail='服务已重启或关闭；断点保留，需重新开启',updated_at=?
+            WHERE enabled=1 OR status IN ('waiting','reading','catching_up','retry_wait','stopping')""",(app.now(),))
 
 def start_service():
     global THREAD

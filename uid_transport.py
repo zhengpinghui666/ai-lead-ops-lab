@@ -26,6 +26,10 @@ ENDPOINTS = {
     'stranger_messages': ('imapi.douyin.com', '/v1/stranger/get_messages', 'POST'),
 }
 
+IDENTITY_REASONS = frozenset({'preparation_failed', 'response_unavailable', 'http_status_rejected',
+    'unexpected_content_type', 'invalid_json', 'invalid_profile', 'platform_rejected',
+    'sender_mismatch', 'identity_verified', 'transport_failed'})
+
 
 class TransportError(ValueError):
     """Fixed diagnostics only: never expose a URL, header or exception string."""
@@ -138,7 +142,7 @@ def validate_envelope(prepared, command, body):
 def verify_identity(config, *, provider=None, exchange=None):
     """Check only the configured sender. Never create a conversation or send."""
     result = dict(status='failed', phase='identity', transport='http',
-                  live_verified=False, can_send=False,
+                  live_verified=False, can_send=False, identity_reason='preparation_failed',
                   detail='登录身份核对失败；未创建会话或发送消息')
     try:
         sender = wire.numeric_uid(config['sender_uid'])
@@ -146,25 +150,39 @@ def verify_identity(config, *, provider=None, exchange=None):
         prepared = provider.prepare('identity', b'', dict(sender_uid=sender))
         if not isinstance(prepared, dict) or prepared.get('payload', b'') != b'':
             raise ValueError('Identity must have an empty body')
+        result['identity_reason'] = 'response_unavailable'
         status, mime, raw = (exchange or request)('identity', prepared)
-        result.update(http_status=status, response_sha256=hashlib.sha256(raw).hexdigest())
-        if status != 200 or 'json' not in mime.lower():
+        result.update(http_status=status, response_bytes=len(raw), response_sha256=hashlib.sha256(raw).hexdigest())
+        result['identity_reason'] = 'http_status_rejected'
+        if status != 200:
             return result
+        result['identity_reason'] = 'unexpected_content_type'
+        if 'json' not in mime.lower():
+            return result
+        result['identity_reason'] = 'invalid_json'
         data = json.loads(raw)
+        result['identity_reason'] = 'invalid_profile'
         if not isinstance(data, dict):
             return result
         # A UID echoed alongside a business error is not a successful login.
+        if type(data.get('status_code')) is int and -(2**63) <= data['status_code'] < 2**63:
+            result['platform_code'] = data['status_code']
         if 'status_code' in data and (type(data['status_code']) is not int or data['status_code'] != 0):
+            result['identity_reason'] = 'platform_rejected'
             return result
         user = data.get('user')
         observed = user.get('uid') if isinstance(user, dict) else None
-        if type(observed) not in (str, int) or wire.numeric_uid(str(observed)) != sender:
+        if type(observed) not in (str, int):
+            return result
+        result['sender_matches'] = wire.numeric_uid(str(observed)) == sender
+        if not result['sender_matches']:
+            result['identity_reason'] = 'sender_mismatch'
             result['detail'] = '实际登录身份无法与配置 UID 对应；未创建会话或发送消息'
             return result
-        result.update(status='identity_verified', sender_uid=sender,
+        result.update(status='identity_verified', identity_reason='identity_verified', sender_uid=sender,
                       detail='发送账号身份已核对；尚未验证 IM 鉴权、会话票据或发送能力。未创建会话或发送消息。')
     except TransportError as exc:
-        result.update(exc.evidence)
+        result.update(identity_reason='transport_failed', **exc.evidence)
     except Exception:
         # Exceptions and raw profile data may include credentials or private data.
         pass

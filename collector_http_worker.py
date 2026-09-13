@@ -215,6 +215,10 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                 emit({'type': 'checkpoint', 'video_id': vid, 'status': 'partial' if unsupported else 'done',
                       'detail': '达到本批观察预算或已读取响应可见末页；无文字内容计入跳过，不代表全量评论' if not unsupported else '部分记录结构不支持，保留已读取数据'})
             except http.ReadError as exc:
+                if video_discovery.is_private_work(exc, vid):
+                    emit({'type': 'checkpoint', 'video_id': vid, 'status': 'unavailable',
+                          'reason': 'author_secret', 'detail': video_discovery.PRIVATE_WORK_DETAIL})
+                    return
                 if exc.status == 'resource_limited' and exc.evidence.get('reason') == 'request_budget':
                     budget_reached.set()
                     # A batch budget is not a full-history completion promise.

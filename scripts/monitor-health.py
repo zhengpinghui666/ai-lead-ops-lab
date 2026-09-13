@@ -1,5 +1,6 @@
 """Read-only, bounded local monitoring checks; never launches collection or sends messages."""
 import argparse
+from contextlib import closing
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -32,6 +33,36 @@ def assess(name, plan, task, now):
     return result
 
 
+def assess_inbox(rows, now):
+    result = {'configured': len(rows), 'enabled': 0, 'paused': 0, 'issue_count': 0, 'issues': []}
+    for row in rows:
+        enabled, status = bool(row['enabled']), row['status']
+        result['enabled'] += int(enabled)
+        result['paused'] += int(not enabled and status == 'paused')
+        reason = None
+        if status == 'attention':
+            reason = 'attention'
+        elif enabled:
+            if status == 'reading':
+                stamp, missing, stale = row.get('updated_at'), 'progress_missing', 'read_stalled'
+            elif status in {'waiting', 'catching_up', 'retry_wait'}:
+                stamp, missing, stale = row.get('next_run_at'), 'schedule_missing', 'scheduler_overdue'
+            else:
+                stamp, missing, stale = None, 'unexpected_state', 'unexpected_state'
+            try:
+                if not stamp:
+                    reason = missing
+                elif overdue(stamp, now, grace=120):
+                    reason = stale
+            except (ValueError, TypeError):
+                reason = 'invalid_clock'
+        if reason:
+            result['issue_count'] += 1
+            if len(result['issues']) < 20:
+                result['issues'].append(f"inbox_sync:{row['id']}:{reason}")
+    return result
+
+
 def check(data_dir=BASE / 'data', port=8765):
     now = datetime.now(timezone.utc)
     report = {'checked_at': now.isoformat(), 'status': 'healthy', 'issues': []}
@@ -46,7 +77,7 @@ def check(data_dir=BASE / 'data', port=8765):
         if access.get('enabled') and not access.get('connected'):
             report['issues'].append('external_access:disconnected')
         path = Path(data_dir).resolve() / 'clubops-live.db'
-        with sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=3) as connection:
+        with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=3)) as connection:
             connection.row_factory = sqlite3.Row
             connection.execute('PRAGMA query_only=ON')
             deadline = time.monotonic() + 3
@@ -63,6 +94,10 @@ def check(data_dir=BASE / 'data', port=8765):
                 report[name] = item
                 if item.get('issue'):
                     report['issues'].append(item['issue'])
+            rows = [dict(row) for row in connection.execute('''SELECT id,enabled,status,next_run_at,updated_at
+                FROM uid_inbox_sync ORDER BY id''')]
+            report['inbox_sync'] = assess_inbox(rows, now)
+            report['issues'].extend(report['inbox_sync']['issues'])
     except Exception as error:
         # Do not serialize exceptions containing response bodies or account data.
         report['issues'].append('probe:' + type(error).__name__)
