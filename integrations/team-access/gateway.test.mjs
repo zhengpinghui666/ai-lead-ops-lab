@@ -44,7 +44,7 @@ test('public entry, authenticated outbound connection, unchanged content and bou
   assert.equal((await mf.dispatchFetch(origin+'/api/monitor-stop',{method:'POST',headers:{Origin:origin},body:'x'.repeat(262145)})).status,413);
   assert.ok(!JSON.stringify(requests).includes(secret));
   // A normal browser needs no gateway session or login cookie.
-  assert.deepEqual(await (await mf.dispatchFetch(origin+'/_access/status')).json(),{online:true,access:'public',login_required:false});
+  assert.deepEqual(await (await mf.dispatchFetch(origin+'/_access/status')).json(),{online:true,access:'public',login_required:false,revision:'connector-expiry-v1'});
   // An open but nonresponsive old connection must not hold the only computer
   // slot forever. A timed-out write stays unknown and is never replayed.
   const count=requests.length;

@@ -28,6 +28,8 @@
 
 Cloudflare 当前兼容日期会自动回应关闭帧，因此没有把缺少 close 调用当作已证明根因；现场证据证明的是旧连接占位和请求无响应。连接语义依据 [Cloudflare Durable Object WebSocket 文档](https://developers.cloudflare.com/durable-objects/api/base/)，修复结果以实际握手和 HTTP 请求为准。
 
+16:32 最终复核 healthy：本机评论、直播、收件和群监控全部运行，评论从 1547 起已连续完成 41 批，1588 正在执行，原 1546 no_data 保留。公网连接此时自动恢复，公网工作总览实际 HTTP 200、4.927 秒，返回新的 `view=overview` 数据。网关最终上传版本为 `f9a95d59-cbeb-41da-a32a-62f82f12af9f`，Pages 生产部署 `db47ac1e-5671-49e9-b844-cd1d3af69bd3`；Cloudflare API 返回部署成功、Workers 下载内容包含新版本，但公开入口尚未出现新增的版本标记。因此只确认公网访问恢复，不能声称本次恢复已由新网关清理代码触发；这项传播／绑定差异仍需后续核对。具体最后接口时间见 public-verified.json。
+
 2026-09-11，用户反馈“正在连接本地工作区”较慢。工作台从 Pages 经已连接的 Cloudflare 网关回到电脑，原先首屏状态及静态资源全部以未压缩的 Base64 负载经过电脑上行，页面再等待 `/api/state` 完整返回。
 
 ## 本次测量与修改

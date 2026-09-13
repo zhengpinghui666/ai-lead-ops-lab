@@ -29,7 +29,7 @@ async function boundedBody(request,max){if(Number(request.headers.get('content-l
 export default {async fetch(request,env){
   if(new URL(request.url).origin!==env.PUBLIC_ORIGIN)return reply({error:'入口地址不正确'},403);
   if(!env.CONNECTOR_TOKEN)return reply({error:'入口尚未完成配置'},503);
-  try{return await env.TEAM.get(env.TEAM.idFromName('clubops-workbench')).fetch(request);}
+  try{return await env.TEAM.get(env.TEAM.idFromName('clubops-workbench-v2')).fetch(request);}
   catch{return reply({error:'工作台连接暂时不可用'},503);}
 }};
 export class TeamGateway {
@@ -37,7 +37,7 @@ export class TeamGateway {
     this.replies=new WeakMap();
     this.state.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping','pong'));
   }
-  sockets(){return this.state.getWebSockets('computer').filter(s=>s.readyState===1);}
+  sockets(){return this.state.getWebSockets('computer').filter(s=>s.readyState===1&&!s.deserializeAttachment()?.expired);}
   async fetch(request){
     const u=new URL(request.url),path=u.pathname;
     if(u.origin!==this.env.PUBLIC_ORIGIN)return reply({error:'入口地址不正确'},403);
@@ -50,7 +50,7 @@ export class TeamGateway {
       return new Response(null,{status:101,webSocket:client});
     }
     if(request.method==='POST'&&request.headers.get('Origin')!==this.env.PUBLIC_ORIGIN)return reply({error:'请求来源不匹配'},403);
-    if(path==='/_access/status'&&request.method==='GET')return reply({online:!!this.sockets().length,access:'public',login_required:false});
+    if(path==='/_access/status'&&request.method==='GET')return reply({online:!!this.sockets().length,access:'public',login_required:false,revision:'connector-expiry-v1'});
     if(!permitted(request.method,path)||u.search.length>4000)return reply({error:'not_found'},404);
     const socket=this.sockets()[0];
     if(!socket)return reply({error:'电脑工作台离线，请确认电脑已开机并运行 ClubOps'},503);
@@ -85,6 +85,9 @@ export class TeamGateway {
     }catch{pending.resolve(reply({error:'电脑响应格式不正确'},502));}
   }
   webSocketClose(socket){
+    // Cloudflare can retain a socket while its close handshake is pending.
+    // Persist retirement so hibernation/reconnection cannot revive that slot.
+    try{socket.serializeAttachment({expired:true});}catch{}
     try{socket.close(1000,'connection closed');}catch{}
     for(const [id,p] of this.pending){if(p.socket!==socket)continue;clearTimeout(p.timer);p.resolve(reply({error:'电脑连接中断；若刚提交操作，请核对记录。'},503));this.pending.delete(id);}
   }
