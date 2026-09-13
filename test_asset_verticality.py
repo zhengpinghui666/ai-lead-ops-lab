@@ -15,6 +15,11 @@ from test_semantic import SyntheticAdapter
 
 
 class ClassificationTests(unittest.TestCase):
+    def test_mobile_history_and_category_do_not_promote_a_service_asset(self):
+        history=[dict(text=t) for t in ('手瓦找陪玩','无畏契约手游陪玩多少钱','手瓦有没有女陪')]
+        self.assertFalse(assets.classify('无畏契约日常',history)['matched'])
+        self.assertFalse(assets.classify('手游陪玩',[],game_category=True)['matched'])
+
     def test_title_requires_game_and_service_together(self):
         for title in ('无畏契约陪玩接单','VALORANT 陪练','无畏契约女陪'):
             self.assertTrue(assets.classify(title,[])['matched'],title)
@@ -40,6 +45,39 @@ class ClassificationTests(unittest.TestCase):
 
 
 class RoutingTests(unittest.TestCase):
+    def test_scope_migration_is_idempotent_and_preserves_raw_and_analysis_history(self):
+        import game_scope
+        self.comment('找陪玩','手瓦陪玩')
+        self.room('无畏契约手游陪玩')
+        with app.db() as c:
+            original=[tuple(r) for r in c.execute('SELECT * FROM comments')]
+            results=[tuple(r) for r in c.execute('SELECT * FROM intent_results')]
+            game_scope.enforce_saved_scope(c);game_scope.enforce_saved_scope(c)
+            self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM comments')],original)
+            self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM intent_results')],results)
+            self.assertEqual(c.execute('SELECT enabled FROM videos').fetchone()[0],0)
+            self.assertEqual(c.execute('SELECT enabled FROM live_rooms').fetchone()[0],0)
+
+    def test_mobile_comment_in_pc_video_and_pc_comment_in_mobile_video_do_not_queue(self):
+        for index,(text,title) in enumerate([('手瓦找陪玩','无畏契约陪玩'),('陪玩多少钱','无畏契约手游陪玩'),
+                                           ('端瓦找陪玩','无畏契约手游陪玩')]):
+            rid,result=self.comment(text,title,key='scope'+str(index),video='scope'+str(index))
+            self.assertEqual(result['model_queue']['queued'],0)
+            with app.db() as c:
+                route=assets.routing(c,'comment',rid)
+                self.assertFalse(route['model_allowed']);self.assertIn('手游',route['reason'])
+
+    def test_mobile_live_message_never_queues_and_old_asset_cache_cannot_override_scope(self):
+        sid=self.room();rid=self.message(sid,'手瓦陪玩多少钱')
+        with app.db() as c:
+            self.assertFalse(assets.routing(c,'live',rid)['model_allowed'])
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM semantic_jobs').fetchone()[0],0)
+        # An already queued PC message is rechecked against the current room title.
+        other=self.message(sid,'陪玩多少钱',2)
+        with app.db() as c:
+            c.execute("UPDATE live_rooms SET title='无畏契约手游陪玩'")
+            self.assertFalse(assets.routing(c,'live',other)['model_allowed'])
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         old,app.DATA_DIR=app.DATA_DIR,Path(self.temp.name);self.addCleanup(setattr,app,'DATA_DIR',old)

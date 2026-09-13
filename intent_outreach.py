@@ -6,6 +6,7 @@ import uuid
 
 import clubops as app
 import uid_messaging
+from game_scope import record_exclusion
 
 POLICY_KEY = 'intent_outreach_policy'
 RUNTIME_KEY = 'intent_outreach_runtime'
@@ -122,12 +123,14 @@ def candidate(c, policy):
     for row in c.execute('''SELECT x.*,p.external_id AS recipient_uid,l.id AS lead_id
             FROM comments x JOIN people p ON p.id=x.person_id JOIN leads l ON l.person_id=p.id
             JOIN sources s ON s.id=p.source_id WHERE s.kind='browser' AND ''' + eligible + ' ORDER BY x.id DESC', args):
+        if record_exclusion(c,'comment',row['id']):continue
         analysis = monitoring.observation_analysis(c, row['id'], row['raw_text'], engine)
         if analysis.get('category') == 'buyer' and analysis.get('analysis_method') in ('model', 'human'):
             return dict(row, evidence_type='comment')
     ids = [r[0] for r in c.execute('''SELECT m.id FROM live_messages m JOIN live_links k ON k.message_id=m.id
         JOIN people p ON p.id=k.person_id WHERE m.filter_reason='' AND ''' + eligible + ' ORDER BY m.id DESC', args)]
     for rid in ids:
+        if record_exclusion(c,'live',rid):continue
         row = live_workflow.project(c, c.execute(live_workflow.SELECT + ' WHERE m.id=?', (rid,)).fetchone(), history=False, model_engine=engine)
         if row['category'] == 'buyer' and row['analysis_method'] in ('model', 'human'):
             return dict(row, recipient_uid=row['uid'], evidence_type='live')

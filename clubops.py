@@ -232,6 +232,10 @@ def init(mode='live'):
         if not c.execute("SELECT 1 FROM settings WHERE key='valorant_alias_scope_v1'").fetchone():
             discovery_tracking.refresh_game_scope(c)
             c.execute("INSERT INTO settings VALUES('valorant_alias_scope_v1','true')")
+        if not c.execute("SELECT 1 FROM settings WHERE key='valorant_pc_only_v1'").fetchone():
+            import game_scope
+            game_scope.enforce_saved_scope(c)
+            c.execute("INSERT INTO settings VALUES('valorant_pc_only_v1','true')")
         if not c.execute('SELECT 1 FROM asset_verticality LIMIT 1').fetchone() or c.execute("SELECT 1 FROM asset_verticality WHERE json_extract(result,'$.version')!=? LIMIT 1",(asset_verticality.VERSION,)).fetchone():
             asset_verticality.backfill(c)
         c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_single_monitor ON collection_plans(continuous) WHERE continuous=1')

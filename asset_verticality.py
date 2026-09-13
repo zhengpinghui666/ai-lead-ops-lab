@@ -11,8 +11,9 @@ import asset_references as references
 import asset_keywords as vocabulary
 from intent_rules import COMPANION, companion_relevance
 from video_discovery import GAME_PATTERN
+from game_scope import exclusion_reason, record_exclusion
 
-VERSION='asset-verticality-v4'
+VERSION='asset-verticality-v5-pc'
 SAMPLE_LIMIT=300
 SERVICE_PATTERN=re.compile(COMPANION+r'|陪同上分|付费教学|有偿教学|复盘接单|陪练接单',re.I)
 SCHEMA='''CREATE TABLE IF NOT EXISTS asset_verticality (
@@ -33,6 +34,7 @@ def classify(title,history,*,game_category=False,reference_rules=(),tags=(),word
     unique=[];seen=set()
     for row in history:
         text=(row.get('text') or '').strip()
+        if exclusion_reason(text,title,'无畏契约' if game_category else ''):continue
         key=re.sub(r'\s+','',text).casefold()
         if not key or key in seen:continue
         seen.add(key);unique.append(row)
@@ -54,11 +56,13 @@ def classify(title,history,*,game_category=False,reference_rules=(),tags=(),word
     elif not game:reason='当前标题和历史样本不足以确认无畏契约范围。'
     elif not count:reason='属于无畏契约范围，但标题没有陪玩服务证据，尚无历史文字样本。'
     else:reason=f'当前陪玩服务证据不足：历史去重文字 {hits}/{count} 条命中，未同时达到 3 条且占比 10%。'
+    excluded=exclusion_reason(title,'无畏契约' if game_category else '')
+    if excluded:matched=False;game=False;reason=excluded;reference_hits=[]
     return dict(version=VERSION,matched=matched,label='垂直对口' if matched else '普通监控',reason=reason,
         game_confirmed=bool(game or reference_hits),game_category=bool(game_category),title_game_keywords=game_hits,
         title_service_keywords=service_hits,history_samples=count,history_hits=hits,history_ratio=ratio,
         evidence=matches[:5],sample_limit=SAMPLE_LIMIT,reference_hits=reference_hits,tags=list(tags),
-        reference_only=bool(reference_hits and not (title_match or history_match)))
+        reference_only=bool(reference_hits and not (title_match or history_match)),scope_exclusion=excluded)
 
 
 def work_history(c,key):
@@ -126,6 +130,7 @@ def routing(c,kind,record_id,*,refresh_asset=False):
         asset_kind='live'
     else:raise ValueError('原文类型无效')
     if not row:raise ValueError('原文不存在')
+    excluded=record_exclusion(c,kind,record_id)
     profile=refresh(c,asset_kind,row['asset_key']) if refresh_asset else None
     if profile is None:
         stored=c.execute('SELECT result FROM asset_verticality WHERE kind=? AND asset_key=?',(asset_kind,row['asset_key'])).fetchone()
@@ -136,5 +141,6 @@ def routing(c,kind,record_id,*,refresh_asset=False):
     reason=('垂直作品的新评论直接分析意图。' if kind=='comment' else '垂直直播间弹幕通过陪玩关键词匹配。') if allowed else (
         '非垂直对口资产，只做关键词匹配。' if not profile['matched'] else
         '弹幕未通过本批采集关键词配置。' if row['filter_reason'] else '垂直直播间弹幕未命中陪玩关键词。')
+    if excluded:allowed=False;reason=excluded
     return dict(version=VERSION,model_allowed=allowed,route='model' if allowed else 'keywords',reason=reason,
                 asset_kind=asset_kind,asset_key=row['asset_key'],asset=profile,keyword_match=keyword if kind=='live' else None,learned_keywords=learned)

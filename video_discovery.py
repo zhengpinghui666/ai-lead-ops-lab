@@ -10,7 +10,7 @@ import video_metadata
 from collector_http import ReadError, numeric
 from collector_http_session import ORIGIN
 
-from game_scope import GAME_PATTERN
+from game_scope import GAME_PATTERN, in_pc_scope, exclusion_reason
 
 PRIVATE_WORK_DETAIL = '平台明确返回该作品受作者隐私设置限制；已停止跟踪该作品，其他公开作品继续采集'
 WORK_RESTRICTION_DETAILS = {
@@ -32,7 +32,8 @@ def is_private_work(error, video):
 
 def in_search_scope(row, keyword):
     """Game evidence for discovery only; never a paid-intent classification."""
-    return not GAME_PATTERN.search(keyword) or bool(GAME_PATTERN.search(str(row.get('video_title') or '')))
+    title=str(row.get('video_title') or '')
+    return not exclusion_reason(title,keyword) and (not GAME_PATTERN.search(keyword) or in_pc_scope(title))
 
 
 def video_row(item):
@@ -182,7 +183,7 @@ def discover(client, seeds, *, author_pages=1, page_size=10, include_related=Tru
 
 
 def author_candidates(result):
-    relevant = [row for row in result['candidates'] if GAME_PATTERN.search(row['video_title'])]
+    relevant = [row for row in result['candidates'] if in_pc_scope(row['video_title'])]
     relevant.sort(key=lambda row: (row.get('published_at') or 0, row['video_id']), reverse=True)
     return relevant[:50]
 

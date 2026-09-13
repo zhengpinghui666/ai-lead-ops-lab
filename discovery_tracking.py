@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 import clubops as app
 import video_metadata
-from video_discovery import GAME_PATTERN
+from game_scope import GAME_PATTERN, in_pc_scope, exclusion_reason
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS discovery_authors (
@@ -58,7 +58,7 @@ def refresh_game_scope(c):
     """Reclassify saved author samples without inventing a new observation or unpausing."""
     source=c.execute("SELECT id FROM sources WHERE kind='browser' ORDER BY id LIMIT 1").fetchone()
     for row in c.execute('SELECT * FROM discovery_works').fetchall():
-        relevant=bool(GAME_PATTERN.search(row['title']))
+        relevant=in_pc_scope(row['title'])
         if relevant==bool(row['relevant']):continue
         c.execute('UPDATE discovery_works SET relevant=? WHERE video_id=?',(int(relevant),row['video_id']))
         if relevant and source:
@@ -127,14 +127,14 @@ def save(body,mode='live'):
             if not isinstance(cfg[key],list) or len(cfg[key])>(12 if key=='keywords' else 10):raise ValueError('发现入口数量超出上限')
             if any(not isinstance(v,str) for v in cfg[key]):raise ValueError('发现入口格式无效')
             cfg[key]=list(dict.fromkeys(v.strip() for v in cfg[key] if v.strip()))
-        if not cfg['keywords'] or any(len(v)>80 or not GAME_PATTERN.search(v) for v in cfg['keywords']):raise ValueError('搜索词需包含无畏契约或明确游戏别名')
+        if not cfg['keywords'] or any(len(v)>80 or not in_pc_scope(v) for v in cfg['keywords']):raise ValueError('搜索词需包含端游无畏契约或明确游戏别名；不承接手游')
         if any(not re.fullmatch(r'[0-9]{5,30}',v) for v in cfg['seed_videos']):raise ValueError('作者种子需使用视频数字 ID')
         c.execute("INSERT INTO settings VALUES('discovery_tracking',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(json.dumps(cfg,ensure_ascii=False),))
         for keyword in cfg['keywords']:c.execute('INSERT OR IGNORE INTO discovery_queries(keyword,next_check_at) VALUES(?,?)',(keyword,app.now()))
         # Register existing game-scoped works, retaining explicit paused fixed targets.
         excluded=paused_targets(c)
         for row in c.execute('SELECT external_id,title FROM videos').fetchall():
-            if re.fullmatch(r'[0-9]{5,30}',row[0]) and GAME_PATTERN.search(row[1]) and row[0] not in excluded:
+            if re.fullmatch(r'[0-9]{5,30}',row[0]) and in_pc_scope(row[1]) and row[0] not in excluded:
                 record(c,[dict(video_id=row[0],video_title=row[1])],source='registered',target='existing_work')
         app.event(c,'discovery','持续作品与作者发现配置已保存；运行服从评论监控总开关')
     return state(mode)
@@ -162,7 +162,7 @@ def record(c,rows,*,source,target,task=None):
     for row in rows:
         vid=row.get('video_id');title=row.get('video_title')
         if not isinstance(vid,str) or not re.fullmatch(r'[0-9]{5,30}',vid) or not isinstance(title,str):raise ValueError('发现作品字段无效')
-        title=title[:5000];relevant=bool(GAME_PATTERN.search(title))
+        title=title[:5000];relevant=in_pc_scope(title)
         old=c.execute('SELECT * FROM discovery_works WHERE video_id=?',(vid,)).fetchone()
         if not relevant and source!='author' and not old:continue
         sec=row.get('author_sec_uid') or ''
@@ -185,6 +185,9 @@ def record(c,rows,*,source,target,task=None):
             previous=c.execute("SELECT t.finished_at FROM collection_checkpoints k JOIN collection_tasks t ON t.id=k.task_id WHERE k.video_id=? AND k.status='done' AND t.finished_at IS NOT NULL ORDER BY t.id DESC LIMIT 1",(vid,)).fetchone()
             if previous:c.execute('UPDATE discovery_works SET last_checked_at=? WHERE video_id=?',(previous[0],vid))
         if vid in paused:c.execute('UPDATE discovery_works SET enabled=0 WHERE video_id=?',(vid,))
+        if exclusion_reason(title):
+            c.execute('UPDATE discovery_works SET enabled=0,next_check_at=NULL WHERE video_id=?',(vid,))
+            c.execute('UPDATE videos SET enabled=0 WHERE external_id=?',(vid,))
         if relevant:
             import asset_references
             asset_references.save_content(c,row)
@@ -306,6 +309,7 @@ def choose(c,plan,instant):
     _,reference_queries=asset_references.discovery_assets(c)
     import group_discovery
     search_terms=set(cfg['keywords'])|set(reference_queries)|set(group_discovery.search_terms(c))
+    search_terms={term for term in search_terms if in_pc_scope(term)}
     query=next((dict(r) for r in c.execute('SELECT * FROM discovery_queries ORDER BY COALESCE(last_checked_at,\'\'),keyword') if r['keyword'] in search_terms and due(r['next_check_at'])),None)
     latest_search=c.execute("SELECT t.* FROM discovery_jobs j JOIN collection_tasks t ON t.id=j.task_id WHERE j.kind='search' ORDER BY t.id DESC LIMIT 1").fetchone()
     search_wait=empty_search_wait(c,latest_search)

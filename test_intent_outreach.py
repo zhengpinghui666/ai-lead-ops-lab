@@ -9,6 +9,35 @@ SENDER = fixtures.SENDER
 
 
 class OutreachTests(unittest.TestCase):
+    def test_saved_buyer_on_mobile_source_never_creates_an_outreach_job(self):
+        with app.db() as c:
+            c.execute("UPDATE videos SET title='无畏契约手游陪玩'")
+            count=c.execute('SELECT COUNT(*) FROM message_jobs').fetchone()[0]
+        with patch('uid_transport.send') as transport:
+            outreach.tick();transport.assert_not_called()
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM message_jobs').fetchone()[0],count)
+
+    def test_existing_grant_rechecks_scope_before_transport(self):
+        with app.db() as c:c.execute("UPDATE videos SET title='手瓦陪玩'")
+        with patch('uid_transport.send') as transport:
+            with self.assertRaisesRegex(ValueError,'手游'):
+                channel.send_one(self.job['id'],operator_authorization=self.grant)
+            transport.assert_not_called()
+
+    def test_scope_change_during_preparation_blocks_submission(self):
+        submitted=[]
+        def prepare(config,receiver,message,client,before):
+            with app.db() as c:c.execute("UPDATE videos SET title='手瓦陪玩'")
+            try:before()
+            except ValueError as exc:
+                self.assertIn('手游',str(exc))
+                return dict(status='failed',phase='prepare_send',detail='scope changed')
+            submitted.append(True)
+            return dict(status='accepted',phase='send',server_message_id='12345')
+        channel.send_one(self.job['id'],operator_authorization=self.grant,transport=prepare)
+        self.assertEqual(submitted,[])
+
     configure = fixtures.QueueTests.configure
     draft = fixtures.QueueTests.draft
     accepted = fixtures.QueueTests.accepted

@@ -1,8 +1,8 @@
 """Auditable local rules, not a semantic model or a calibrated probability model."""
 import re
-from game_scope import GAME_PATTERN
+from game_scope import GAME_PATTERN, exclusion_reason
 
-RULESET_VERSION = 'rules-v4'
+RULESET_VERSION = 'rules-v5-pc'
 SEPARATOR = re.compile(r'[，,。.!?！？；;\n]')
 NEGATIVE_BEFORE = re.compile(r'(?:不(?:是|再|要|想|用|需要|打算|考虑)?|没(?:有|想|打算)?|并非|无需|拒绝|谢绝)(?:再|去|找)?\s*$')
 NEGATIVE_AFTER = re.compile(r'^\s*(?:不要|不行|没空|不方便|不考虑|不用|不需要|不合适|取消|太贵)')
@@ -140,7 +140,10 @@ def classify_comment(raw, video_context, parent_context, games, target_game):
     reported = read(r'听说|据说|听[^，,。!?！？；;\n]{0,6}说|[他她]说|[他她]想|别人说|有人说|举例|例如|比如|原话|引用|不是我', 'reported')
     hypothetical = read(r'如果|假如|要是|假设|以后[^，,。.!?！？；;\n]{0,16}(?:再说|再考虑|再预约|再找)|以后再|等[^，,。.!?！？；;\n]{0,8}再(?:找|约|预约)', 'hypothetical')
 
-    if reported and (buyer_signal or supplied or recruited):
+    scope_exclusion=exclusion_reason(raw,video_context,parent_context)
+    if scope_exclusion:
+        category, explanation = 'uncertain', scope_exclusion
+    elif reported and (buyer_signal or supplied or recruited):
         category, explanation = 'uncertain', '包含转述或举例，不能把他人的表达当作此用户需求。'
     elif hypothetical and (buyer_signal or supplied or recruited):
         category, explanation = 'uncertain', '包含假设或将来再考虑的表达，尚不能确认当前需求。'

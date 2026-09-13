@@ -8,7 +8,7 @@ import clubops as app
 import group_inbox
 import uid_inbox_store
 import uid_messaging
-from game_scope import GAME_PATTERN
+from game_scope import in_pc_scope, record_exclusion
 
 GUARD = threading.RLock()
 STOP = threading.Event()
@@ -58,7 +58,7 @@ def fresh(value, seconds=600):
 
 
 def match(group):
-    return bool(GAME_PATTERN.search(' '.join(group.get(k,'') for k in ('name','description','notice'))))
+    return in_pc_scope(' '.join(group.get(k,'') for k in ('name','description','notice')))
 
 
 def policy(c):
@@ -113,7 +113,7 @@ def control(body,mode='live'):
     with GUARD,app.LOCKS[mode],app.db(mode) as c:
         row=c.execute('SELECT * FROM monitored_groups WHERE id=? AND account_uid=?',(rid,account)).fetchone()
         if not row:raise ValueError('当前账号群记录不存在')
-        if body['enabled'] and (not row['member'] or not row['matched'] or not fresh(row['checked_at'])):
+        if body['enabled'] and (not row['member'] or not row['matched'] or not match(dict(row)) or not fresh(row['checked_at'])):
             raise ValueError('请先刷新群目录，仅能监控已加入且符合范围的群')
         if body['enabled'] and c.execute('SELECT COUNT(*) FROM monitored_groups WHERE enabled=1 AND id<>? AND account_uid=?',(rid,account)).fetchone()[0]>=5:
             raise ValueError('当前最多同时监控 5 个群')
@@ -137,11 +137,13 @@ def routing(c,rid):
       FROM group_messages m JOIN monitored_groups g ON g.id=m.group_id WHERE m.id=?''',(rid,)).fetchone()
     if not row:raise ValueError('群原文不存在')
     relevance=json.loads(row['relevance'])
+    excluded=record_exclusion(c,'group',rid)
     allowed=bool(not row['filter_reason'] and relevance['passed'] and row['enabled'] and row['member']
                  and row['matched'] and fresh(row['checked_at']) and fresh(row['published_at'],3600)
                  and row['account_uid']==uid_inbox_store._account())
     reason='已加入的对口群消息通过初筛，进入模型。' if allowed else row['filter_reason'] or '群监控已关闭、成员身份待更新或消息已超过 1 小时。'
-    return dict(version='group-v1',model_allowed=allowed,route='model' if allowed else 'keywords',reason=reason,
+    if excluded:allowed=False;reason=excluded
+    return dict(version='group-pc-v1',model_allowed=allowed,route='model' if allowed else 'keywords',reason=reason,
                 asset_kind='group',asset_key=str(row['group_id']),keyword_match=relevance,learned_keywords=[])
 
 

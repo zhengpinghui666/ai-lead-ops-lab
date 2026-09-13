@@ -86,7 +86,7 @@ class DiscoveryTests(unittest.TestCase):
             input=json.dumps(cases),text=True,capture_output=True,check=True,timeout=10,cwd=Path(__file__).resolve().parent,
             creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         expected=[discovery.in_search_scope(r,'无畏契约陪玩') for r in cases]
-        self.assertEqual(expected,[True]*9+[False]*5)
+        self.assertEqual(expected,[True]*8+[False]*6)
         self.assertEqual(json.loads(result.stdout),expected)
         self.assertTrue(discovery.in_search_scope({'video_title':''},'SYNTHETIC FIXTURE'))
 
@@ -110,6 +110,22 @@ class DiscoveryTests(unittest.TestCase):
             diagnostic=next(e['snapshot']['responses'][0] for e in events if e['type']=='diagnostic' and e['snapshot']['responses'][0].get('operation')=='search_scope')
             self.assertEqual(diagnostic['excluded_candidates'],1)
             self.assertEqual(len([e for e in events if e['type']=='comment']),int(relevant))
+
+    def test_mobile_fixed_work_never_requests_comments_after_title_resolution(self):
+        for cached in (True,False):
+            calls=[]
+            class Client:
+                def page(self,operation,**kw):
+                    calls.append(operation)
+                    if operation!='detail':raise AssertionError('Mobile comments must not be requested')
+                    return discovery.parse_discovery({'status_code':0,'aweme_detail':item(desc='手瓦陪玩')},operation,video=VIDEO)
+            events=[]
+            worker.collect({'kind':'video','target':VIDEO,'video_limit':1,'comment_limit':1,'page_concurrency':1,
+                'resolve_video_titles':True,'known_video_titles':{VIDEO:'手瓦陪玩'} if cached else {}},
+                events.append,threading.Event(),client=Client())
+            self.assertEqual(calls,[] if cached else ['detail'])
+            self.assertFalse(any(e['type']=='comment' for e in events))
+            self.assertTrue(any(e['type']=='checkpoint' and e.get('reason')=='outside_pc_scope' for e in events))
 
     def test_optional_metrics_failure_keeps_comments_but_challenge_stops(self):
         for status in ('empty_response','needs_verification'):

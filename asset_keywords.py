@@ -138,5 +138,6 @@ def review(body,mode='live'):
 
 def queries(c):
     from video_discovery import GAME_PATTERN
+    from game_scope import in_pc_scope
     words=active(c)
-    return sorted({t if GAME_PATTERN.search(t) else '无畏契约 '+t for t in words['search']+words['service']})
+    return sorted({q for t in words['search']+words['service'] if in_pc_scope(q:=t if GAME_PATTERN.search(t) else '无畏契约 '+t)})

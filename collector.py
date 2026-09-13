@@ -287,12 +287,12 @@ def checkpoint(task_id, message):
             if row['status'] in ('done', 'unavailable') and status != row['status']:
                 raise ValueError('已完成断点不能退回读取状态')
             c.execute('UPDATE collection_checkpoints SET status=?,detail=?,updated_at=? WHERE task_id=? AND video_id=?', (status, app.clean(message.get('detail'), 500), app.now(), task_id, message['video_id']))
-            if status == 'unavailable' and message.get('reason') in ('author_secret','status_self_see'):
+            if status == 'unavailable' and message.get('reason') in ('author_secret','status_self_see','outside_pc_scope'):
                 # Only a scoped event from our verified worker can retire this
                 # work. Keep its checkpoint, observations and failed batches.
                 c.execute('UPDATE discovery_works SET enabled=0,last_checked_at=?,next_check_at=NULL WHERE video_id=?',
                           (app.now(), message['video_id']))
-                reason = '作者隐私设置' if message['reason']=='author_secret' else '平台明确提示作品权限或已删除'
+                reason = {'author_secret':'作者隐私设置','status_self_see':'平台明确提示作品权限或已删除','outside_pc_scope':'不符合端游服务范围'}[message['reason']]
                 app.event(c, 'collector', f"作品 {message['video_id']} 因{reason}停止跟踪；其他作品继续")
 
 
@@ -355,6 +355,8 @@ def observe(task_id, source_id, message):
             c.execute("INSERT INTO videos(source_id,external_id,title,url,created_at) VALUES(?,?,?,?,?) ON CONFLICT(source_id,external_id) DO UPDATE SET title=CASE WHEN excluded.title!=excluded.external_id THEN excluded.title ELSE videos.title END", (source_id, row['video_id'], app.clean(row.get('video_title')) or row['video_id'], url, app.now()))
             import video_metadata
             video_pk = c.execute('SELECT id FROM videos WHERE source_id=? AND external_id=?',(source_id,row['video_id'])).fetchone()[0]
+            from game_scope import exclusion_reason
+            if exclusion_reason(title):c.execute('UPDATE videos SET enabled=0 WHERE id=?',(video_pk,))
             video_metadata.save(c,video_pk,row.get('metrics'))
             import discovery_tracking
             if discovery_tracking.config(c)['enabled']:

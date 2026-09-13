@@ -310,6 +310,10 @@ def start(body, mode='live', *, _tracking_config=None):
             return dict(old)
         if ACTIVE:
             raise ValueError('已有直播会话；请先停止或等待完成')
+        from game_scope import exclusion_reason
+        room=c.execute('SELECT title FROM live_rooms WHERE room_url=?',(config['room_url'],)).fetchone()
+        if room and exclusion_reason(room['title']):
+            raise ValueError('该直播间包含手游范围，Mimo 仅承接端游无畏契约')
         if _tracking_config is None and c.execute("SELECT 1 FROM live_tracks WHERE status='enabled'").fetchone():
             raise ValueError('持续跟踪已开启，请先关闭后再启动单次读取')
         sid = c.execute('INSERT INTO live_sessions(request_id,room_url,config,status,detail,started_at,updated_at) VALUES(?,?,?,?,?,?,?)',

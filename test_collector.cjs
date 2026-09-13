@@ -65,8 +65,8 @@ for(const url of ['https://www.douyin.com/aweme/v1/web/general/search/single/','
 assert.ok(p.searchPageMatches('https://www.douyin.com/search/'+encodeURIComponent('无畏契约陪玩')+'?type=video','无畏契约陪玩'));
 assert.equal(p.searchPageMatches('https://www.douyin.com/search/another-query','无畏契约陪玩'),false);
 assert.equal(p.searchPageMatches('https://other.example/search/test','test'),false);
-for(const title of ['無畏契約','无畏契約','VALORANT比赛','瓦羅蘭特','打瓦找队友','瓦陪','陪瓦','#瓦 #端游','手瓦陪玩'])assert.ok(p.inSearchScope({video_title:title},'无畏契约陪玩'),title);
-for(const title of ['装修瓷砖瓦片','普通健康科普','陪玩聊天截图','',vid])assert.equal(p.inSearchScope({video_title:title},'无畏契约陪玩'),false,title);
+for(const title of ['無畏契約','无畏契約','VALORANT比赛','瓦羅蘭特','打瓦找队友','瓦陪','陪瓦','#瓦 #端游'])assert.ok(p.inSearchScope({video_title:title},'无畏契约陪玩'),title);
+for(const title of ['手瓦陪玩','无畏契约手游','端瓦手瓦都接','无畏契约源能行动','VALORANT Mobile','装修瓷砖瓦片','普通健康科普','陪玩聊天截图','',vid])assert.equal(p.inSearchScope({video_title:title},'无畏契约陪玩'),false,title);
 assert.ok(p.inSearchScope({video_title:'保留其他显式搜索的现有语义'},'SYNTHETIC FIXTURE'));
 assert.equal(p.responseKind('https://www.douyin.com/aweme/v1/web/user/profile/other/?uid=test'),'');
 assert.equal(p.blockFromText('请完成安全验证'),'needs_verification');

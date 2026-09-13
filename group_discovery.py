@@ -142,7 +142,7 @@ def run(account,*,client_factory=None,catalog_reader=None):
         pending=c.execute("SELECT COUNT(*) FROM public_group_attempts WHERE account_uid=? AND status IN ('pending','accepted','uncertain')",(account,)).fetchone()[0]
         today=c.execute('SELECT COUNT(*) FROM public_group_attempts WHERE account_uid=? AND created_at>=?',(account,monitor.stamp_after(-86400))).fetchone()[0]
         if active+pending>=5 or today>=4:return
-        candidate=c.execute('''SELECT g.* FROM public_group_candidates g WHERE g.account_uid=? AND g.status='candidate'
+        candidate=c.execute('''SELECT g.* FROM public_group_candidates g WHERE g.account_uid=? AND g.matched=1 AND g.status='candidate'
           AND g.list_status IN (0,1,2,9,10) AND g.checked_at>=?
           AND NOT EXISTS(SELECT 1 FROM public_group_attempts a WHERE a.account_uid=g.account_uid AND a.group_id=g.group_id)
           AND NOT EXISTS(SELECT 1 FROM monitored_groups m WHERE m.account_uid=g.account_uid AND m.conversation_id=g.group_id)

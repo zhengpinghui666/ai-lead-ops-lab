@@ -155,6 +155,10 @@ def authorized_outreach(c, authorization, job, person, settings):
                 or not group_monitor.eligible(c,raw,semantic.state()['engine'],settings['sender_uid'])):
             raise ValueError('群消息未通过初筛和当前模型确认，或群监控授权已失效；未发送')
         return
+    from game_scope import record_exclusion
+    kind='live' if 'live_id' in authorization else 'comment'
+    excluded=record_exclusion(c,kind,authorization[kind+'_id'])
+    if excluded:raise ValueError(excluded+' 未发送')
     if 'live_id' in authorization:
         import live_workflow
         raw = c.execute(live_workflow.SELECT + ' WHERE m.id=?', (authorization['live_id'],)).fetchone()

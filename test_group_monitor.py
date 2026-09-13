@@ -65,6 +65,18 @@ class ProtocolTests(InboxTests):
 
 
 class MonitorTests(unittest.TestCase):
+    def test_mobile_message_and_changed_group_notice_block_model_and_outreach(self):
+        ids=self.add([msg(text='手瓦找陪玩，预算100元')])
+        with app.db() as c:
+            self.assertFalse(monitor.routing(c,ids[0])['model_allowed'])
+            self.assertFalse(monitor.eligible(c,self.raw(c),semantic.state()['engine'],SENDER))
+        self.add([msg(index=11)])
+        with app.db() as c:
+            rid=c.execute('SELECT MAX(id) FROM group_messages').fetchone()[0]
+            c.execute("UPDATE monitored_groups SET notice='本群只玩无畏契约手游'")
+            self.assertFalse(monitor.routing(c,rid)['model_allowed'])
+        with self.assertRaises(ValueError):monitor.control(dict(id=1,enabled=True))
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
         previous=app.DATA_DIR;app.DATA_DIR=Path(self.temp.name);self.addCleanup(setattr,app,'DATA_DIR',previous)

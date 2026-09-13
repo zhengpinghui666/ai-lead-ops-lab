@@ -18,6 +18,11 @@ function run(scenario,{interactive=false,onStatus,kind='search',candidatePolicy=
 }
 const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
 (async()=>{
+  const mobile=await run('mobile-video',{kind:'video'});
+  assert.equal(terminal(mobile),'completed');
+  assert.ok(!mobile.some(m=>m.type==='comment'));
+  assert.ok(mobile.some(m=>m.type==='checkpoint'&&m.status==='unavailable'&&m.reason==='outside_pc_scope'));
+  if(process.env.CLUBOPS_TEST_PC_ONLY==='1'){console.log('PC-only browser child-process check passed');return;}
   const [emptyJSON,unknownJSON,mixedJSON]=await Promise.all(['search-json-empty','search-json-unknown','search-json-mixed'].map(s=>run(s)));
   assert.equal(terminal(emptyJSON),'completed');
   for(const messages of [unknownJSON,mixedJSON]){

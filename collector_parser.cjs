@@ -5,8 +5,10 @@ const text = (value, max=5000) => typeof value==='string' ? value.trim().slice(0
 const gameScope=require('./game_scope.json');
 const escapeRE=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 const gamePattern=new RegExp(gameScope.aliases.map(escapeRE).join('|')+'|'+gameScope.isolated_pattern,'i');
+const mobilePattern=new RegExp(gameScope.mobile_pattern,'i');
+function outsideServiceScope(...values){const combined=values.map(v=>text(v)).join(' ');return (gamePattern.test(combined)||/源能行[动動]/.test(combined))&&mobilePattern.test(combined);}
 function inSearchScope(row,keyword){
-  return !gamePattern.test(text(keyword))||gamePattern.test(text(row?.video_title));
+  return !outsideServiceScope(row?.video_title,keyword)&&(!gamePattern.test(text(keyword))||gamePattern.test(text(row?.video_title)));
 }
 function searchPageMatches(url,keyword){
   try{const u=new URL(url);return u.origin==='https://www.douyin.com'&&decodeURIComponent(u.pathname)===`/search/${keyword}`;}catch{return false;}
@@ -134,4 +136,4 @@ function blockFromBody(body){
   const reason=body.search_nil_info?.search_nil_type;
   return typeof reason==='string'&&/verify|antispam|risk|captcha/i.test(reason)?'needs_verification':'';
 }
-module.exports={id,video,searchVideos,searchResponseShape,isEmptySearchResponse,comments,responseKind,contentPageKind,pageVideoTitle,blockFromText,blockFromBody,inSearchScope,searchPageMatches};
+module.exports={id,video,searchVideos,searchResponseShape,isEmptySearchResponse,comments,responseKind,contentPageKind,pageVideoTitle,blockFromText,blockFromBody,inSearchScope,searchPageMatches,outsideServiceScope};

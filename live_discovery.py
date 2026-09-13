@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 
 import clubops as app
+from game_scope import exclusion_reason
 
 SOURCE_URL = 'https://live.douyin.com/category/1_1_1_1010017'
 LIMIT = 3 * 1024 * 1024
@@ -52,7 +53,7 @@ def parse(html):
     parser.finish_link()
     unique = {}
     for row in parser.rows:
-        if row['title'] and row['room_url'] not in unique:
+        if row['title'] and not exclusion_reason('无畏契约',row['title']) and row['room_url'] not in unique:
             unique[row['room_url']] = row
     return list(unique.values())[:20]
 

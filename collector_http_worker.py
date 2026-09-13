@@ -173,6 +173,11 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                         title = metadata['rows'][0]['video_title']
                     target = {**target, 'video_title': title or vid}
                 emit({'type': 'video', 'record': target})
+                from game_scope import exclusion_reason
+                if exclusion_reason(title):
+                    emit({'type':'checkpoint','video_id':vid,'status':'unavailable','reason':'outside_pc_scope',
+                          'detail':'作品包含手游范围，仅承接端游无畏契约；未请求其评论'})
+                    return
                 emit({'type': 'checkpoint', 'video_id': vid, 'status': 'reading', 'detail': 'HTTP 评论／回复读取中'})
                 def deliver(page):
                     nonlocal skipped, unsupported

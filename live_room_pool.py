@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import clubops as app
 import live_monitor as live
+from game_scope import exclusion_reason
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS live_rooms (
@@ -42,6 +43,7 @@ def ingest(c, rows, source, stamp):
                   'last_seen_at=MAX(live_rooms.last_seen_at,excluded.last_seen_at)',
                   (url, title, source, stamp, stamp, app.now()))
         import asset_verticality
+        if exclusion_reason(title):c.execute('UPDATE live_rooms SET enabled=0 WHERE room_url=?',(url,))
         import asset_keywords
         asset_keywords.observe(c,'live:'+url,title)
         asset_verticality.refresh(c,'live',url)
@@ -93,6 +95,8 @@ def toggle(body, mode='live'):
     with live.GUARD, app.LOCKS[mode], app.db(mode) as c:
         if not c.execute('SELECT 1 FROM live_rooms WHERE room_url=?', (url,)).fetchone():
             raise ValueError('房间尚未加入直播间库')
+        if body['enabled'] and exclusion_reason(c.execute('SELECT title FROM live_rooms WHERE room_url=?',(url,)).fetchone()[0]):
+            raise ValueError('该直播间包含手游范围，Mimo 仅承接端游无畏契约')
         c.execute('UPDATE live_rooms SET enabled=? WHERE room_url=?', (int(body['enabled']), url))
     return {'saved': True, 'detail': '房间关注已更新，下批生效；历史弹幕保留'}
 

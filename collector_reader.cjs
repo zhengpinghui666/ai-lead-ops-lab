@@ -13,7 +13,7 @@ function retryAfterSeconds(response){
 // Every page owns its URL scope, parsing state, budget and queue. No shared current-video state.
 function createReader(page,shared){
   const {config,emit,status,Stop}=shared;
-  let phase='idle',current=null,networkBlock='',recognized=false,hasMore=null,emptySearchConfirmed=false,searchEmptyOnly=true;
+  let phase='idle',current=null,networkBlock='',recognized=false,hasMore=null,emptySearchConfirmed=false,searchEmptyOnly=true,outsidePC=false;
   let requestSerial=0,lastValidRequest=0;
   const requestNumbers=new WeakMap();
   let readErrors=0,schemaErrors=0,commentResponses=0,invalidComments=0,nonTextComments=0,processingLimit=false,navigationError='',navigationStatus=null,navigationRetryAfter=null;
@@ -98,6 +98,9 @@ function createReader(page,shared){
       if(!parser.contentPageKind(page.url(),expected.video_id))return;
       if(!expected.video_title||expected.video_title===expected.video_id){
         const title=parser.pageVideoTitle(await page.title().catch(()=>''),page.url(),expected.video_id);if(title)expected.video_title=title;
+      }
+      if(parser.outsideServiceScope(expected.video_title)){
+        outsidePC=true;recognized=true;hasMore=false;await observeVideo();return;
       }
       const parsed=parser.comments(body,expected.video_id,expected);
       if(body?.status_code===0&&parsed.recognized&&!parsed.invalid&&!parsed.truncated){lastValidRequest=requestNumber;if(networkBlock==='needs_verification')networkBlock='';}
@@ -184,7 +187,11 @@ function createReader(page,shared){
     return selected;
   }
   async function collect(row){
-    phase='idle';await drain();await ready();current=row;recognized=false;hasMore=null;commentResponses=0;invalidComments=0;nonTextComments=0;responseMeta.length=0;
+    if(parser.outsideServiceScope(row.video_title)){
+      await emit({type:'checkpoint',video_id:row.video_id,status:'unavailable',reason:'outside_pc_scope',detail:'作品包含手游范围，仅承接端游无畏契约；未打开其评论页'});
+      return {unavailable:true};
+    }
+    phase='idle';await drain();await ready();current=row;outsidePC=false;recognized=false;hasMore=null;commentResponses=0;invalidComments=0;nonTextComments=0;responseMeta.length=0;
     const errorsAtStart=readErrors+schemaErrors;
     await emit({type:'checkpoint',video_id:row.video_id,status:'reading',detail:'正在读取页面已加载评论'});
     if(config.kind==='search')await observeVideo();
@@ -234,6 +241,10 @@ function createReader(page,shared){
       await ready();await page.mouse.wheel(0,650);await wait(2000);await drain();
     }
     await guard();phase='idle';await drain();
+    if(outsidePC){
+      await emit({type:'checkpoint',video_id:row.video_id,status:'unavailable',reason:'outside_pc_scope',detail:'页面标题确认包含手游范围；未入库评论，已停止该作品读取'});
+      return {unavailable:true};
+    }
     const errors=readErrors+schemaErrors-errorsAtStart,done=!errors&&!invalidComments&&(hasMore===false||(perVideo.get(row.video_id)||0)>=config.comment_limit);
     // Save page-scoped quality evidence even when some responses succeeded. No raw bodies or request queries.
     await emit({type:'diagnostic',stage:'comment-read',snapshot:{title:'评论分页读取摘要',page_url:row.video_url,
