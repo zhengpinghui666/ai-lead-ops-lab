@@ -78,8 +78,8 @@
     },
     {
       "name": "GROUP_MONITOR.md",
-      "sha256": "32202b7a411407f03adeff511f8cf4f1faf0c802dfcd1322dc18c17dfced4dc0",
-      "bytes": 9481
+      "sha256": "6eb47723b856c4ed744795cdf434763ddfe32d2e266fcc5d7a0e14b26b739326",
+      "bytes": 9948
     },
     {
       "name": "INFORMATION_ARCHITECTURE.md",
@@ -168,8 +168,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "176ec4ee3f86b670a52ff8deea3f5837530faac972346d3653ae6a7a0cc7793e",
-      "bytes": 76183
+      "sha256": "949d970a8d1e8ebbfe3a7a9eebc13b3971f01a38c3e81dcc4f4ecd5352d8ba67",
+      "bytes": 77071
     },
     {
       "name": "UID_HTTP.md",
@@ -323,8 +323,8 @@
     },
     {
       "name": "collector_reader.cjs",
-      "sha256": "9cf55933993eef629f31bec2d75f29bd05bbc5c5611773e813b87fc3e7579325",
-      "bytes": 22166
+      "sha256": "45617cd60cd84770d29fce7d3ca71fab9e3d5968476f523cefb3c02cacd6a46b",
+      "bytes": 22928
     },
     {
       "name": "collector_runner.cjs",
@@ -1363,8 +1363,8 @@
     },
     {
       "name": "test_worker.cjs",
-      "sha256": "1dbadb13354a1c500649768b71283798d13c05c9979e51dde4de2e41d2780797",
-      "bytes": 16431
+      "sha256": "d4072fd6a09744011df5f5753694c2917571afb55e43a70f146f62f2e359993f",
+      "bytes": 17146
     },
     {
       "name": "tests/fixtures/captcha/background.png",
@@ -1383,8 +1383,8 @@
     },
     {
       "name": "tests/fixtures/playwright_fixture.cjs",
-      "sha256": "1f29afeb47748272a6d03eeea16109775ac2c7f39ed43c9ec05e95d2dea53486",
-      "bytes": 11518
+      "sha256": "1b72af816bc0a0dc2e11882b9ceaa51bb515f67c25184ddedec149c15884d10b",
+      "bytes": 12279
     },
     {
       "name": "tests/fixtures/playwright_parallel_fixture.cjs",

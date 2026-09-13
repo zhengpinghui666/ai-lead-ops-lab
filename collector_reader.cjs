@@ -213,6 +213,17 @@ function createReader(page,shared){
       await ready();const buttons=page.getByRole('button',{name:/^评论(?:\s|\d|$)/});
       if(await buttons.count()===1&&await buttons.first().isVisible()){await buttons.first().click({timeout:3000}).catch(()=>{});await wait(2500);await drain();}
     }
+    if(!recognized&&!commentResponses&&navigationStatus===200&&parser.contentPageKind(page.url(),row.video_id)==='video'&&
+        /(?:^|\n)\s*视频数据加载中\s*(?:\n|$)/.test(await visibleText())){
+      // A real loading shell (task 2060) is not a request for human interaction.
+      // Wait for this same video's data, with normal login/captcha/rate guards.
+      await diagnose('comment-loading');
+      for(let i=0;i<8&&!recognized&&!commentResponses;i++){await wait(1000);await drain();await guard();}
+      if(!recognized&&!commentResponses){
+        await diagnose('comment-loading-timeout');
+        throw new Stop('network_error','作品仍未返回评论数据，已结束本批并保留断点，按网络故障策略退避。');
+      }
+    }
     if(!recognized&&commentResponses){await diagnose('comment-schema');throw new Stop('schema_changed','收到了评论响应，但结构未能识别；不能将其当作零评论或完成采集。');}
     if(!recognized&&!commentResponses){
       await guard();
