@@ -67,7 +67,16 @@ async function main(){
     context.on('close',()=>{contextClosed=true;releaseGate();});
     readers.push(createReader(context.pages()[0]||await context.newPage(),shared));
     const rows=config.resume_targets?.length?config.resume_targets:config.kind==='search'?await readers[0].discover():[{video_id:new URL(config.target).pathname.split('/').pop(),video_title:new URL(config.target).pathname.split('/').pop(),video_url:config.target}];
-    if(!rows.length){await readers[0].diagnose('search-empty');throw new Stop('no_data','没有从搜索页面取得可识别的视频；不生成占位数据，也不代表搜索结果为空。');}
+    if(!rows.length){
+      if(readers[0].emptySearchConfirmed()){
+        check();
+        await readers[0].diagnose('search-empty-valid');
+        check();
+        await status('completed','本次搜索返回有效空结果，未读取作品评论；不代表平台上没有相关作品。');
+        return;
+      }
+      await readers[0].diagnose('search-empty');throw new Stop('no_data','没有从搜索页面取得可识别的视频；不生成占位数据，也不代表搜索结果为空。');
+    }
     if(rows.length>config.video_limit||new Set(rows.map(r=>r.video_id)).size!==rows.length)throw new Stop('failed','视频目标超出范围或重复。');
     await emit({type:'targets',records:rows});
     for(let slot=1;slot<Math.min(concurrency,rows.length);slot++){check();readers.push(createReader(await context.newPage(),shared));}

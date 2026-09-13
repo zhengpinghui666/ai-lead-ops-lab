@@ -13,7 +13,7 @@ function retryAfterSeconds(response){
 // Every page owns its URL scope, parsing state, budget and queue. No shared current-video state.
 function createReader(page,shared){
   const {config,emit,status,Stop}=shared;
-  let phase='idle',current=null,networkBlock='',recognized=false,hasMore=null;
+  let phase='idle',current=null,networkBlock='',recognized=false,hasMore=null,emptySearchConfirmed=false,searchEmptyOnly=true;
   let requestSerial=0,lastValidRequest=0;
   const requestNumbers=new WeakMap();
   let readErrors=0,schemaErrors=0,commentResponses=0,invalidComments=0,nonTextComments=0,processingLimit=false,navigationError='',navigationStatus=null,navigationRetryAfter=null;
@@ -54,6 +54,7 @@ function createReader(page,shared){
     const requestNumber=response.request?requestNumbers.get(response.request())||0:0;
     if(kind==='comment')commentResponses++;
     const http=response.status(),meta={kind,status:http};responseMeta.push(meta);if(responseMeta.length>30)responseMeta.shift();
+    if(kind==='search'&&http!==200)searchEmptyOnly=false;
     if(http===429||http===403){networkBlock=http===429?'rate_limited':'access_denied';shared.fail(new Stop(networkBlock,shared.reasons[networkBlock]));return;}
     if(http===401){networkBlock='needs_login';return;}
     if(http>=500&&http<=599){meta.retry_after_seconds=retryAfterSeconds(response);shared.fail(new Stop('network_error',`数据接口暂不可用（HTTP ${http}），本批停止并保留已读取内容。`));return;}
@@ -75,11 +76,13 @@ function createReader(page,shared){
     },async body=>{
       if(shared.stopping()||page.isClosed()||processingLimit)return;
       meta.keys=Object.keys(body||{}).slice(0,25);meta.data_type=Array.isArray(body?.data)?'array':typeof body?.data;
+      if(kind==='search')meta.search_shape=parser.searchResponseShape(body);
       const verification=parser.blockFromBody(body);
       if(verification){networkBlock=verification;return;}
       if(Number.isSafeInteger(body?.status_code))meta.status_code=body.status_code;
       if(kind==='search'){
         if(!parser.searchPageMatches(page.url(),config.target))return;
+        if(!parser.isEmptySearchResponse(meta))searchEmptyOnly=false;
         const rows=parser.searchVideos(body);
         for(const row of rows){
           if(!parser.inSearchScope(row,config.target)){if(excludedSearch.size<250)excludedSearch.add(row.video_id);continue;}
@@ -151,7 +154,11 @@ function createReader(page,shared){
       await readAnchors();if(searchResults.size>=config.video_limit)break;
       await guard();await page.mouse.wheel(0,700);await wait(2000);await drain();
     }
-    if(!searchResults.size&&config.interactive){await pause('needs_interaction','搜索页没有可识别的视频。请在专用浏览器中完成登录或正常搜索，再点击“继续读取”。');await drain();await guard();await readAnchors();}
+    await drain();await guard();
+    emptySearchConfirmed=searchEmptyOnly&&!readErrors&&!schemaErrors&&!searchResults.size&&!excludedSearch.size&&navigationStatus===200&&!navigationError&&
+      parser.searchPageMatches(page.url(),config.target)&&responseMeta.length>0&&responseMeta.every(parser.isEmptySearchResponse)&&
+      await page.locator('a[href*="/video/"]').count().catch(()=>-1)===0;
+    if(!searchResults.size&&!emptySearchConfirmed&&config.interactive){await pause('needs_interaction','搜索页没有可识别的视频。请在专用浏览器中完成登录或正常搜索，再点击“继续读取”。');await drain();await guard();await readAnchors();}
     phase='idle';await drain();
     if(!searchResults.size){
       const failures=responseMeta.filter(m=>m.kind==='search'&&m.body_error);
@@ -239,7 +246,7 @@ function createReader(page,shared){
   }
   page.on('request',request=>requestNumbers.set(request,++requestSerial));
   page.on('response',onResponse);page.on('dialog',d=>d.dismiss().catch(()=>{}));
-  const reader={page,discover,collect,diagnose,readVersion:()=>requestSerial,
+  const reader={page,discover,collect,diagnose,emptySearchConfirmed:()=>emptySearchConfirmed,readVersion:()=>requestSerial,
     settleVerification:drain,
     async readableAfter(version){
       if(lastValidRequest<=version||networkBlock||phase==='idle')return false;

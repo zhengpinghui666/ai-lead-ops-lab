@@ -13,6 +13,16 @@ from collector_http_session import ORIGIN
 from game_scope import GAME_PATTERN
 
 PRIVATE_WORK_DETAIL = '平台明确返回该作品受作者隐私设置限制；已停止跟踪该作品，其他公开作品继续采集'
+WORK_RESTRICTION_DETAILS = {
+    'author_secret': PRIVATE_WORK_DETAIL,
+    'status_self_see': '平台明确返回该作品因权限或已被删除而无法观看；已停止跟踪该作品，其他公开作品继续采集',
+}
+
+
+def work_restriction(error, video):
+    reason = error.evidence.get('reason')
+    return reason if (error.status == 'access_denied' and reason in WORK_RESTRICTION_DETAILS
+        and error.evidence.get('restriction_scope') == 'work' and error.evidence.get('video_id') == video) else None
 
 
 def is_private_work(error, video):
@@ -58,6 +68,11 @@ def discovery_shape(body):
     result['verification_indicated'] = bool(body.get('verify_type') or body.get('verify_data'))
     if isinstance(body.get('aweme_list'), list):
         result['item_count'] = len(body['aweme_list'])
+    restriction = body.get('filter_detail')
+    if isinstance(restriction,dict):
+        reason = restriction.get('filter_reason')
+        if isinstance(reason,str) and re.fullmatch(r'[a-z_]{1,60}',reason):result['filter_reason']=reason
+        result['filter_video_id_valid']=bool(numeric(restriction.get('aweme_id')))
     return result
 
 
@@ -73,9 +88,9 @@ def parse_discovery(body, operation, *, video='', sec_uid='', requested_cursor=0
     if operation == 'detail':
         restriction = body.get('filter_detail')
         if (body.get('aweme_detail') is None and isinstance(restriction, dict)
-                and restriction.get('filter_reason') == 'author_secret'
+                and restriction.get('filter_reason') in WORK_RESTRICTION_DETAILS
                 and numeric(restriction.get('aweme_id')) == video and numeric(video)):
-            raise ReadError('access_denied', {'reason': 'author_secret', 'restriction_scope': 'work', 'video_id': video})
+            raise ReadError('access_denied', {'reason': restriction['filter_reason'], 'restriction_scope': 'work', 'video_id': video})
         row = video_row(body.get('aweme_detail'))
         if row is None or row['video_id'] != video:
             raise ReadError('schema_changed', {'reason': 'invalid_video_detail'})

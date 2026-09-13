@@ -78,6 +78,17 @@ class DiscoveryTrackingTests(unittest.TestCase):
         with app.db() as c:
             self.assertEqual(c.execute('SELECT enabled FROM discovery_works WHERE video_id=?',(row['video_id'],)).fetchone()[0],0)
 
+    def test_unviewable_work_is_retired_without_losing_history_or_other_work(self):
+        self.save();self.record([work(),work(1)])
+        task=col.start(dict(kind='video',target=VID,transport='http',request_id='unviewable-work'))['id']
+        col.checkpoint(task,dict(type='targets',records=[work()]))
+        col.checkpoint(task,dict(type='checkpoint',video_id=VID,status='unavailable',reason='status_self_see',detail='平台提示权限或删除'))
+        self.record([work()])
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT enabled FROM discovery_works WHERE video_id=?',(VID,)).fetchone()[0],0)
+            self.assertEqual(c.execute('SELECT enabled FROM discovery_works WHERE video_id=?',(work(1)['video_id'],)).fetchone()[0],1)
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM collection_observations WHERE task_id=?',(self.base,)).fetchone()[0],2)
+
     def test_existing_author_samples_gain_scope_without_losing_pause_or_provenance(self):
         row=work(3,related=False);self.record([row])
         with app.db() as c:
@@ -403,6 +414,44 @@ class DiscoveryTrackingTests(unittest.TestCase):
         self.assertTrue(state['enabled'])
         self.assertEqual(state['settled_task_id'],task)
         self.assertIn('已有作品评论继续轮询',state['detail'])
+
+    def test_verified_empty_search_settles_without_stopping_comments_or_other_keywords(self):
+        monitor=monitoring.save(dict(transport='http'))
+        monitoring.command('start')
+        shape=dict(version='search-response-shape-v1',data_type='array',data_count=0,aweme_list_type='null',
+            item_list_type='undefined',status_code=0,has_more=0,cursor=16,nil_info_type='object',
+            nil_type_kind='string',nil_reason_code='service_empty',body_gate='none')
+        response=dict(kind='search',status=200,content_kind='json',body_bytes=5092,status_code=0,search_shape=shape)
+        task,job=self.empty_search(responses=[response],visible_text='搜索结果为空')
+        col.update(task,status='completed')
+        with app.db() as c:
+            c.execute("UPDATE collection_diagnostics SET stage='search-empty-valid' WHERE task_id=?",(task,))
+            c.execute('UPDATE collection_plans SET last_task_id=?,run_count=1 WHERE id=?',(task,monitor['id']))
+        scheduler.tick(NOW)
+        self.assertTrue(monitoring.state()['enabled'])
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            self.assertEqual(discovery.empty_search_wait(c,row),300)
+            query=c.execute('SELECT * FROM discovery_queries WHERE keyword=?',(job['target'],)).fetchone()
+            self.assertEqual(query['last_checked_at'],NOW)
+            self.assertEqual(query['next_check_at'],discovery.future(NOW,300))
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM collection_observations WHERE task_id=?',(task,)).fetchone()[0],0)
+            other=next(k for k in discovery.config(c)['keywords'] if k!=job['target'])
+            c.execute('UPDATE discovery_queries SET next_check_at=? WHERE keyword!=?',(discovery.future(NOW,600),other))
+            next_job=discovery.choose(c,self.plan(run_count=3,last_task_id=task),discovery.future(NOW,30))[1]
+            self.assertEqual(next_job['target'],other,'Only the empty keyword is delayed')
+            original=c.execute('SELECT snapshot FROM collection_diagnostics WHERE task_id=?',(task,)).fetchone()[0]
+            for change in ({'data_count':1},{'data_count':False},{'data_type':'null'},{'has_more':1},{'has_more':False},
+                    {'cursor':-1},{'cursor':True},{'aweme_list_type':'object'},{'item_list_type':'array','item_list_count':1},
+                    {'nil_reason_code':'verify_check'},{'nil_reason_code':'unknown_empty'},{'body_gate':'needs_verification'}):
+                with self.subTest(change=change):
+                    altered={**response,'search_shape':{**shape,**change}}
+                    self.assertFalse(discovery.valid_empty_search_response(altered))
+                    c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE task_id=?',(json.dumps({**json.loads(original),'responses':[altered]}),task))
+                    self.assertEqual(discovery.empty_search_wait(c,row),0)
+            c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE task_id=?',(original,task))
+            c.execute("UPDATE collection_diagnostics SET stage='search-empty' WHERE task_id=?",(task,))
+            self.assertEqual(discovery.empty_search_wait(c,row),0,'Completed task without the proven-empty stage is not empty-result evidence')
 
     def test_browser_outage_defers_search_and_continues_verified_http_work(self):
         task,job=self.empty_search(navigation_http_status=502)

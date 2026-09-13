@@ -24,6 +24,22 @@ def item(vid=VIDEO, **kwargs):
 
 
 class DiscoveryTests(unittest.TestCase):
+    def test_matching_work_visibility_restriction_is_not_an_account_failure(self):
+        value={'status_code':0,'aweme_detail':None,'filter_detail':{'aweme_id':VIDEO,'filter_reason':'status_self_see'}}
+        with self.assertRaises(http.ReadError) as caught:discovery.parse_discovery(value,'detail',video=VIDEO)
+        self.assertEqual(discovery.work_restriction(caught.exception,VIDEO),'status_self_see')
+        self.assertIsNone(discovery.work_restriction(caught.exception,PARENT))
+        for change,expected in [({'filter_detail':{'aweme_id':PARENT,'filter_reason':'status_self_see'}},'schema_changed'),
+                ({'filter_detail':{'aweme_id':VIDEO,'filter_reason':'unknown'}},'schema_changed'),
+                ({'verify_data':'challenge'},'needs_verification'),({'status_code':1},'upstream_rejected')]:
+            with self.subTest(change=change),self.assertRaises(http.ReadError) as failed:
+                discovery.parse_discovery({**value,**change},'detail',video=VIDEO)
+            self.assertEqual(failed.exception.status,expected)
+            self.assertIsNone(discovery.work_restriction(failed.exception,VIDEO))
+        shape=discovery.discovery_shape(value)
+        self.assertEqual(shape['filter_reason'],'status_self_see')
+        self.assertTrue(shape['filter_video_id_valid'])
+
     def test_explicit_private_work_is_scoped_and_other_denials_stay_failures(self):
         denied = {'status_code': 0, 'aweme_detail': None, 'filter_detail': {'aweme_id': VIDEO, 'filter_reason': 'author_secret'}}
         with self.assertRaises(http.ReadError) as caught:
@@ -40,7 +56,8 @@ class DiscoveryTests(unittest.TestCase):
 
     def test_private_work_does_not_request_comments_or_stop_public_work(self):
         ids = [VIDEO, str(int(VIDEO)+1), str(int(VIDEO)+2)]
-        for scoped in (True, False):
+        for reason in ('author_secret','status_self_see',None):
+            scoped=reason is not None
             calls = []
             class Client:
                 def page(self, operation, **kw):
@@ -49,7 +66,7 @@ class DiscoveryTests(unittest.TestCase):
                         if vid == ids[1]:
                             if not scoped: raise http.ReadError('access_denied')
                             return discovery.parse_discovery({'status_code': 0, 'aweme_detail': None,
-                                'filter_detail': {'aweme_id': vid, 'filter_reason': 'author_secret'}}, operation, video=vid)
+                                'filter_detail': {'aweme_id': vid, 'filter_reason': reason}}, operation, video=vid)
                         return discovery.parse_discovery({'status_code': 0, 'aweme_detail': item(vid)}, operation, video=vid)
                     return http.parse_page(body([]), operation, vid)
             events = []
@@ -59,6 +76,7 @@ class DiscoveryTests(unittest.TestCase):
             self.assertEqual([vid for op, vid in calls if op == 'comments'], [ids[0], ids[2]] if scoped else [ids[0]])
             cp = next(e for e in events if e['type'] == 'checkpoint' and e['video_id'] == ids[1])
             self.assertEqual(cp['status'], 'unavailable' if scoped else 'partial')
+            if scoped:self.assertEqual(cp['reason'],reason)
 
     def test_browser_and_http_game_scope_agree(self):
         titles=['無畏契約','无畏契約','VALORANT比赛','瓦羅蘭特','打瓦找队友','瓦陪','陪瓦','#瓦 #端游','手瓦陪玩',

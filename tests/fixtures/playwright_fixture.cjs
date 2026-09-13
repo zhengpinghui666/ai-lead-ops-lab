@@ -39,6 +39,14 @@ class Page extends EventEmitter {
     if(scenario==='verification-window-close')this.ctx.closeTimer=setTimeout(()=>this.ctx.close(),6000);
     if(scenario.startsWith('verification')||scenario==='device-challenge')return {status:()=>200};
     if(url.includes('/search/')){
+      if(scenario.startsWith('search-json-')){
+        const body={status_code:0,data:[],aweme_list:null,has_more:0,cursor:16,
+          search_nil_info:{search_nil_type:scenario==='search-json-unknown'?'unknown_empty':'service_empty'},private:'PRIVATE_RESPONSE_SENTINEL'};
+        this.emit('response',response('https://www.douyin.com/aweme/v1/web/general/search/single/',
+          body));
+        if(scenario==='search-json-mixed')this.emit('response',response('https://www.douyin.com/aweme/v1/web/general/search/single/',{...body,data:[{unknown:'PRIVATE_RESPONSE_SENTINEL'}]}));
+        return {status:()=>200};
+      }
       if(scenario==='search-scope-dom')return {status:()=>200};
       if(scenario.startsWith('search-scope-')){
         if(scenario==='search-scope-foreign')this.address='https://www.douyin.com/search/another-query';

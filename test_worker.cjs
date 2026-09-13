@@ -18,6 +18,21 @@ function run(scenario,{interactive=false,onStatus,kind='search',candidatePolicy=
 }
 const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
 (async()=>{
+  const [emptyJSON,unknownJSON,mixedJSON]=await Promise.all(['search-json-empty','search-json-unknown','search-json-mixed'].map(s=>run(s)));
+  assert.equal(terminal(emptyJSON),'completed');
+  for(const messages of [unknownJSON,mixedJSON]){
+    assert.equal(terminal(messages),'no_data');
+    assert.ok(!messages.some(m=>m.type==='targets'||m.type==='comment'||m.stage==='search-empty-valid'));
+  }
+  assert.ok(!emptyJSON.some(m=>m.type==='comment'||m.type==='targets'));
+  const searchShape=emptyJSON.find(m=>m.type==='diagnostic'&&m.stage==='search-empty-valid').snapshot.responses[0].search_shape;
+  assert.deepEqual(searchShape,{version:'search-response-shape-v1',data_type:'array',data_count:0,
+    aweme_list_type:'null',item_list_type:'undefined',status_code:0,has_more:0,cursor:16,
+    nil_info_type:'object',nil_type_kind:'string',nil_reason_code:'service_empty',nil_type:'other',body_gate:'none'});
+  assert.ok(!JSON.stringify(emptyJSON).includes('PRIVATE_RESPONSE_SENTINEL'));
+  if(process.env.CLUBOPS_TEST_SEARCH_ONLY==='1'){
+    console.log('PASS: real worker processes for valid empty search, unknown reasons and mixed responses. Synthetic only.');return;
+  }
   const scopes=await Promise.all(['search-scope-mixed','search-scope-dom','search-scope-foreign','search-scope-empty'].map(s=>run(s,{keyword:'无畏契约陪玩'})));
   for(const messages of scopes.slice(0,2)){
     assert.equal(terminal(messages),'completed');
@@ -149,5 +164,5 @@ const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
   assert.equal(replyRecords.length,2,'Roots and replies share the same per-video budget');
   assert.equal(replyRecords[1].parent_comment_id,replyRecords[0].comment_id);
   for(const messages of [cancelled,closed,eof,schema,invalid,device])assert.equal(messages.filter(m=>m.type==='comment').length,0);
-  console.log('PASS: 42 child-process scenarios including query/title discovery scope, same-work note tabs, ambiguous/foreign redirects, non-text/invalid separation, page quality, missing-work isolation, timeouts, gates and bounded responses. Synthetic only.');
+  console.log('PASS: child-process scenarios including verified empty search, mixed/unknown empty rejection, query/title scope, note tabs, redirects, quality, missing-work isolation, timeouts, gates and bounded responses. Synthetic only.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

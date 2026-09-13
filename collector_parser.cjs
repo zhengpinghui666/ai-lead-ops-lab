@@ -28,6 +28,35 @@ function searchVideos(body) {
   }
   return [...found.values()];
 }
+function searchResponseShape(body) {
+  // Bounded structural evidence only: never retain search bodies or credentials.
+  const fieldType=value=>Array.isArray(value)?'array':value===null?'null':typeof value;
+  const shape={version:'search-response-shape-v1'};
+  for(const key of ['data','aweme_list','item_list']){
+    shape[key+'_type']=fieldType(body?.[key]);
+    if(Array.isArray(body?.[key]))shape[key+'_count']=body[key].length;
+  }
+  for(const key of ['status_code','has_more','cursor'])if(Number.isSafeInteger(body?.[key]))shape[key]=body[key];
+  shape.nil_info_type=fieldType(body?.search_nil_info);
+  const nilType=body?.search_nil_info?.search_nil_type;
+  shape.nil_type_kind=fieldType(nilType);
+  if(typeof nilType==='string'&&/^[a-z][a-z_]{0,39}$/.test(nilType))shape.nil_reason_code=nilType;
+  if(Number.isSafeInteger(nilType))shape.nil_reason_number=nilType;
+  shape.nil_type=nilType===undefined?'missing':nilType===null?'null':nilType===''?'empty':
+    ['no_result','verify_check'].includes(nilType)?nilType:'other';
+  shape.body_gate=blockFromBody(body)||'none';
+  return shape;
+}
+function isEmptySearchResponse(meta) {
+  const s=meta?.search_shape;
+  return meta?.kind==='search'&&meta.status===200&&meta.content_kind==='json'&&!meta.body_error&&
+    Number.isSafeInteger(meta.body_bytes)&&meta.body_bytes>0&&meta.status_code===0&&
+    s?.version==='search-response-shape-v1'&&s.status_code===0&&s.body_gate==='none'&&
+    s.data_type==='array'&&s.data_count===0&&s.has_more===0&&Number.isSafeInteger(s.cursor)&&s.cursor>=0&&
+    s.nil_info_type==='object'&&s.nil_type_kind==='string'&&s.nil_reason_code==='service_empty'&&
+    ['aweme_list','item_list'].every(key=>['null','undefined'].includes(s[key+'_type'])||
+      s[key+'_type']==='array'&&s[key+'_count']===0);
+}
 function comments(body, expectedVideo, context={}) {
   if(body?.status_code!==undefined&&body.status_code!==0)return {rows:[],recognized:false,skipped:0,nonText:0,invalid:0,hasMore:null};
   // Observed task #9: a successful, explicitly empty response uses null instead of [].
@@ -105,4 +134,4 @@ function blockFromBody(body){
   const reason=body.search_nil_info?.search_nil_type;
   return typeof reason==='string'&&/verify|antispam|risk|captcha/i.test(reason)?'needs_verification':'';
 }
-module.exports={id,video,searchVideos,comments,responseKind,contentPageKind,pageVideoTitle,blockFromText,blockFromBody,inSearchScope,searchPageMatches};
+module.exports={id,video,searchVideos,searchResponseShape,isEmptySearchResponse,comments,responseKind,contentPageKind,pageVideoTitle,blockFromText,blockFromBody,inSearchScope,searchPageMatches};

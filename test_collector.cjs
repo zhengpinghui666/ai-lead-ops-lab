@@ -1,6 +1,23 @@
 'use strict';
 const assert=require('node:assert/strict');
 const p=require('./collector_parser.cjs');
+assert.equal(p.searchResponseShape({search_nil_info:{search_nil_type:'PRIVATE_RESPONSE_SENTINEL'}}).nil_type,'other');
+assert.equal(p.searchResponseShape({search_nil_info:{search_nil_type:'PRIVATE_RESPONSE_SENTINEL'}}).nil_reason_code,undefined);
+assert.equal(p.searchResponseShape({search_nil_info:{search_nil_type:'antispam_check'}}).body_gate,'needs_verification');
+assert.equal(p.searchResponseShape({data:null}).data_type,'null');
+assert.equal(p.searchResponseShape({data:null}).data_count,undefined);
+assert.equal(p.searchResponseShape({has_more:'0'}).has_more,undefined);
+const emptyMeta=body=>({kind:'search',status:200,content_kind:'json',body_bytes:500,status_code:body.status_code,search_shape:p.searchResponseShape(body)});
+const emptyBody={status_code:0,data:[],aweme_list:null,has_more:0,cursor:16,search_nil_info:{search_nil_type:'service_empty'}};
+assert.equal(p.isEmptySearchResponse(emptyMeta(emptyBody)),true);
+for(const change of [{status_code:1},{status_code:false},{data:null},{data:[{}]},{has_more:1},{has_more:'0'},{cursor:-1},
+    {cursor:true},{aweme_list:[{}]},{item_list:[{}]},{verify_data:'challenge'},{search_nil_info:{search_nil_type:'verify_check'}},
+    {search_nil_info:{search_nil_type:'unknown_empty'}},{search_nil_info:null}]){
+  assert.equal(p.isEmptySearchResponse(emptyMeta({...emptyBody,...change})),false,JSON.stringify(change));
+}
+for(const change of [{status:403},{content_kind:'html'},{body_bytes:0},{body_error:'invalid_json'}]){
+  assert.equal(p.isEmptySearchResponse({...emptyMeta(emptyBody),...change}),false);
+}
 // Synthetic fixtures only. These tests never access Douyin or write the live database.
 const vid='7600000000000000001',cid='7600000000000000002',uid='123456789012';
 assert.equal(p.id(7600000000000000001),'','Unsafe numeric IDs must not silently lose precision');

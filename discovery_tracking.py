@@ -309,7 +309,8 @@ def choose(c,plan,instant):
     query=next((dict(r) for r in c.execute('SELECT * FROM discovery_queries ORDER BY COALESCE(last_checked_at,\'\'),keyword') if r['keyword'] in search_terms and due(r['next_check_at'])),None)
     latest_search=c.execute("SELECT t.* FROM discovery_jobs j JOIN collection_tasks t ON t.id=j.task_id WHERE j.kind='search' ORDER BY t.id DESC LIMIT 1").fetchone()
     search_wait=empty_search_wait(c,latest_search)
-    search_ready=not search_wait or due(future(latest_search['finished_at'],search_wait))
+    # A valid empty result delays only its keyword; other searches remain eligible.
+    search_ready=not search_wait or latest_search['status']=='completed' or due(future(latest_search['finished_at'],search_wait))
     if query and search_ready:jobs['search']=dict(kind='search',target=query['keyword'],transport=plan['transport'] if plan['kind']=='search' else 'local_browser',key=query['keyword'],channel='search')
     paused=paused_targets(c)
     focused={r['sec_uid'] for r in authors if r['focused'] and r['enabled']}
@@ -355,6 +356,24 @@ def worker_config(c,task_id):
     return json.loads(row[0]) if row else None
 
 
+def valid_empty_search_response(response):
+    if not isinstance(response,dict):return False
+    s=response.get('search_shape')
+    if not isinstance(s,dict):return False
+    return (response.get('kind')=='search' and type(response.get('status')) is int and response['status']==200
+        and response.get('content_kind')=='json' and not response.get('body_error')
+        and type(response.get('body_bytes')) is int and response['body_bytes']>0
+        and type(response.get('status_code')) is int and response['status_code']==0
+        and s.get('version')=='search-response-shape-v1' and type(s.get('status_code')) is int and s['status_code']==0
+        and s.get('body_gate')=='none' and s.get('data_type')=='array'
+        and type(s.get('data_count')) is int and s['data_count']==0
+        and type(s.get('has_more')) is int and s['has_more']==0
+        and type(s.get('cursor')) is int and 0<=s['cursor']<=9007199254740991
+        and s.get('nil_info_type')=='object' and s.get('nil_type_kind')=='string' and s.get('nil_reason_code')=='service_empty'
+        and all(s.get(key+'_type') in ('null','undefined') or s.get(key+'_type')=='array'
+            and type(s.get(key+'_count')) is int and s[key+'_count']==0 for key in ('aweme_list','item_list')))
+
+
 def empty_search_wait(c, task):
     """Defer proven browser outages/empty shells without stopping HTTP work.
 
@@ -362,7 +381,7 @@ def empty_search_wait(c, task):
     The historical function name is retained for callers and old records.
     """
     from urllib.parse import urlsplit,unquote
-    if not task or task['status'] not in ('no_data','network_error') or task['kind']!='search' or task['transport']!='local_browser' or not task['finished_at']:
+    if not task or task['status'] not in ('completed','no_data','network_error') or task['kind']!='search' or task['transport']!='local_browser' or not task['finished_at']:
         return 0
     frozen=worker_config(c,task['id'])
     if not frozen or frozen.get('channel')!='search' or frozen.get('target')!=task['target']:
@@ -394,14 +413,17 @@ def empty_search_wait(c, task):
             if not scoped_out:return 0
         for row in diagnostics:
             if row['stage']=='search-scope':continue
-            if row['stage'] not in ('search-empty','finished-error'):return 0
+            if row['stage'] not in ('search-empty','search-empty-valid','finished-error'):return 0
             s=json.loads(row['snapshot']);url=urlsplit(s.get('page_url',''))
             if (s.get('navigation_http_status')!=200 or s.get('navigation_error')
                     or url.scheme!='https' or url.hostname!='www.douyin.com'
                     or unquote(url.path)!='/search/'+task['target']):return 0
             responses=s.get('responses')
             if not isinstance(responses,list):return 0
-            if scoped_out:
+            if task['status']=='completed':
+                if row['stage']!='search-empty-valid' or type(s.get('video_links')) is not int or s['video_links']!=0:return 0
+                if not responses or not all(valid_empty_search_response(response) for response in responses):return 0
+            elif scoped_out:
                 # Parsed candidates were deliberately excluded by the game rule.
                 # That is a discovery outcome, not a failure of comment reads.
                 if type(s.get('video_links')) is not int or s['video_links']<0:return 0
@@ -413,12 +435,12 @@ def empty_search_wait(c, task):
             elif responses or s.get('video_links')!=0:return 0
             text=s.get('visible_text','')
             if any(word in text for word in ('验证码','安全验证','访问受限','操作频繁','请求过多','登录后查看')):return 0
-            found |= row['stage']=='search-empty'
+            found |= row['stage'] in ('search-empty','search-empty-valid')
         if not found:return 0
-        recent=c.execute("SELECT t.status FROM discovery_jobs j JOIN collection_tasks t ON t.id=j.task_id WHERE j.kind='search' AND t.id<=? ORDER BY t.id DESC LIMIT 4",(task['id'],)).fetchall()
+        recent=c.execute("SELECT t.id,t.status FROM discovery_jobs j JOIN collection_tasks t ON t.id=j.task_id WHERE j.kind='search' AND t.target=? AND t.id<=? ORDER BY t.id DESC LIMIT 4",(task['target'],task['id'])).fetchall()
         failures=0
         for row in recent:
-            if row['status']!='no_data':break
+            if row['status']!='no_data' and not (row['status']=='completed' and c.execute("SELECT 1 FROM collection_diagnostics WHERE task_id=? AND stage='search-empty-valid'",(row['id'],)).fetchone()):break
             failures+=1
         return min(2400,300*2**max(0,failures-1))
     except (ValueError,TypeError,AttributeError):return 0
@@ -436,10 +458,10 @@ def settle(c,task):
     job=c.execute('SELECT * FROM discovery_jobs WHERE task_id=? AND settled=0',(task['id'],)).fetchone()
     if not job or not task['finished_at']:return
     frozen=json.loads(job['config']);cfg=frozen['policy'];stamp=task['finished_at']
-    defer_empty_search(c,task)
+    search_wait=defer_empty_search(c,task)
     if task['status']=='completed':
         if job['kind']=='search':
-            c.execute('UPDATE discovery_queries SET last_checked_at=?,next_check_at=? WHERE keyword=?',(stamp,future(stamp,cfg['search_interval']),job['key']))
+            c.execute('UPDATE discovery_queries SET last_checked_at=?,next_check_at=? WHERE keyword=?',(stamp,future(stamp,max(cfg['search_interval'],search_wait)),job['key']))
         if job['kind']=='author':
             authors=author_rows(c,cfg)
             seed=frozen['target']
