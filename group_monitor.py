@@ -201,6 +201,9 @@ def eligible(c,raw,engine,account):
 
 
 def tick(*,reader=None,catalog_reader=None):
+    import uid_session_renewal
+    if uid_session_renewal.pending():
+        return
     global ACTIVE
     if STOP.is_set() or not GUARD.acquire(blocking=False):return
     acquired=False;group=None

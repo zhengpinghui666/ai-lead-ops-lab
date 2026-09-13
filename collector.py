@@ -287,13 +287,14 @@ def checkpoint(task_id, message):
             if row['status'] in ('done', 'unavailable') and status != row['status']:
                 raise ValueError('已完成断点不能退回读取状态')
             c.execute('UPDATE collection_checkpoints SET status=?,detail=?,updated_at=? WHERE task_id=? AND video_id=?', (status, app.clean(message.get('detail'), 500), app.now(), task_id, message['video_id']))
-            if status == 'unavailable' and message.get('reason') in ('author_secret','status_self_see','outside_pc_scope'):
+            from video_discovery import WORK_RESTRICTION_DETAILS
+            scope_details = {**WORK_RESTRICTION_DETAILS, 'outside_pc_scope': '不符合国服端游服务范围；已停止跟踪该作品，其他作品继续采集'}
+            if status == 'unavailable' and message.get('reason') in scope_details:
                 # Only a scoped event from our verified worker can retire this
                 # work. Keep its checkpoint, observations and failed batches.
                 c.execute('UPDATE discovery_works SET enabled=0,last_checked_at=?,next_check_at=NULL WHERE video_id=?',
                           (app.now(), message['video_id']))
-                reason = {'author_secret':'作者隐私设置','status_self_see':'平台明确提示作品权限或已删除','outside_pc_scope':'不符合端游服务范围'}[message['reason']]
-                app.event(c, 'collector', f"作品 {message['video_id']} 因{reason}停止跟踪；其他作品继续")
+                app.event(c, 'collector', f"作品 {message['video_id']}：{scope_details[message['reason']]}")
 
 
 def command(task_id, action, mode='live'):

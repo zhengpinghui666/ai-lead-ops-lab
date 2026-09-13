@@ -15,6 +15,7 @@ import monitoring
 import uid_messaging
 import intent_outreach
 import uid_inbox_sync
+import uid_session_renewal
 import group_monitor
 import live_monitor
 import live_tracking
@@ -375,7 +376,7 @@ class LocalHTTPServer(ThreadingHTTPServer):
     def prepare_stop(self):
         # HTTP admissions share lifecycle_lock. Scheduler admissions share the
         # collector lock. Never interrupt a collector, live session or sender.
-        with self.lifecycle_lock, collector.GUARD, live_monitor.GUARD, uid_inbox_sync.GUARD, group_monitor.GUARD, intent_outreach.GUARD, clubops.LOCKS['live'], clubops.db() as c:
+        with self.lifecycle_lock, collector.GUARD, live_monitor.GUARD, uid_inbox_sync.GUARD, group_monitor.GUARD, intent_outreach.GUARD, uid_session_renewal.GUARD, clubops.LOCKS['live'], clubops.db() as c:
             active_plan = c.execute("SELECT 1 FROM collection_plans WHERE status='running' LIMIT 1").fetchone()
             active_model = c.execute("SELECT 1 FROM semantic_jobs WHERE status IN ('queued','running','cancelling') LIMIT 1").fetchone()
             if (self.active_writes != 1 or collector.ACTIVE or live_monitor.ACTIVE or
@@ -387,6 +388,7 @@ class LocalHTTPServer(ThreadingHTTPServer):
             uid_inbox_sync.STOP.set()
             group_monitor.STOP.set()
             intent_outreach.STOP.set()
+            uid_session_renewal.STOP.set()
 
     def server_bind(self):
         if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
@@ -404,6 +406,7 @@ def main():
             import uid_inbox_store
             uid_inbox_store.recover()
             uid_inbox_sync.recover()
+            uid_session_renewal.recover()
             analysis_store.recover()
             semantic_queue.recover()
             live_monitor.recover()
@@ -415,6 +418,7 @@ def main():
             semantic_queue.start_service()
             live_tracking.start_service()
             uid_inbox_sync.start_service()
+            uid_session_renewal.start_service()
             group_monitor.start_service()
             intent_outreach.start_service()
             team_access.start_service(httpd.server_address[1])
@@ -425,6 +429,7 @@ def main():
                 pass
             finally:
                 team_access.shutdown()
+                uid_session_renewal.shutdown()
                 uid_inbox_sync.shutdown()
                 group_monitor.shutdown()
                 intent_outreach.shutdown()

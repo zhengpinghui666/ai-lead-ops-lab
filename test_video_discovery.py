@@ -56,7 +56,7 @@ class DiscoveryTests(unittest.TestCase):
 
     def test_private_work_does_not_request_comments_or_stop_public_work(self):
         ids = [VIDEO, str(int(VIDEO)+1), str(int(VIDEO)+2)]
-        for reason in ('author_secret','status_self_see',None):
+        for reason in ('author_secret','status_self_see','status_audit_self_see',None):
             scoped=reason is not None
             calls = []
             class Client:
@@ -77,6 +77,16 @@ class DiscoveryTests(unittest.TestCase):
             cp = next(e for e in events if e['type'] == 'checkpoint' and e['video_id'] == ids[1])
             self.assertEqual(cp['status'], 'unavailable' if scoped else 'partial')
             if scoped:self.assertEqual(cp['reason'],reason)
+
+    def test_audit_visibility_requires_exact_work_and_no_challenge(self):
+        value={'status_code':0,'aweme_detail':None,'filter_detail':{'aweme_id':VIDEO,'filter_reason':'status_audit_self_see'}}
+        for change,expected in [({},'access_denied'),
+                ({'filter_detail':{'aweme_id':PARENT,'filter_reason':'status_audit_self_see'}},'schema_changed'),
+                ({'verify_type':'challenge'},'needs_verification'),({'status_code':4},'upstream_rejected')]:
+            with self.subTest(change=change),self.assertRaises(http.ReadError) as caught:
+                discovery.parse_discovery({**value,**change},'detail',video=VIDEO)
+            self.assertEqual(caught.exception.status,expected)
+            self.assertEqual(discovery.work_restriction(caught.exception,VIDEO),'status_audit_self_see' if not change else None)
 
     def test_browser_and_http_game_scope_agree(self):
         titles=['無畏契約','无畏契約','VALORANT比赛','瓦羅蘭特','打瓦找队友','瓦陪','陪瓦','#瓦 #端游','手瓦陪玩',

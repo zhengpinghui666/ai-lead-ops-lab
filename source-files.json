@@ -257,6 +257,7 @@
   "test_uid_messaging.py",
   "test_uid_session.cjs",
   "test_uid_session.py",
+  "test_uid_session_renewal.py",
   "test_verification.cjs",
   "test_video_discovery.py",
   "test_video_metadata.py",
@@ -275,6 +276,7 @@
   "uid_messaging.py",
   "uid_protocol.py",
   "uid_session.py",
+  "uid_session_renewal.py",
   "uid_transport.py",
   "video_discovery.py",
   "video_metadata.py"

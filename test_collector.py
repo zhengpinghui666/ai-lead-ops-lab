@@ -281,5 +281,26 @@ class CollectorTests(unittest.TestCase):
         row=next(r for r in col.state()['tasks'] if r['id']==child)
         self.assertEqual([r['video_id'] for r in row['checkpoints']],[rows[1]['video_id']])
 
+    def test_all_verified_visibility_reasons_retire_only_the_affected_work(self):
+        from video_discovery import WORK_RESTRICTION_DETAILS
+        ids=['7600000000000000001','7600000000000000009']
+        for reason in [*WORK_RESTRICTION_DETAILS,'unknown']:
+            with self.subTest(reason=reason):
+                task=self.start(request_id='visibility-'+reason)
+                col.checkpoint(task,{'type':'targets','records':[{'video_id':v} for v in ids]})
+                with app.db() as c:
+                    for vid in ids:
+                        c.execute('''INSERT OR REPLACE INTO discovery_works(video_id,title,relevant,source_kind,source_target,
+                            first_seen_at,last_seen_at,next_check_at) VALUES(?,'合成瓦作品',1,'search','瓦',?,?,?)''',
+                            (vid,app.now(),app.now(),app.now()))
+                col.checkpoint(task,{'type':'checkpoint','video_id':ids[0],'status':'unavailable','reason':reason,'detail':'合成可见性状态'})
+                with app.db() as c:
+                    rows=[tuple(r) for r in c.execute('SELECT video_id,enabled,next_check_at FROM discovery_works ORDER BY video_id')]
+                    self.assertEqual(rows[0][1],0 if reason in WORK_RESTRICTION_DETAILS else 1)
+                    if reason in WORK_RESTRICTION_DETAILS:self.assertIsNone(rows[0][2])
+                    self.assertEqual(rows[1][1],1)
+                    self.assertEqual(c.execute('SELECT status FROM collection_checkpoints WHERE task_id=? AND video_id=?',(task,ids[0])).fetchone()[0],'unavailable')
+                col.ACTIVE.clear();col.recover()
+
 
 if __name__=='__main__': unittest.main()

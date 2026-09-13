@@ -343,6 +343,18 @@ class QueueTests(unittest.TestCase):
         with app.db() as c:
             self.assertEqual(c.execute('SELECT COUNT(*) FROM messages').fetchone()[0], 0)
 
+    def test_preparation_failure_keeps_reason_and_never_claims_platform_rejection(self):
+        result=channel.send_one(self.job['id'],transport=Mock(return_value=dict(status='failed',
+            phase='identity',identity_reason='preparation_failed',detail='synthetic-private-exception')))
+        self.assertEqual(result['detail'],'账号认证未通过，消息尚未提交')
+        self.assertEqual(result['evidence']['identity_reason'],'preparation_failed')
+        self.assertIs(result['evidence']['submission_reserved'],False)
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM messages').fetchone()[0],0)
+            stored=dict(c.execute('SELECT * FROM uid_message_attempts').fetchone())
+        self.assertNotIn('synthetic-private-exception',json.dumps(stored))
+        self.assertNotIn('平台未接受',stored['detail'])
+
     def test_rejected_message_retry_is_delayed_bounded_and_preserves_history(self):
         from datetime import datetime,timedelta,timezone
         def reject(config, receiver, message, client, before):

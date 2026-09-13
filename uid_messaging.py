@@ -85,6 +85,7 @@ def config(*, authorized_recipient=None):
 def state(mode='live'):
     if mode != 'live':
         return {'status': 'disabled', 'can_attempt': False, 'transport': 'http', 'issues': ['演示区不连接真实 HTTP 通道']}
+    import uid_session_renewal
     value, issues = config()
     try:
         sender = uid_protocol.numeric_uid(value.get('sender_uid'))
@@ -93,7 +94,7 @@ def state(mode='live'):
     return dict(status='not_configured' if issues else 'configured_unverified', transport='http',
                 can_attempt=not issues, sender_uid=sender,
                 allowed_recipients=len(value.get('allowed_recipient_uids', [])) if isinstance(value.get('allowed_recipient_uids'), list) else 0,
-                live_verified=False, issues=issues,
+                live_verified=False, issues=issues, session_renewal=uid_session_renewal.state(),
                 detail='纯 HTTP 通道已有一条授权测试的服务端接受证据；当前配置仍须核对，配置就绪不等于发送成功或送达。')
 
 
@@ -341,6 +342,10 @@ def _send_one(job_id, transport, resume_note=None, authorization=None, retry_not
         result = {'status': 'unknown', 'detail': '提交结果不确定；请核对会话，不会自动重发', 'phase': 'unknown'}
     # Store only this allowlist, not credentials, raw responses, arbitrary errors.
     evidence = {key: result[key] for key in ('phase', 'http_status', 'response_sha256', 'server_message_id', 'conversation_id', 'conversation_short_id', 'platform_code', 'send_status', 'check_code', 'platform_message', 'platform_reason_code', 'transport_phase', 'transport_error', 'response_bytes') if key in result}
+    if result.get('identity_reason') in ('preparation_failed', 'response_unavailable', 'http_status_rejected',
+            'unexpected_content_type', 'invalid_json', 'invalid_profile', 'platform_rejected',
+            'sender_mismatch', 'transport_failed'):
+        evidence['identity_reason'] = result['identity_reason']
     evidence['submission_reserved'] = submission_reserved or result['status'] != 'failed' or result.get('phase') not in ('identity', 'create', 'ticket', 'prepare_send')
     if authorization is not None:
         evidence['operator_authorization'] = authorization
@@ -350,7 +355,11 @@ def _send_one(job_id, transport, resume_note=None, authorization=None, retry_not
         evidence['delivery_history'] = delivery_history
     detail = {'accepted': 'HTTP 服务端接受，尚无送达或已读证据', 'failed': 'HTTP 处理失败；查看阶段记录，不会自动重发', 'unknown': 'HTTP 提交结果未知；请核对会话，不会自动重发'}[result['status']]
     if result['status'] == 'failed':
-        detail = ('平台拒绝：'+evidence['platform_message']) if evidence.get('platform_message') else '平台未接受或发送准备失败；查看阶段记录'
+        if evidence['submission_reserved'] is False:
+            detail = {'identity': '账号认证未通过，消息尚未提交', 'create': '会话建立未完成，消息尚未提交',
+                'ticket': '会话凭据准备失败，消息尚未提交', 'prepare_send': '发送准备未完成，消息尚未提交'}[result['phase']]
+        else:
+            detail = ('平台拒绝：'+evidence['platform_message']) if evidence.get('platform_message') else '发送未成功；请查看返回阶段与回执'
     with app.LOCKS['live'], app.db() as c:
         c.execute('UPDATE uid_message_attempts SET status=?,phase=?,detail=?,evidence=?,updated_at=? WHERE job_id=?', (result['status'], result.get('phase', 'unknown'), detail, json.dumps(evidence), app.now(), job_id))
         c.execute('UPDATE message_jobs SET status=?,detail=?,updated_at=? WHERE id=?', (result['status'], detail, app.now(), job_id))

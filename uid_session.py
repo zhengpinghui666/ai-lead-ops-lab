@@ -1,9 +1,9 @@
 """Current-account HTTP session provider, with Windows user-scoped DPAPI storage.
 
 Browser bootstrap supplies authentication context, never a captured send body.
-Normal prepare/check operations do not import or start a browser. No automatic
-refresh, retries, target registration or sends. An expired session needs a new
-explicit bootstrap. The local 12-hour age policy is not a platform expiry claim.
+Normal operations never start a browser. An expired context can only enter the
+read-only revalidation provider; both identity and IM must pass before renewal.
+The local 12-hour age policy is not a platform expiry claim.
 """
 import base64
 import ctypes
@@ -82,7 +82,7 @@ def save(value, path):
             temporary.unlink()
 
 
-def load(path):
+def load(path, *, check_age=True):
     path = Path(path)
     if path.is_symlink():
         raise ValueError('会话文件不能是符号链接')
@@ -90,7 +90,7 @@ def load(path):
         encrypted = stream.read(131073)
     if len(encrypted) > 131072 or not encrypted.startswith(MAGIC):
         raise ValueError('本机会话文件无效；请重新准备会话')
-    return validate(json.loads(crypt(encrypted[len(MAGIC):], decrypt=True)))
+    return validate(json.loads(crypt(encrypted[len(MAGIC):], decrypt=True)), check_age=check_age)
 
 
 def header_value(value, maximum=16384):
@@ -121,17 +121,20 @@ def session_cookie(raw):
     return '; '.join(name + '=' + selected[name] for name in ('sessionid', 'sessionid_ss'))
 
 
-def validate(value):
+def validate(value, *, check_age=True):
     keys = {'format', 'sender_uid', 'account', 'captured_at', 'sequence', 'context', 'identity_cookie', 'headers'}
-    if not isinstance(value, dict) or not keys <= set(value) or set(value) - keys - {'im_verified'} or value['format'] != 'clubops-uid-session-1':
+    if not isinstance(value, dict) or not keys <= set(value) or set(value) - keys - {'im_verified', 'last_verified_at'} or value['format'] != 'clubops-uid-session-1':
         raise ValueError('本机会话结构无效')
     value.setdefault('im_verified', False)
     if type(value['im_verified']) is not bool:
         raise ValueError('本机会话验证状态无效')
     wire.numeric_uid(value['sender_uid'])
     uid_bootstrap.account(value['account'])
-    age = value['captured_at']
-    if type(age) not in (int, float) or not math.isfinite(age) or not -60 <= time.time() - age <= MAX_AGE:
+    captured = value['captured_at']
+    verified = value.get('last_verified_at', captured)
+    now = time.time()
+    if (any(type(t) not in (int, float) or not math.isfinite(t) or not 0 < t <= now + 60 for t in (captured, verified))
+            or verified < captured or (check_age and now - verified > MAX_AGE)):
         raise ValueError('本机会话超过本地复用时间；请重新准备会话')
     if type(value['sequence']) is not int or not 0 <= value['sequence'] < 2**31 - 2:
         raise ValueError('会话序列号无效')
@@ -291,22 +294,106 @@ def check_im(provider, sender, *, exchange=None):
     return result
 
 
-def save_status(result, *, checked_at=None):
+def _write_status(result, path, *, checked_at=None):
     """Nonsecret UI diagnostic; never used as permission to send."""
     keys = {'status', 'sender_uid', 'identity_verified', 'http_status', 'platform_code',
-            'transport_phase', 'transport_error', 'response_bytes', 'credential_protection'}
+            'transport_phase', 'transport_error', 'response_bytes', 'credential_protection', 'identity_reason'}
     safe = {key: result[key] for key in keys if key in result}
     safe.update(checked_at=time.time() if checked_at is None else checked_at, im_read_verified=result.get('status') in ('session_ready', 'im_read_verified'),
                 can_send=False, live_verified=False)
+    temporary = path.with_name('.status-' + uuid.uuid4().hex + '.tmp')
+    try:
+        temporary.write_text(json.dumps(safe, ensure_ascii=False), encoding='utf-8')
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def save_status(result, *, checked_at=None):
     path = vault_path().with_name('status.json')
     with runtime.data_lock(path.parent):
-        temporary = path.with_name('.status-' + uuid.uuid4().hex + '.tmp')
+        _write_status(result, path, checked_at=checked_at)
+
+
+class ReadOnlyRevalidationProvider(Provider):
+    """Old credentials may prove validity, never create, send or join."""
+    def __init__(self, memory):
+        self.memory = validate(memory, check_age=False)
+
+    def current(self):
+        return validate(self.memory, check_age=False)
+
+    def prepare(self, operation, business_body, metadata):
+        if operation not in ('identity', 'im_check'):
+            raise ValueError('会话续验只允许身份与单页只读核验')
+        if operation == 'im_check' and business_body != wire.field(1000, wire.field(1, 0) + wire.field(2, 1) + wire.field(3, 1)):
+            raise ValueError('会话续验只允许一次至多一条的会话查询')
+        return super().prepare(operation, business_body, metadata)
+
+    def ticket(self, *args, **kwargs):
+        raise ValueError('会话续验不能取得发送票据')
+
+
+def revalidate(sender, *, path=None, exchange=None, cancel=None):
+    """At most two read-only requests. Caller holds the service IM guard.
+
+    The private OS lock also prevents a CLI/bootstrap from replacing credentials
+    mid-check. Revoke old IM proof before IO; retain capture time and consumed
+    sequence even on failure. No browser fallback and no message/job mutations.
+    """
+    wire.numeric_uid(sender)
+    path = Path(path) if path else vault_path()
+    result = dict(status='session_unavailable', identity_verified=False,
+                  http_attempts=0, browser_started=False, can_send=False, live_verified=False)
+    def cancelled():
+        return cancel is not None and cancel.is_set()
+    if cancelled():
+        return dict(result, status='cancelled')
+    with runtime.data_lock(path.parent):
         try:
-            temporary.write_text(json.dumps(safe, ensure_ascii=False), encoding='utf-8')
-            os.replace(temporary, path)
-        finally:
-            if temporary.exists():
-                temporary.unlink()
+            data = load(path, check_age=False)
+        except Exception:
+            _write_status(result, path.with_name('status.json'))
+            return result
+        if data['sender_uid'] != sender:
+            return dict(result, status='account_mismatch')
+        data['im_verified'] = False
+        save(data, path)
+        _write_status(dict(result, status='revalidating'), path.with_name('status.json'))
+        provider = ReadOnlyRevalidationProvider(data)
+        inbox_matches = False
+        def request(operation, prepared):
+            nonlocal inbox_matches
+            if cancelled():
+                raise ValueError('会话续验已取消')
+            result['http_attempts'] += 1
+            response = (exchange or uid_transport.request)(operation, prepared)
+            if operation == 'im_check' and response[0] == 200 and 'protobuf' in response[1].lower():
+                sent, received = wire.decode(prepared['payload']), wire.decode(response[2])
+                inbox_matches = wire.one(received, 5, 0, 0) == wire.one(sent, 6, 0)
+            return response
+        identity = uid_transport.verify_identity({'sender_uid': sender}, provider=provider, exchange=request)
+        result.update({k: identity[k] for k in ('identity_reason', 'http_status', 'platform_code', 'transport_phase', 'transport_error') if k in identity})
+        result['status'] = 'identity_check_failed'
+        if identity['status'] == 'identity_verified' and not cancelled():
+            result['identity_verified'] = True
+            result.pop('platform_code', None)
+            checked = check_im(provider, sender, exchange=request)
+            result.update({k: checked[k] for k in ('status', 'http_status', 'platform_code', 'transport_phase', 'transport_error',
+                'sequence_matches', 'sender_matches', 'platform_message_ok', 'response_bytes', 'response_sha256') if k in checked})
+            result['inbox_matches'] = inbox_matches
+            if checked['status'] == 'im_read_verified' and not inbox_matches:
+                result['status'] = 'im_check_failed'
+        if cancelled():
+            result['status'] = 'cancelled'
+        data['im_verified'] = result['status'] == 'im_read_verified'
+        if data['im_verified']:
+            data['last_verified_at'] = max(time.time(), data['captured_at'])
+            result.update(sender_uid=sender, captured_at=data['captured_at'], last_verified_at=data['last_verified_at'])
+        save(data, path)
+        _write_status(result, path.with_name('status.json'))
+    return result
 
 
 def local_status(directory=None):

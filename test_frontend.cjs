@@ -29,6 +29,12 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.equal(run('monitorResultFilter'),'valuable');
   assert.equal(run('liveFilter'),'valuable');
   assert.equal(run('liveScope'),'all');
+  const preparationNotice=run(`emptyConversation([{id:26,status:'failed',content:'合成消息',uid_http:{phase:'identity',evidence:{submission_reserved:false}}}])`);
+  assert.match(preparationNotice,/账号认证未通过，消息尚未提交/);
+  assert.ok(!preparationNotice.includes('平台未接受'));
+  assert.match(run(`messageFailureDetail({status:'failed',uid_http:{phase:'send',evidence:{submission_reserved:true,platform_message:'仅关注的人可私信'}}})`),/仅关注的人可私信/);
+  assert.match(run(`messageFailureDetail({status:'unknown',uid_http:{phase:'identity',evidence:{submission_reserved:false}}})`),/尚未取得确定回执/);
+  assert.ok(!run(`messageFailureDetail({status:'failed',uid_http:{phase:'identity',evidence:{}}})`).includes('尚未提交'));
   run(`groupState={groups:[{id:1,name:'瓦搭子群',participants:156,enabled:1,member:1,status:'running',message_count:2,screened_count:1}],enabled:1,messages:[{id:1,uid:'12345',nickname:'<script>unsafe</script>',group_title:'瓦搭子群',raw_text:'<img src=x onerror=alert(1)>',filter_reason:'未通过初筛',category:'uncertain',analysis_method:'rules'},{id:2,uid:'12346',group_title:'瓦搭子群',raw_text:'找陪练',filter_reason:'',category:'buyer',analysis_method:'model',model_result:{status:'completed',result:{category:'buyer',reason:'合成结果'}},outreach:{status:'accepted',detail:'已提交'}}]};`);
   const groupHtml=run('groupPage()');checkHtml(groupHtml);
   assert.ok(groupHtml.includes('&lt;script&gt;unsafe'));

@@ -82,6 +82,9 @@ def control(body,enable,mode='live'):
         return dict(id=rid,enabled=enable)
 
 def tick():
+    import uid_session_renewal
+    if uid_session_renewal.pending():
+        return
     global ACTIVE
     with GUARD:
         if STOP.is_set() or ACTIVE is not None or uid_messaging.GUARD.locked():return None

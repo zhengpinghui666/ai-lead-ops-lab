@@ -16,6 +16,7 @@ PRIVATE_WORK_DETAIL = '平台明确返回该作品受作者隐私设置限制；
 WORK_RESTRICTION_DETAILS = {
     'author_secret': PRIVATE_WORK_DETAIL,
     'status_self_see': '平台明确返回该作品因权限或已被删除而无法观看；已停止跟踪该作品，其他公开作品继续采集',
+    'status_audit_self_see': '平台返回该作品当前仅作者可见（status_audit_self_see）；已停止跟踪该作品，其他公开作品继续采集',
 }
 
 

@@ -138,9 +138,14 @@ def candidate(c, policy):
 
 
 def tick():
+    import uid_session_renewal
+    if uid_session_renewal.pending():
+        return
     if STOP.is_set() or not GUARD.acquire(blocking=False):
         return
     try:
+        if uid_session_renewal.pending():
+            return
         with app.db() as c:
             policy, runtime = read(c, POLICY_KEY), read(c, RUNTIME_KEY)
             if not policy.get('enabled') or runtime.get('status') == 'attention':
