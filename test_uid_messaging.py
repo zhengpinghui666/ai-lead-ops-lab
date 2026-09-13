@@ -502,7 +502,7 @@ class QueueTests(unittest.TestCase):
         self.configure()
         state = channel.state()
         self.assertFalse(state['can_attempt'])
-        self.assertEqual(len(state['issues']), 3)
+        self.assertEqual(len(state['issues']), 2)  # Empty manual scope is valid and authorizes nobody.
         self.assertIn('提供器文件不存在', ' '.join(state['issues']))
         self.settings.update(sender_uid=SENDER, allowed_recipient_uids=[RECEIVER, RECEIVER], provider_file=str(self.provider))
         self.configure()

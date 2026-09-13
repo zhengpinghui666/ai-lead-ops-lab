@@ -9,6 +9,33 @@ SENDER = fixtures.SENDER
 
 
 class OutreachTests(unittest.TestCase):
+    def test_empty_manual_allowlist_does_not_allow_manual_messages_but_keeps_scoped_grants(self):
+        self.settings['allowed_recipient_uids']=[];self.configure()
+        with app.db() as c:c.execute("UPDATE people SET contact_basis='opt_in',contact_note='合成测试同意'")
+        with patch('uid_transport.send') as transport:
+            with self.assertRaisesRegex(ValueError,'授权发送范围'):
+                channel.send_one(self.job['id'])
+            transport.assert_not_called()
+        with patch('uid_transport.send',wraps=self.accepted) as transport:
+            outreach.tick()
+            transport.assert_called_once()
+
+    def test_replacement_account_preserves_prior_contact_exclusions_without_rewriting_receipts(self):
+        channel.send_one(self.job['id'],operator_authorization=self.grant,transport=self.accepted)
+        with app.db() as c:
+            c.execute("UPDATE uid_message_attempts SET sender_uid='99999999999'")
+            saved=tuple(c.execute('SELECT * FROM uid_message_attempts').fetchone())
+            policy=outreach.read(c,outreach.POLICY_KEY);policy['prior_sender_uids']=['99999999999']
+            policy['content']=c.execute('SELECT content FROM message_jobs WHERE id=?',(self.job['id'],)).fetchone()[0]
+            outreach.write(c,outreach.POLICY_KEY,policy)
+            self.assertIsNone(outreach.candidate(c,policy))
+            grant={**self.grant,'policy_revision':policy['revision']}
+            job,person,source=channel.snapshot(c,self.job['id'])
+            settings,_=channel.config(authorized_recipient=person['external_id'])
+            with self.assertRaisesRegex(ValueError,'换号前'):
+                channel.authorized_outreach(c,grant,job,person,settings)
+            self.assertEqual(saved,tuple(c.execute('SELECT * FROM uid_message_attempts').fetchone()))
+
     def test_non_domestic_source_blocks_saved_intent_and_old_grant(self):
         with app.db() as c:c.execute("UPDATE videos SET title='无畏契约亚服陪玩'")
         with patch('uid_transport.send') as transport:

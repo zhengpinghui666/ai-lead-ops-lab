@@ -121,6 +121,29 @@ class MonitorTests(unittest.TestCase):
             self.assertFalse(monitor.eligible(c,raw,semantic.state()['engine'],SENDER))
         self.assertEqual(self.add([msg()]),[])
 
+    def test_verified_matching_group_coverage_is_not_capped_at_five(self):
+        groups=[dict(GROUP,conversation_id=str(int(GROUP['conversation_id'])+i),conversation_short_id=str(int(GROUP['conversation_short_id'])+i),name=f'瓦搭子群{i}') for i in range(6)]
+        monitor.discover(reader=lambda *a,**kw:dict(groups=groups,has_more=False,evidence=[]))
+        with app.db() as c:
+            ids=[r[0] for r in c.execute('SELECT id FROM monitored_groups WHERE matched=1 AND member=1')]
+        self.assertEqual(len(ids),6)
+        for rid in ids:monitor.control(dict(id=rid,enabled=True))
+        self.assertEqual(monitor.state()['enabled'],6)
+
+    def test_idle_groups_slow_down_and_new_text_restores_fast_polling(self):
+        with app.db() as c:
+            group=dict(c.execute('SELECT * FROM monitored_groups WHERE id=1').fetchone())
+            self.assertEqual(monitor.read_cadence(c,group)[0],60)
+            group['last_read_at']=app.now()
+            for hours,delay in ((7,300),(25,900)):
+                c.execute('DELETE FROM group_reads')
+                c.execute("INSERT INTO group_reads(group_id,account_uid,operation,status,detail,created_at) VALUES(1,?,'messages','completed','',?)",(SENDER,monitor.stamp_after(-hours*3600)))
+                self.assertEqual(monitor.read_cadence(c,group)[0],delay)
+        self.add([msg(text='有人打不')])
+        with app.db() as c:
+            self.assertEqual(monitor.read_cadence(c,group)[0],60)
+            self.assertEqual(c.execute('SELECT member FROM monitored_groups WHERE id=1').fetchone()[0],1)
+
     def test_group_game_quote_requires_whole_alias_and_never_implies_buyer(self):
         source=dict(kind='group',text='有没有一起玩的啊',title='瓦搭子群',parent='')
         value=prediction(source,'uncertain','uncertain');value['game']=app.TARGET_GAME

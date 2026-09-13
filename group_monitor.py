@@ -116,8 +116,6 @@ def control(body,mode='live'):
         if not row:raise ValueError('当前账号群记录不存在')
         if body['enabled'] and (not row['member'] or not row['matched'] or not match(dict(row)) or not fresh(row['checked_at'])):
             raise ValueError('请先刷新群目录，仅能监控已加入且符合范围的群')
-        if body['enabled'] and c.execute('SELECT COUNT(*) FROM monitored_groups WHERE enabled=1 AND id<>? AND account_uid=?',(rid,account)).fetchone()[0]>=5:
-            raise ValueError('当前最多同时监控 5 个群')
         c.execute('UPDATE monitored_groups SET enabled=?,status=?,detail=?,next_run_at=? WHERE id=?',
                   (int(body['enabled']),'waiting' if body['enabled'] else 'paused',
                    '等待读取；群内不发言' if body['enabled'] else '用户暂停群监控',app.now(),rid))
@@ -155,6 +153,23 @@ def attach(c,uid,observed):
     pid=c.execute('SELECT id FROM people WHERE source_id=? AND external_id=?',(sid,uid)).fetchone()[0]
     c.execute('INSERT OR IGNORE INTO leads(person_id,updated_at) VALUES(?,?)',(pid,observed))
     return pid
+
+
+def read_cadence(c,group):
+    """Reduce idle-group polling after observed silence; membership is retained."""
+    if not group.get('last_read_at'):
+        return 60,'读取完成；群内不发言'
+    instant=stamp_after(0)
+    row=c.execute('''SELECT MAX(julianday(published_at)) AS last_text FROM group_messages
+        WHERE group_id=? AND uid<>? AND julianday(published_at)<=julianday(?)''',
+        (group['id'],group['account_uid'],instant)).fetchone()
+    first=c.execute("SELECT MIN(julianday(created_at)) FROM group_reads WHERE group_id=? AND operation='messages' AND status='completed'",(group['id'],)).fetchone()[0]
+    now=c.execute('SELECT julianday(?)',(instant,)).fetchone()[0]
+    anchors=[value for value in (row['last_text'],first) if value is not None]
+    quiet_hours=(now-max(anchors))*24 if anchors else 0
+    if quiet_hours>=24:return 900,'已观察超过一天没有新文字，15 分钟后再读；保留群身份'
+    if quiet_hours>=6:return 300,'已观察超过 6 小时没有新文字，5 分钟后再读；保留群身份'
+    return 60,'读取完成；群内不发言'
 
 
 def ingest(c,group,result):
@@ -228,10 +243,11 @@ def tick(*,reader=None,catalog_reader=None):
             done=not result['has_more'] or result['minimum_index'] is not None and int(result['minimum_index'])<=int(group['watermark']) or old_page
             with app.LOCKS['live'],app.db() as c:
                 ingest(c,group,result)
+                delay,detail=read_cadence(c,group) if done else (60,'正在补读群消息；保留进度')
                 c.execute('''UPDATE monitored_groups SET watermark=?,cursor=?,cycle_head=?,last_read_at=?,next_run_at=?,
                   status=?,detail=?,failures=0 WHERE id=?''',
                   (str(max(head,int(group['watermark']))) if done else group['watermark'],'0' if done else str(cursor),'0' if done else str(head),
-                   app.now(),stamp_after(60),'running' if done else 'catching_up','读取完成；群内不发言',group['id']))
+                   app.now(),stamp_after(delay),'running' if done else 'catching_up',detail,group['id']))
                 c.execute('INSERT INTO group_reads(group_id,account_uid,operation,status,detail,created_at) VALUES(?,?,?,?,?,?)',
                           (group['id'],group['account_uid'],'messages','completed',json.dumps({k:v for k,v in result.items() if k!='messages'}),app.now()))
                 group=dict(c.execute('SELECT * FROM monitored_groups WHERE id=?',(group['id'],)).fetchone())

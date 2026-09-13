@@ -51,14 +51,14 @@ def config(*, authorized_recipient=None):
         issues.append('缺少有效的发送方数字 UID 字符串')
     try:
         peers = value.get('allowed_recipient_uids', [])
-        if not isinstance(peers, list) or not 1 <= len(peers) <= 20:
+        if not isinstance(peers, list) or len(peers) > 20:
             raise ValueError()
         for peer in peers:
             uid_protocol.numeric_uid(peer)
         if value.get('sender_uid') in peers or len(set(peers)) != len(peers):
             raise ValueError()
     except (ValueError, TypeError):
-        issues.append('需配置 1–20 个不同于发送方、已同意测试的数字 UID 字符串')
+        issues.append('手动测试对象须为最多20个不同于发送方的数字 UID；空列表禁止手动测试发送')
     try:
         provider = value.get('provider_file', '')
         if not isinstance(provider, str) or not provider:
@@ -140,6 +140,8 @@ def authorized_outreach(c, authorization, job, person, settings):
         if (not policy.get('enabled') or policy.get('revision') != authorization['policy_revision']
                 or policy.get('sender_uid') != settings.get('sender_uid') or policy.get('content') != job['content']):
             raise ValueError('自动发送授权已关闭或变更；未发送')
+        if intent_outreach.previously_contacted(c,policy,person['external_id']):
+            raise ValueError('该对象已有换号前的联系记录；不会因换号重复发送')
     if (authorization['job_id'] != job['id']
             or authorization['sender_uid'] != settings.get('sender_uid')
             or authorization['recipient_uid'] != person['external_id']

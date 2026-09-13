@@ -17,6 +17,7 @@ import intent_outreach
 import uid_inbox_sync
 import uid_session_renewal
 import group_monitor
+import keyword_learning
 import live_monitor
 import live_tracking
 import live_workflow
@@ -423,6 +424,7 @@ def main():
             uid_inbox_sync.start_service()
             uid_session_renewal.start_service()
             group_monitor.start_service()
+            keyword_learning.start_service()
             intent_outreach.start_service()
             team_access.start_service(httpd.server_address[1])
             print(f'ClubOps 已启动：http://{HOST}:{httpd.server_address[1]}/', flush=True)
@@ -435,6 +437,7 @@ def main():
                 uid_session_renewal.shutdown()
                 uid_inbox_sync.shutdown()
                 group_monitor.shutdown()
+                keyword_learning.shutdown()
                 intent_outreach.shutdown()
                 live_tracking.shutdown()
                 live_monitor.shutdown()

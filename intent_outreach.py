@@ -108,14 +108,31 @@ def retry_candidate(c, policy):
     return due[0] if due else None
 
 
+def contact_accounts(policy):
+    """A replacement account carries the previous contact exclusions, not receipts."""
+    import uid_protocol
+    previous=policy.get('prior_sender_uids',[])
+    if not isinstance(previous,list) or len(previous)>100:raise ValueError('换号去重范围无效')
+    return list(dict.fromkeys(uid_protocol.numeric_uid(v) for v in [policy['sender_uid'],*previous]))
+
+
+def previously_contacted(c,policy,recipient):
+    accounts=[a for a in contact_accounts(policy) if a!=policy['sender_uid']]
+    if not accounts:return False
+    slots=','.join('?' for _ in accounts)
+    return bool(c.execute(f'SELECT 1 FROM uid_message_attempts WHERE sender_uid IN ({slots}) AND recipient_uid=? LIMIT 1',(*accounts,recipient)).fetchone())
+
+
 def candidate(c, policy):
     import monitoring
     import semantic
     import live_workflow
     engine = semantic.state()['engine']
-    eligible = """p.do_not_contact=0 AND p.external_id<>? AND NOT EXISTS
-        (SELECT 1 FROM uid_message_attempts a WHERE a.sender_uid=? AND a.recipient_uid=p.external_id)"""
-    args = (policy['sender_uid'], policy['sender_uid'])
+    accounts=contact_accounts(policy)
+    slots=','.join('?' for _ in accounts)
+    eligible = f"""p.do_not_contact=0 AND p.external_id NOT IN ({slots}) AND NOT EXISTS
+        (SELECT 1 FROM uid_message_attempts a WHERE a.sender_uid IN ({slots}) AND a.recipient_uid=p.external_id)"""
+    args = tuple(accounts+accounts)
     import group_monitor
     for raw in c.execute(group_monitor.SELECT + " JOIN people eligible_person ON eligible_person.id=m.person_id WHERE "
             + eligible.replace('p.', 'eligible_person.') + ' ORDER BY m.id DESC', args):
@@ -162,7 +179,7 @@ def tick():
             job,grant=retry['job'],retry['grant']
         else:
             job = app.mutate('draft', dict(lead_id=row['lead_id'],
-                request_id='intent-outreach-v1-'+row['recipient_uid'], content=policy['content']))
+                request_id='intent-outreach-v1-'+policy['sender_uid']+'-'+row['recipient_uid'], content=policy['content']))
             kind = row['evidence_type']
             grant = dict(job_id=job['id'], sender_uid=policy['sender_uid'], recipient_uid=row['recipient_uid'],
                 content_sha256=hashlib.sha256(policy['content'].encode()).hexdigest(),

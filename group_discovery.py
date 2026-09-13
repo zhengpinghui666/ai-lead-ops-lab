@@ -119,7 +119,7 @@ def reconcile(account,*,reader=None):
             c.execute("UPDATE public_group_attempts SET status='joined',updated_at=? WHERE account_uid=? AND group_id=?",(app.now(),account,row['group_id']))
             mark(c,account,row['group_id'],'joined')
             # A manually paused group stays paused even if an application is later approved.
-            if row['matched'] and row['status']=='available' and c.execute('SELECT COUNT(*) FROM monitored_groups WHERE account_uid=? AND enabled=1',(account,)).fetchone()[0]<5:
+            if row['matched'] and row['status']=='available':
                 c.execute("UPDATE monitored_groups SET enabled=1,status='waiting',detail='已确认加入，等待读取；群内不发言',next_run_at=? WHERE id=?",(app.now(),row['id']))
 
 
@@ -223,10 +223,8 @@ def run(account,*,client_factory=None,catalog_reader=None):
     with app.db() as c:
         cfg=config(c)
         if monitor.STOP.is_set() or not cfg.get('enabled') or cfg.get('account_uid')!=account:return
-        active=c.execute('SELECT COUNT(*) FROM monitored_groups WHERE account_uid=? AND enabled=1',(account,)).fetchone()[0]
-        pending=c.execute("SELECT COUNT(*) FROM public_group_attempts WHERE account_uid=? AND status IN ('pending','accepted','uncertain')",(account,)).fetchone()[0]
         today=c.execute('SELECT COUNT(*) FROM public_group_attempts WHERE account_uid=? AND created_at>=?',(account,monitor.stamp_after(-86400))).fetchone()[0]
-        if active+pending>=5 or today>=4:return
+        if today>=4:return
         candidate=c.execute('''SELECT g.* FROM public_group_candidates g WHERE g.account_uid=? AND g.matched=1 AND g.status='candidate'
           AND g.list_status IN (0,1,2,9,10) AND g.checked_at>=?
           AND NOT EXISTS(SELECT 1 FROM public_group_attempts a WHERE a.account_uid=g.account_uid AND a.group_id=g.group_id)

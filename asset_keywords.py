@@ -1,4 +1,4 @@
-"""Continuously observed vocabulary, activated only by an explicit review."""
+"""Continuously observed vocabulary, activated by an auditable human/model review."""
 import json
 import re
 import clubops as app
@@ -14,6 +14,11 @@ CREATE TABLE IF NOT EXISTS asset_keyword_sources (
 CREATE TABLE IF NOT EXISTS asset_keyword_reviews (
  id INTEGER PRIMARY KEY,term TEXT NOT NULL,revision INTEGER NOT NULL,status TEXT NOT NULL,kind TEXT NOT NULL,scope TEXT NOT NULL,
  reason TEXT NOT NULL,created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS keyword_model_reviews (
+ id INTEGER PRIMARY KEY,term TEXT NOT NULL,input_hash TEXT NOT NULL,engine TEXT NOT NULL,
+ status TEXT NOT NULL,input_json TEXT NOT NULL,result_json TEXT NOT NULL DEFAULT '{}',
+ created_at TEXT NOT NULL,finished_at TEXT,UNIQUE(term,input_hash)
 );'''
 
 
@@ -71,6 +76,11 @@ def state(mode='live',q='',scope='all',status='all'):
             if r['term'] not in rows:continue
             row=rows[r['term']];row['comment_source_count']=r['total'];row['current_comment_source_count']=r['usable']
             row['source_count']+=r['total'];row['last_seen_at']=max(row['last_seen_at'] or '',r['last_seen'])
+        for r in c.execute('''SELECT r.term,r.status,r.result_json FROM keyword_model_reviews r
+            WHERE r.id=(SELECT MAX(p.id) FROM keyword_model_reviews p WHERE p.term=r.term)'''):
+            if r['term'] in rows:
+                rows[r['term']]['model_review_status']=r['status']
+                rows[r['term']]['model_review_reason']=json.loads(r['result_json']).get('reason','')
         for term,kind in inherited.items():
             if term not in rows:rows[term]=dict(term=term,kind=kind,scope='asset',status='reference',reason='来自已评审参考资产',revision=0,source_count=0,last_seen_at=None)
             rows[term]['active']=True;rows[term]['active_kind']=kind
@@ -95,6 +105,7 @@ def detail(term,mode='live'):
             rule=json.loads(r['rule'])
             if term in rule['game_terms']+rule['service_terms']+rule.get('queries',[]):inherited.append(r['id'])
         return dict(**dict(row),reference_ids=inherited,
+            model_reviews=[dict(r) for r in c.execute('SELECT id,status,result_json,created_at,finished_at FROM keyword_model_reviews WHERE term=? ORDER BY id DESC LIMIT 3',(term,))],
             sources=[dict(r) for r in c.execute('SELECT asset_key,title,last_seen_at FROM asset_keyword_sources WHERE term=? ORDER BY last_seen_at DESC LIMIT 5',(term,))],
             comment_sources=[dict(r) for r in c.execute('''SELECT s.*,x.external_id AS comment_external_id,v.url AS work_url
               FROM comment_keyword_sources s JOIN comments x ON x.id=s.comment_id JOIN videos v ON v.id=x.video_id

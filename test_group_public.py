@@ -243,5 +243,13 @@ class DiscoveryTests(unittest.TestCase):
             for n in range(4):c.execute('INSERT INTO public_group_attempts VALUES(?,?,?,?,?,?)',(SENDER,str(9000+n),app.now(),app.now(),'rejected','{}'))
         self.tick();self.assertNotIn('join',self.calls)
 
+    def test_old_unconfirmed_applications_do_not_create_a_total_group_cap(self):
+        with app.db() as c:
+            for n in range(6):
+                c.execute('INSERT INTO public_group_attempts VALUES(?,?,?,?,?,?)',(SENDER,str(9000+n),monitor.stamp_after(-90000),monitor.stamp_after(-90000),'uncertain','{}'))
+        self.tick();self.assertEqual(self.calls.count('join'),1)
+        with app.db() as c:
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM public_group_attempts WHERE status='uncertain'").fetchone()[0],6)
+
 
 if __name__=='__main__':unittest.main()
