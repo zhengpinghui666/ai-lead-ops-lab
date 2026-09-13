@@ -82,6 +82,11 @@
       "bytes": 3784
     },
     {
+      "name": "INFORMATION_ARCHITECTURE.md",
+      "sha256": "66147f7021e0b4375548a48f7bc9dd43db363960793eea93104a7c19a2f847db",
+      "bytes": 5125
+    },
+    {
       "name": "IPHONE_FORWARDER.md",
       "sha256": "da9ab1509777a95e72b4b8483b91f756abb8c70f737555eea0094ed9a124e099",
       "bytes": 10158
@@ -143,8 +148,8 @@
     },
     {
       "name": "REQUIREMENTS_DISCUSSION.md",
-      "sha256": "05d0ac10a4d61033b3beff51d94767b98843cd50f9246f3db549601c37a61298",
-      "bytes": 5249
+      "sha256": "be438347f2c953ebff251d071fa59b43e70a095479e77588681d2c8aa77ae403",
+      "bytes": 6234
     },
     {
       "name": "RULES.md",
@@ -163,8 +168,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "31e8b80ceed1c1da867ffd993ca29f9662f461f7d00553a8b236bbf1754ec11a",
-      "bytes": 38478
+      "sha256": "7dc68c32aa7974e3d0cc54c383d52b60c083975fa85810b2210c0a5b9b769780",
+      "bytes": 40384
     },
     {
       "name": "UID_HTTP.md",
@@ -808,8 +813,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "39afdfaea2942fede979024959124977611fccad1eebf1ca6ae43a28eebfbc02",
-      "bytes": 8157
+      "sha256": "50be22601d16d5f5beacbfa4f06c47d3c5aefb703109af56d1e8a79bbedd1d0e",
+      "bytes": 8226
     },
     {
       "name": "start.ps1",
@@ -818,18 +823,18 @@
     },
     {
       "name": "static/app.css",
-      "sha256": "576b19a8b5c45a98649017d8580af1df887144f871155a10b41e9e7173cbcd27",
-      "bytes": 65606
+      "sha256": "2e39790b690572bc237c35b5100022f8eda4577bd47f76632f3218de84b55b38",
+      "bytes": 85007
     },
     {
       "name": "static/app.html",
-      "sha256": "f5244a8e9170be7b9850eed0ad5f639a16336543b85d650115e290a4f899b2be",
-      "bytes": 3193
+      "sha256": "bfeb57725414e3420157ff2188af21fa60fb4ede45eb1943a603dd55450df9cc",
+      "bytes": 3200
     },
     {
       "name": "static/app.js",
-      "sha256": "cea5e745625edefb59d3eb18488776729a91587eabed5c401dbcb645cafb0d64",
-      "bytes": 202665
+      "sha256": "2daa59792c1a36650fe91a3a8969bdb3dcb027fbeb6831fcde1382df27166dce",
+      "bytes": 212938
     },
     {
       "name": "static/clubops-iphone.js",
@@ -993,8 +998,8 @@
     },
     {
       "name": "test_frontend.cjs",
-      "sha256": "cdb974efec9a603c2948b6f2f5fb0532ae2351881be5e1ec0fd9bbca1430f8ae",
-      "bytes": 44738
+      "sha256": "24d8d33581afaebae1d6de0bc77579697deda47df1758d275f9ad69be2854ea9",
+      "bytes": 47046
     },
     {
       "name": "test_frontend_live_history.cjs",
@@ -1003,8 +1008,8 @@
     },
     {
       "name": "test_frontend_loading.cjs",
-      "sha256": "02e4ed07a3f43956d21449f77d774723f9f5ab919f5ae16258dde778cc1332b2",
-      "bytes": 2876
+      "sha256": "c407db9c3a00337e4616d96a7e631929a5c36a57224be21c4e52e1827f78dcc2",
+      "bytes": 2974
     },
     {
       "name": "test_frontend_monitor_history.cjs",
@@ -1012,9 +1017,14 @@
       "bytes": 11302
     },
     {
+      "name": "test_frontend_navigation.cjs",
+      "sha256": "c28c7822dc0066a8619c354d56442f7a4aad46b4e2e6bc4a3e5c75af7f1b2e3c",
+      "bytes": 3127
+    },
+    {
       "name": "test_frontend_poll.cjs",
-      "sha256": "23302e9d0763f2e5b6ed1b3357cb5ec6285df6f83aaab1ffd88d8946ae8b1f5c",
-      "bytes": 9173
+      "sha256": "3a82ed4cd8487c392230f6b4ea8150b538dc1a18d45784272bcb71bbc1fffa16",
+      "bytes": 9253
     },
     {
       "name": "test_game_scope.py",

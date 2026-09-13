@@ -33,10 +33,14 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   const groupHtml=run('groupPage()');checkHtml(groupHtml);
   assert.ok(groupHtml.includes('&lt;script&gt;unsafe'));
   assert.ok(!groupHtml.includes('<img src=x'));
-  assert.ok(groupHtml.includes('服务端接受 · 未确认送达'));
-  assert.ok(groupHtml.includes('公开群筛选'));
-  assert.ok(groupHtml.includes('data-action="group-discovery-toggle"'));
-  assert.ok(groupHtml.includes('data-enabled="true"'));
+  assert.ok(groupHtml.includes('data-action="group-message-detail"'));
+  assert.ok(!groupHtml.includes('公开群筛选'),'Group discovery belongs to source management');
+  const messageDetail=run('groupMessageDetail(groupState.messages[1])');checkHtml(messageDetail);
+  assert.ok(messageDetail.includes('服务端接受 · 未确认送达'));
+  run("section='sources'");const groupSources=run('groupPage()');run("section=''");
+  assert.ok(groupSources.includes('公开群筛选'));
+  assert.ok(groupSources.includes('data-action="group-discovery-toggle"'));
+  assert.ok(groupSources.includes('data-enabled="true"'));
   const publicHtml=run(`groupDiscoveryPanel({enabled:true,detail:'<script>bad</script>',candidates:[{status:'pending'},{status:'joined'}]})`);
   assert.ok(publicHtml.includes('1 个申请等待确认'));
   assert.ok(publicHtml.includes('暂停筛选'));
@@ -116,7 +120,7 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   run("monitorResultFilter='accepted'");assert.equal(run('monitorResultRows().length'),1);
   run("monitorResultFilter='filtered';monitorResultQuery='test'");assert.equal(run('monitorResultRows().length'),0);
   run("monitorResultFilter='all';monitorResultQuery='';monitorResultPage=99");run('monitorResultsPanel()');assert.equal(run('monitorResultPage'),1);
-  const fullMonitor=run('monitor()');assert.ok(fullMonitor.indexOf('id="monitor-result-panel"')<fullMonitor.indexOf("id='monitor-run-details'"));
+  const fullMonitor=run('monitor()');assert.ok(fullMonitor.includes('id="monitor-result-panel"'));assert.ok(!fullMonitor.includes('id="work-pool"'));assert.ok(!fullMonitor.includes('id="collection-panel"'));
   assert.ok(!run('transportField()').includes('value="http"'),'Old backend cannot silently accept an unsupported HTTP selection');
   run("mode='live';S.collector.http={installed:true,session:{ready:true},live_verified:false}");
   assert.match(run('transportField()'), /value="http" selected/);
@@ -138,14 +142,14 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.match(fs.readFileSync(path.join(__dirname,'static/app.js'),'utf8'), /mode='live'/);
   assert.match(appHtml,/<nav id="nav" aria-label="主导航">/);
   run("S=fixtures.demo;mode='demo';page='overview';render()");
-  assert.equal((element('#nav').innerHTML.match(/<a /g)||[]).length,8);
-  assert.match(element('#nav').innerHTML,/#groups/);
+  assert.equal((element('#nav').innerHTML.match(/<a /g)||[]).length,6);
+  assert.doesNotMatch(element('#nav').innerHTML,/#groups|#live/);assert.match(element('#nav').innerHTML,/采集监控/);
   assert.ok(!element('#nav').innerHTML.includes('#roster'));
   assert.ok(!element('#nav').innerHTML.includes('#recruit'));
   assert.match(element('#nav').innerHTML,/私信导流/);
   assert.ok(!element('#main').innerHTML.includes('可接单人员'));
-  assert.match(element('#main').innerHTML,/今日运营看板/);
-  assert.match(element('#main').innerHTML,/今日验证码确认通过率/);
+  assert.match(element('#main').innerHTML,/今日运营/);
+  assert.match(element('#main').innerHTML,/验证码确认通过率/);
   assert.match(element('#main').innerHTML,/未尝试/);
   assert.match(element('#main').innerHTML,/查看分时数值/);
   const demandDetail=run('leadDetail(S.leads[0])');
@@ -160,7 +164,7 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.match(element('#modal-content').innerHTML,/value="won" selected/);
   assert.match(element('#modal-content').innerHTML,/已成交（历史）/);
   run("page='analytics';render()");
-  assert.match(element('#main').innerHTML,/已确认导流/);
+  assert.match(element('#main').innerHTML,/人工确认导流/);
   assert.ok(!element('#main').innerHTML.includes('已记录成交'));
   run("page='overview';render()");
   assert.doesNotMatch(element('#main').innerHTML,/service-shortcuts|data-action="service-leads"/);
@@ -201,7 +205,7 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
     assert.equal(Object.hasOwn(posts.at(-1).body,'video_limit'),kind==='search');
     if(kind==='search')assert.equal(posts.at(-1).body.video_limit,2);
   }
-  run("S.collector={available:true,tasks:[{id:7,kind:'search',target:'<img src=x>',status:'needs_login',active:true,detail:'等待登录',videos:0,comments:0,inserted:0,duplicate:0,revised:0,skipped:0,video_limit:1,comment_limit:10,updated_at:null}]};page='monitor';render()");
+  run("S.collector={available:true,tasks:[{id:7,kind:'search',target:'<img src=x>',status:'needs_login',active:true,detail:'等待登录',videos:0,comments:0,inserted:0,duplicate:0,revised:0,skipped:0,video_limit:1,comment_limit:10,updated_at:null}]};page='monitor';section='runs';render()");
   assert.ok(element('#main').innerHTML.includes('已处理，继续读取'));
   assert.ok(element('#main').innerHTML.includes('Alt + Tab'));
   assert.ok(element('#main').innerHTML.includes('data-action="collector-cancel"'));
@@ -214,7 +218,7 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.ok(element('#main').innerHTML.includes('演示区不会访问抖音'));
   // Simplification must not remove operations, hide live tasks, or imply HTTP works.
   run("mode='live';S=fixtures.live;S.collector={available:true,tasks:[],plans:[]};page='monitor';render()");
-  assert.match(element('#main').innerHTML,/新建采集任务/);
+  assert.match(element('#main').innerHTML,/data-action="collector-new"/);
   assert.match(element('#main').innerHTML,/状态：本地依赖就绪/);
   assert.match(element('#main').innerHTML,/HTTP 不会自动回退到浏览器/);
   assert.ok(!element('#main').innerHTML.includes('可启动 · 按批执行'));
@@ -263,10 +267,11 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   run("S.collector.plans=[];page='roster';gameFilter='';render()");
   assert.equal((element('#main').innerHTML.match(/data-action="add-member"/g)||[]).length,1);
   assert.ok(!element('#main').innerHTML.includes('data-action="roster-game"'));
-  run("page='settings';render()");assert.ok(!element('#main').innerHTML.includes('关于这次重建'));
+  run("page='settings';section='connections';render()");assert.ok(!element('#main').innerHTML.includes('关于这次重建'));
   assert.match(element('#main').innerHTML,/纯 HTTP 采集/);
-  run("page='overview';render()");assert.ok(!element('#main').innerHTML.includes('开始搭建你的工作流'));
+  run("page='overview';section='metrics';render()");assert.ok(!element('#main').innerHTML.includes('开始搭建你的工作流'));
   assert.match(element('#main').innerHTML,/今日运行与承接/);
+  run("section=''");
   run("mode='live';S=fixtures.live;planDialog()");checkHtml(element('#modal-content').innerHTML);
   assert.ok(element('#modal-content').innerHTML.includes('保存为暂停计划'));
   assert.ok(element('#modal-content').innerHTML.includes('name="page_concurrency"'));
@@ -327,11 +332,23 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   await listeners.get('submit')({target:{id:'plan-form',getAttribute:()=> 'plan-form',failFormData:true,querySelector:s=>s==='.form-error'?errorNode:submitButton},preventDefault(){}});
   assert.equal(run('busy'),false);assert.equal(submitButton.disabled,false);
   assert.equal(errorNode.hidden,false);assert.match(errorNode.textContent,/synthetic form read failure/);
+  // Every secondary workspace remains renderable and uses its existing data view.
+  run("S=fixtures.demo;mode='demo';query='';gameFilter='';");
+  for(const [view,part] of [['overview','metrics'],['monitor','sources'],['monitor','runs'],['live','sources'],['live','runs'],['leads','detail/1'],['inbox','contact/1'],['inbox','contact/999999'],['analytics','quality'],['settings','connections']]){
+    run(`page='${view}';section='${part}';render();`);checkHtml(element('#main').innerHTML);
+  }
+  run("page='leads';section='';render();");assert.doesNotMatch(element('#main').innerHTML,/id="lead-detail"/);
+  run("page='overview';dailyTrend='demand';section='';render();");assert.equal((element('#main').innerHTML.match(/class="card daily-chart"/g)||[]).length,1);
+  for(const theme of ['collection','analysis','captcha']){run(`dailyTrend='${theme}';render();`);checkHtml(element('#main').innerHTML);}
+  run("dailyTrend='demand';section='';");
+  run("const analyticsBefore=S;S={...fixtures.demo,leads:[{id:101,source_kind:'uid_test'},{id:102,source_kind:'comment'}],jobs:[{lead_id:101,status:'replied'},{lead_id:102,status:'accepted'}]};page='analytics';");
+  const businessAnalytics=run('analytics()');assert.match(businessAnalytics,/<span>已回复<\/span><b>0<\/b>/);assert.match(businessAnalytics,/<span>服务端接受<\/span><b>1<\/b>/);run('S=analyticsBefore');
   // Personal HTTP rendering never treats configuration or server acceptance as delivery.
   run(`S=JSON.parse(JSON.stringify(fixtures.demo));mode='live';conversation=S.leads[0].id;S.leads[0].source_kind='uid_test';S.leads[0].contact_basis='opt_in';S.leads[0].contact_note='synthetic consent';S.leads[0].do_not_contact=false;S.messages=[];S.jobs=[{id:98,lead_id:conversation,content:'offline only',status:'draft'}];S.uid_messaging={can_attempt:false,issues:['<script>not configured']};`);
   run("page='inbox';S.messaging_test={status:'not_configured',issues:['legacy OpenID config'],sender:'test',recipient:'test'}");
   let httpHtml=run('inbox()');checkHtml(httpHtml);
-  assert.match(httpHtml,/data-action="uid-settings"/);assert.match(httpHtml,/data-action="uid-http-send"[^>]*disabled/);
+  assert.match(httpHtml,/data-action="uid-settings"/);assert.doesNotMatch(httpHtml,/data-action="uid-http-send"/);
+  run("section='contact/'+conversation");const blockedDetail=run('inbox()');assert.match(blockedDetail,/data-action="uid-http-send"[^>]*disabled/);run("section=''");
   run('uidSettingsDialog()');assert.match(element('#modal-content').innerHTML,/个人号 HTTP · 数字 UID/);
   assert.match(element('#modal-content').innerHTML,/data-action="uid-http-probe"[^>]*disabled/);
   assert.ok(!httpHtml.includes('<script>'));assert.ok(!httpHtml.includes('HTTP 单条测试'));
@@ -339,7 +356,7 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.match(element('#modal-content').innerHTML,/name="uid" type="text"[^>]*inputmode="numeric"[^>]*required/);
   assert.ok(!element('#modal-content').innerHTML.includes('type="number"'),'UID must retain exact digits as text');
   run('S.uid_messaging.can_attempt=true');httpHtml=run('inbox()');
-  assert.match(httpHtml,/配置就绪 · 未验收/);assert.ok(!/data-action="uid-http-send"[^>]*disabled/.test(httpHtml));
+  assert.match(httpHtml,/配置就绪 · 未验收/);run("section='contact/'+conversation");const readyDetail=run('inbox()');assert.match(readyDetail,/data-action="uid-http-send"/);assert.doesNotMatch(readyDetail,/data-action="uid-http-send"[^>]*disabled/);run("section=''");
   assert.ok(!/data-action="uid-http-probe"[^>]*disabled/.test(httpHtml));
   run("const beforeProbeApi=api;let probeCalls=[];api=async(action,body)=>{probeCalls.push({action,body});return {status:'identity_verified',detail:'<script>synthetic identity only',checked_at:'2026-09-10T00:00:00Z'};};const probeButton={dataset:{action:'uid-http-probe'}};draftText='keep my draft';");
   await run('handleAction(probeButton)');
@@ -398,16 +415,17 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.equal(run('semCalls[0].a'),'semantic-analyze');assert.equal(run('semCalls[0].b.id'),12);
   assert.equal(run("Object.keys(semCalls[0].b).sort().join(',')"),'evidence_type,id,input_hash,request_id');
   run('api=semOldApi;load=semOldLoad;S.semantic={can_analyze:false};');
+  run("section='contact/'+conversation");
   for(const terminal of ['submitting','unknown','accepted','failed']){
     run(`S.jobs[0].status='${terminal}';S.jobs[0].uid_http={phase:'send',evidence:{server_message_id:'10000000000000001'}}`);
     httpHtml=run('inbox()');assert.ok(!httpHtml.includes('data-action="uid-http-send"'));assert.match(httpHtml,/10000000000000001/);
   }
   run("S.jobs[0].status='draft';S.leads[0].do_not_contact=true");assert.match(run('inbox()'),/data-action="uid-http-send"[^>]*disabled/);
-  run(`S=fixtures.live;mode='live';page='live';liveFilter='all';liveScope='current';S.collector={tasks:[],live_monitor:{config:{room_url:'https://live.douyin.com/12345',duration_seconds:60,max_messages:100,include_keywords:'陪练',exclude_keywords:''},sessions:[],current:null,rows:[{id:1,raw_text:'找陪练<script>',nickname:'<img>',uid:'10000000000000002',message_id:null,published_at:null,filter_reason:'',category:'uncertain',analysis_method:'rules',reason:'synthetic',facts:{},include_matches:[],exclude_matches:[]}],events:[],active_id:null}};render();`);
+  run(`section='';S=fixtures.live;mode='live';page='live';liveFilter='all';liveScope='current';S.collector={tasks:[],live_monitor:{config:{room_url:'https://live.douyin.com/12345',duration_seconds:60,max_messages:100,include_keywords:'陪练',exclude_keywords:''},sessions:[],current:null,rows:[{id:1,raw_text:'找陪练<script>',nickname:'<img>',uid:'10000000000000002',message_id:null,published_at:null,filter_reason:'',category:'uncertain',analysis_method:'rules',reason:'synthetic',facts:{},include_matches:[],exclude_matches:[]}],events:[],active_id:null}};render();`);
   checkHtml(element('#main').innerHTML);assert.ok(!element('#main').innerHTML.includes('<script>'));assert.ok(!element('#main').innerHTML.includes('<img>'));
-  assert.match(element('#main').innerHTML,/不能回看未采集的历史弹幕/);assert.match(element('#main').innerHTML,/10000000000000002/);
-  assert.match(run('liveTrackingPanel()'),/开启24h监控|直播间库/);
-  assert.ok(element('#main').innerHTML.indexOf('id="live-tracking"')<element('#main').innerHTML.indexOf("id='live-monitor-controls'"),'Ongoing monitoring is visible before folded run details');
+  assert.match(run('liveStatus()'),/不能回看未采集的历史弹幕/);assert.match(element('#main').innerHTML,/10000000000000002/);
+  run("section='sources'");assert.match(run('liveTrackingPanel()'),/开启24h监控|直播间库/);run("section=''");
+  assert.match(element('#main').innerHTML,/id="live-tracking"/);assert.doesNotMatch(element('#main').innerHTML,/id="live-status"/);
   run("S.collector.live_monitor.library={counts:{total:1},rows:[{room_url:'https://live.douyin.com/12345',title:'<script>room',enabled:1,saved_messages:2}]};liveLibraryDialog();");
   assert.ok(!element('#modal-content').innerHTML.includes('<script>'));
   assert.match(element('#modal-content').innerHTML,/当前没有符合筛选/);run("liveLibraryFilter='all';liveLibraryDialog()");
