@@ -233,9 +233,9 @@ def start(body, mode='live', *, resume_from=None, lookback_hours=None, include_k
     return {'id': task_id, 'status': 'queued'}
 
 
-def resume(task_id, request_id, mode='live', *, recovery_plan=None):
+def resume(task_id, request_id, mode='live', *, recovery_plan=None, discovery_job=None):
     # Checkpoints are loaded from our DB, never accepted from the HTTP payload.
-    return start({'kind': 'search', 'target': '断点恢复', 'request_id': request_id}, mode, resume_from=int(task_id), recovery_plan=recovery_plan)
+    return start({'kind': 'search', 'target': '断点恢复', 'request_id': request_id}, mode, resume_from=int(task_id), recovery_plan=recovery_plan, discovery_job=discovery_job)
 
 
 def allowed_video_ids(connection, task):

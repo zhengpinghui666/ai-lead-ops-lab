@@ -89,8 +89,9 @@ def state(mode='live'):
             import collector
             with app.db() as connection:
                 candidates = [dict(row) for row in connection.execute("""SELECT id,kind,target,status,finished_at
-                    FROM collection_tasks WHERE transport='http' AND finished_at IS NOT NULL
-                    AND status IN ('needs_login','session_expired','identity_failed') ORDER BY id DESC LIMIT 20""")]
+                    FROM collection_tasks WHERE finished_at IS NOT NULL AND
+                    ((transport='http' AND status IN ('needs_login','session_expired','identity_failed'))
+                     OR (transport='local_browser' AND status='needs_login')) ORDER BY id DESC LIMIT 20""")]
             result = {'available': True, 'active': ACTIVE is not None, 'config': config(),
                       'relay': login_relay.state(), 'checks': checks(),
                       'session': sessions.status(app.DATA_DIR), 'history': _history()[-10:],
@@ -158,8 +159,10 @@ def _task(task_id):
         raise ValueError('采集任务 ID 无效')
     with app.db() as connection:
         row = connection.execute('SELECT * FROM collection_tasks WHERE id=?', (task_id,)).fetchone()
-    if not row or not row['finished_at'] or task_id in collector.ACTIVE or row['transport'] != 'http' or row['status'] not in LOGIN_FAILURES:
-        raise ValueError('只恢复因未登录或身份失效结束的 HTTP 采集任务')
+    eligible = row and ((row['transport'] == 'http' and row['status'] in LOGIN_FAILURES)
+                        or (row['transport'] == 'local_browser' and row['status'] == 'needs_login'))
+    if not eligible or not row['finished_at'] or task_id in collector.ACTIVE:
+        raise ValueError('只恢复因未登录或身份失效结束的 HTTP 任务，或明确要求登录的浏览器采集任务')
     return dict(row)
 
 
@@ -283,15 +286,17 @@ def _resume_task(control):
     task = control['task']
     request_id = 'LOGIN-RECOVERY-' + control['public']['id']
     with app.db() as connection:
-        pending = connection.execute("SELECT 1 FROM collection_checkpoints WHERE task_id=? AND status!='done' LIMIT 1", (task['id'],)).fetchone()
+        pending = connection.execute("SELECT 1 FROM collection_checkpoints WHERE task_id=? AND status NOT IN ('done','unavailable') LIMIT 1", (task['id'],)).fetchone()
+        import discovery_tracking
+        discovery_job = discovery_tracking.worker_config(connection, task['id'])
     if pending:
-        return collector.resume(task['id'], request_id, recovery_plan=control.get('plan_context'))
+        return collector.resume(task['id'], request_id, recovery_plan=control.get('plan_context'), discovery_job=discovery_job)
     # Preserve the original absolute time cutoff, even if login took minutes.
     body = {key: task[key] for key in ('kind', 'target', 'video_limit', 'comment_limit', 'page_concurrency', 'transport')}
     body.update(interactive=bool(task['interactive']), request_id=request_id)
     return collector.start(body, lookback_hours=task['lookback_hours'], include_keywords=task['include_keywords'],
                            exclude_keywords=task['exclude_keywords'], recovery_since=task['comment_since'],
-                           recovery_plan=control.get('plan_context'))
+                           recovery_plan=control.get('plan_context'), discovery_job=discovery_job)
 
 
 def _run(control):

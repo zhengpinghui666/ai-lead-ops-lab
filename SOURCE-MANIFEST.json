@@ -103,8 +103,8 @@
     },
     {
       "name": "LOGIN_RECOVERY.md",
-      "sha256": "792352bc191e90c0e1b98249f6baa4f62a048692308980bf82a90a15b1a1cdfd",
-      "bytes": 15975
+      "sha256": "0e9086b3ca47a02620d0bcf27a1b0b2f8e6cc97fc78a618c9e9b83712a86368a",
+      "bytes": 17045
     },
     {
       "name": "MODEL_API.md",
@@ -148,8 +148,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "d095490d611146e075974278d70c7f018cdae777778b784bf1d552a1e54c3413",
-      "bytes": 23735
+      "sha256": "4e54904a9355fc820d44db3f0d8684ad49a5c4f23436a813d89b10deda4ed3de",
+      "bytes": 25943
     },
     {
       "name": "UID_HTTP.md",
@@ -268,8 +268,8 @@
     },
     {
       "name": "collector.py",
-      "sha256": "7f77439192395f65bf9c5fd1d5419fdef06f1a423d36447e96ca1caca9512858",
-      "bytes": 40890
+      "sha256": "ec80cd53e8e2f8ddb841abb3c73184f3c0944175367e42677b532e9f43f97bbf",
+      "bytes": 40939
     },
     {
       "name": "collector_http.py",
@@ -538,8 +538,8 @@
     },
     {
       "name": "login_recovery.py",
-      "sha256": "7773a45f50120606db8ae3158f0a37443fd7b12fc1b7d82a1d60c0e1bfb6ccfe",
-      "bytes": 24560
+      "sha256": "d90ed04c16f70dbec97563ceeee62767d99de761c4e872aa007b2765a871ba43",
+      "bytes": 25004
     },
     {
       "name": "login_relay.py",
@@ -1043,8 +1043,8 @@
     },
     {
       "name": "test_login_recovery.py",
-      "sha256": "4c1a716f9d59acf5fc99d4c3991f0093cf52dfb22c040f45c49f52b3445e8c87",
-      "bytes": 34214
+      "sha256": "1ced77f1ba1d111dcc97f44226f1e42fd1ad23b72d6ee0dff8d19a4382c923da",
+      "bytes": 38699
     },
     {
       "name": "test_login_recovery_http.py",

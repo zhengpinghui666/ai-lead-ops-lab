@@ -427,6 +427,41 @@ class LoginRecoveryTests(unittest.TestCase):
             recovery.start({'task_id': task_id})
         self.assertFalse(recovery.busy())
 
+    def test_browser_login_candidate_preserves_frozen_discovery_and_time_scope(self):
+        import discovery_tracking
+        job={'channel':'search','key':'synthetic-search','kind':'search','target':'无畏契约合成搜索','transport':'local_browser','policy':{'search_interval':300}}
+        for checkpoint in (False, True):
+            with self.subTest(checkpoint=checkpoint), patch.object(threading.Thread, 'start'):
+                task=collector.start({'kind':'search','target':job['target'],'transport':'local_browser',
+                    'request_id':'browser-login-'+str(checkpoint),'video_limit':2,'comment_limit':7},
+                    lookback_hours=1,include_keywords='陪玩',exclude_keywords='招募',
+                    recovery_since='2026-09-01T00:00:00+00:00',discovery_job=job)['id']
+                if checkpoint:
+                    collector.checkpoint(task,{'type':'targets','records':[
+                        {'video_id':'7600000000000000001','video_title':'synthetic'},
+                        {'video_id':'7600000000000000002','video_title':'synthetic'}]})
+                    collector.checkpoint(task,{'type':'checkpoint','video_id':'7600000000000000001','status':'unavailable'})
+                collector.update(task,status='needs_login',finished_at=app.now());collector.ACTIVE.clear()
+                self.assertIn(task,[r['id'] for r in recovery.state()['resume_candidates']])
+                recovery.start({'task_id':task});control=recovery.ACTIVE;recovery.ACTIVE=None
+                child=recovery._resume_task(control)['id']
+                with app.db() as c:
+                    before=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+                    after=c.execute('SELECT * FROM collection_tasks WHERE id=?',(child,)).fetchone()
+                    for key in ('kind','target','transport','comment_limit','comment_since','lookback_hours','include_keywords','exclude_keywords'):
+                        self.assertEqual(before[key],after[key],key)
+                    self.assertEqual(discovery_tracking.worker_config(c,child),job)
+                    self.assertEqual(after['video_limit'],1 if checkpoint else 2)
+                collector.ACTIVE.clear()
+                collector.update(child,status='completed',finished_at=app.now())
+
+    def test_browser_non_login_failures_cannot_trigger_recovery(self):
+        for status in ('needs_verification','access_denied','rate_limited','schema_changed','identity_failed'):
+            task=self.failed_task(status,'browser-gate-'+status)
+            with app.db() as c:c.execute("UPDATE collection_tasks SET transport='local_browser' WHERE id=?",(task,))
+            with self.assertRaisesRegex(ValueError,'只恢复'):recovery.start({'task_id':task})
+            self.assertNotIn(task,[r['id'] for r in recovery.state()['resume_candidates']])
+
     def test_resume_preserves_original_scope_cutoff_and_is_idempotent(self):
         task_id = self.failed_task()
         with patch.object(threading.Thread, 'start'):
@@ -533,6 +568,29 @@ class LoginRecoveryTests(unittest.TestCase):
                 for key in ('target','transport','video_limit','comment_limit','include_keywords','exclude_keywords'):
                     self.assertEqual(next_task[key], old[key], key)
                 self.assertEqual(monitoring.state()['run_count'], 2)
+
+    def test_browser_monitor_failure_automatically_recovers_and_rejoins_plan(self):
+        body={'kind':'search','target':'无畏契约合成搜索','transport':'local_browser',
+              'video_limit':2,'comment_limit':7,'interval_seconds':600,'lookback_hours':1}
+        with patch.object(threading.Thread,'start'):
+            baseline=collector.start(dict(body,request_id='browser-baseline'))['id']
+        collector.update(baseline,status='completed',comments=1,finished_at=app.now());collector.ACTIVE.clear()
+        monitoring.save(body);monitoring.command('start')
+        with patch.object(threading.Thread,'start'):task=scheduler.tick()
+        collector.update(task,status='needs_login',finished_at=app.now());collector.ACTIVE.clear()
+        recovery._write(app.DATA_DIR/recovery.CONFIG,{**recovery.DEFAULTS,'auto_recover':True})
+        with patch.object(threading.Thread,'start'):recovery.after_collection(task)
+        control=recovery.ACTIVE
+        self.assertIsNotNone(control)
+        self.assertEqual(control['task']['transport'],'local_browser')
+        self.remote.call.side_effect=lambda route,body=None:self.reply(control,route,body)
+        self.run_collection_recovery(control)
+        child=control['public']['resumed_task_id']
+        plan=monitoring.state()
+        self.assertEqual((plan['status'],plan['last_task_id'],plan['run_count']),('running',child,1))
+        with app.db() as c:
+            resumed=c.execute('SELECT transport,target FROM collection_tasks WHERE id=?',(child,)).fetchone()
+            self.assertEqual(tuple(resumed),(body['transport'],body['target']))
 
     def test_finite_plan_recovery_does_not_spend_or_expand_run_budget(self):
         plan_id, task_id, control = self.monitor_failure(finite=True)
