@@ -168,8 +168,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "94886c0f00429c0dc09c271e0d5139bcde35bdafcf1f7b48c88b8bf6d74ebe90",
-      "bytes": 80957
+      "sha256": "139c409e611a6441714a69c44bab5a8b9f40c20bcc5b85c5f221c68f91232458",
+      "bytes": 82676
     },
     {
       "name": "UID_HTTP.md",
@@ -1023,8 +1023,8 @@
     },
     {
       "name": "test_discovery_tracking.py",
-      "sha256": "a04a01a449c80b2548c122f003ee06ba8684627cca78d99af5d5bf7b59bf9993",
-      "bytes": 48072
+      "sha256": "1e5f627983655fbd708d0c43e41561a7dd8a5e74e1c264d2e489c5f20c95b9bd",
+      "bytes": 49431
     },
     {
       "name": "test_freshness_audit.py",
@@ -1348,8 +1348,8 @@
     },
     {
       "name": "test_video_discovery.py",
-      "sha256": "f1a00915903b4d5d16a27022508f413f1d81eda393b3e242db5edf82c23a2659",
-      "bytes": 26630
+      "sha256": "42fc9ab13bf1a600221dfc9f1cb621b0968850990251eb9ca4776889cf78cee8",
+      "bytes": 27876
     },
     {
       "name": "test_video_metadata.py",
@@ -1443,8 +1443,8 @@
     },
     {
       "name": "video_discovery.py",
-      "sha256": "2af1f1c2ec83d7ea53f5ceec0f836ce15c046923196c1f100d37ae2ed8af9ac2",
-      "bytes": 11557
+      "sha256": "9e1876c779c03b1162c7e5a7009f6de698c6961723c93f13be6f376e0eed0687",
+      "bytes": 11720
     },
     {
       "name": "video_metadata.py",

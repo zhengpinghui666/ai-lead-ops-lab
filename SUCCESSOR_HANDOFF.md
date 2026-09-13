@@ -1,5 +1,13 @@
 # ClubOps 接续说明
 
+## 2026-09-14 05点：单条已删除作品造成全局暂停
+
+健康记录comments:attention/2151，10群正常，旧live457不变。2151 HTTP详情明确filter_reason=status_deleted、详情为空，旧作品限制枚举未包含该值；随后同作品评论comments:null且缺total/cursor，被正确视为未知格式，却导致全批停止。不能将未知空评论认作零评论。
+
+video_discovery.WORK_RESTRICTION_DETAILS加入实测status_deleted，只在status_code为整数0、无验证信号、filter_detail.aweme_id精确匹配请求作品、详情为空时分类为单作品不可访问；复用已有unavailable断点、停止跟踪与继续其他作品流程。新增错误ID/缺ID/未知理由/验证/非零或布尔状态、混合公开作品继续、历史失败和重新发现不重启跟踪的测试。修复前290源码文件回退在artifacts/deleted-work-20260914/source-before.zip；测试、正常维护和实际原断点恢复结果以此目录后续验收为准。
+
+05:07已正常加载并恢复：184项相关测试通过，保存双库、正常停止270196并启动原Windows任务，跨重启业务计数/quick_check一致。原2151断点恢复为2152 completed：7678578000506520454再次取得HTTP200/status_code0/status_deleted及精确ID限制证据，断点unavailable且该作品enabled=0；另两作品done，35条评论均过旧正常过滤。2151旧schema_changed保留。开启原评论计划后2153自动completed、下一轮时间已安排。原10群恢复后又自然加入31，当前11群running/failures0；旧直播457及旧收件暂停未动。证据、回退和最终源码备份信息在artifacts/deleted-work-20260914；没有巡检测试私信或历史重发。
+
 ## 2026-09-14 04点：9群目录超限修复
 
 当前账号已从3扩到9个监控群（18/20/23/24/25/26/27/28/29），但04点健康记录全部retrying。已核验身份/IM有效，单条目录成功，默认20条目录确定抛TransportError response_exceeds_bound（HTTP200正文超262144bytes），不是账号掉线。评论2128仍运行，旧直播457保持原限流暂停。

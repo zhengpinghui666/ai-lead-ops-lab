@@ -100,6 +100,21 @@ class DiscoveryTrackingTests(unittest.TestCase):
             self.assertEqual(c.execute('SELECT enabled FROM discovery_works WHERE video_id=?',(work(1)['video_id'],)).fetchone()[0],1)
             self.assertEqual(c.execute('SELECT COUNT(*) FROM collection_observations WHERE task_id=?',(self.base,)).fetchone()[0],2)
 
+    def test_deleted_work_preserves_failure_and_is_not_reenabled_by_rediscovery(self):
+        self.save();self.record([work(),work(1)])
+        old=col.start(dict(kind='video',target=VID,transport='http',request_id='deleted-old'))['id']
+        with app.db() as c:c.execute("UPDATE collection_tasks SET status='schema_changed',finished_at=? WHERE id=?",(app.now(),old))
+        col.ACTIVE.clear()  # The synthetic worker thread is deliberately not started.
+        task=col.start(dict(kind='video',target=VID,transport='http',request_id='deleted-recheck'))['id']
+        col.checkpoint(task,dict(type='targets',records=[work()]))
+        col.checkpoint(task,dict(type='checkpoint',video_id=VID,status='unavailable',reason='status_deleted',detail='平台明确返回作品已删除'))
+        self.record([work()])
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT enabled FROM discovery_works WHERE video_id=?',(VID,)).fetchone()[0],0)
+            self.assertEqual(c.execute('SELECT enabled FROM discovery_works WHERE video_id=?',(work(1)['video_id'],)).fetchone()[0],1)
+            self.assertEqual(c.execute('SELECT status FROM collection_tasks WHERE id=?',(old,)).fetchone()[0],'schema_changed')
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM collection_observations WHERE task_id=?',(self.base,)).fetchone()[0],2)
+
     def test_existing_author_samples_gain_scope_without_losing_pause_or_provenance(self):
         row=work(3,related=False);self.record([row])
         with app.db() as c:
