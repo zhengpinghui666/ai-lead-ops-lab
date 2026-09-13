@@ -103,9 +103,14 @@ def state(mode='live'):
         candidates = candidate_pool.state(c)
         tasks = [dict(r) for r in c.execute('SELECT * FROM collection_tasks ORDER BY id DESC LIMIT 30')]
         source = c.execute("SELECT * FROM sources WHERE kind='browser' ORDER BY id LIMIT 1").fetchone()
+        verification_by_task = {}
+        if tasks:
+            ids = [task['id'] for task in tasks]
+            placeholders = ','.join('?' for _ in ids)
+            for row in c.execute(f"SELECT task_id,snapshot FROM collection_diagnostics WHERE task_id IN ({placeholders}) AND stage='captcha_workflow' ORDER BY id", ids):
+                verification_by_task.setdefault(row['task_id'], []).append(json.loads(row['snapshot'])['verification'])
         for task in tasks:
-            verification = [json.loads(r[0])['verification'] for r in c.execute(
-                "SELECT snapshot FROM collection_diagnostics WHERE task_id=? AND stage='captcha_workflow' ORDER BY id", (task['id'],))]
+            verification = verification_by_task.get(task['id'], [])
             task['verification'] = verification[-1] if verification else None
             task['verification_counts'] = {
                 # submissions is a cumulative per-batch counter. A read-only

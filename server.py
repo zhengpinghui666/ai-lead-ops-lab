@@ -37,13 +37,14 @@ PORT = int(os.getenv('LEADOPS_PORT', '8765'))
 CSRF = secrets.token_urlsafe(32)
 
 
-def collection_state(mode):
+def collection_state(mode, view=None):
     import monitor_board
     result = collector.state(mode)
     result['plans'] = collection_scheduler.state(mode)
     result['monitor'] = monitoring.state(mode)
     result['results'] = monitoring.results(mode)
-    result['board'] = monitor_board.build(result['tasks'],result['plans'],mode)
+    if view in (None, 'monitor', 'monitor-settings'):
+        result['board'] = monitor_board.build(result['tasks'],result['plans'],mode)
     result['live_monitor'] = live_monitor.state(mode)
     result['model_queue'] = semantic_queue.state(mode)
     result['login_recovery'] = login_recovery.state(mode)
@@ -51,6 +52,32 @@ def collection_state(mode):
     result['discovery'] = discovery_tracking.state(mode)
     result['inbox_sync'] = uid_inbox_sync.state(mode)
     result['intent_outreach'] = intent_outreach.state(mode)
+    return result
+
+
+VIEWS = {'overview','monitor','monitor-settings','live','groups','leads','inbox','analytics','settings','recruit','roster'}
+
+
+def workbench_state(mode, view=None):
+    if view is not None and view not in VIEWS:
+        raise ValueError('页面不存在')
+    light = view in {'monitor','monitor-settings','live','groups','settings'} and mode == 'live'
+    result = clubops.shell_state(mode) if light else clubops.state(mode)
+    if view == 'overview':
+        result['leads'] = sorted((r for r in result['leads'] if r['category']=='buyer' and r['game']==clubops.TARGET_GAME),
+            key=lambda r:r['latest'].get('published_at') or '', reverse=True)[:5]
+        result.update(comments=[],videos=[],live_messages=[],members=[],messages=[],jobs=[])
+    elif view is not None:
+        # The full live archive is separately paginated. The representative
+        # source in each lead remains intact, including its analysis evidence.
+        result['live_messages'] = []
+    result['messaging_test'] = messaging_http.state(clubops.DATA_DIR, mode)
+    result['uid_messaging'] = uid_messaging.state(mode)
+    result['csrf'] = CSRF
+    result['collector'] = collection_state(mode, view)
+    result['connections']['collector'] = 'observed' if result['collector']['last_received'] else 'unverified'
+    if view is not None:
+        result['view'] = view
     return result
 
 
@@ -107,7 +134,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/login-recovery':
                 return self.respond({**login_recovery.state(self.mode()), 'csrf': CSRF})
             if path == '/api/collector':
-                return self.respond(collection_state(self.mode()))
+                view = parse_qs(urlparse(self.path).query).get('view', [None])[0]
+                if view is not None and view not in VIEWS:
+                    raise ValueError('页面不存在')
+                return self.respond(collection_state(self.mode(), view))
             if path == '/api/groups':
                 query=parse_qs(urlparse(self.path).query)
                 return self.respond(group_monitor.state(self.mode(),int(query.get('before',['0'])[0])))
@@ -137,13 +167,8 @@ class Handler(BaseHTTPRequestHandler):
                     d['snapshot'] = json.loads(d['snapshot'])
                 return self.respond({'observations': rows, 'diagnostics': diagnostics})
             if path == '/api/state':
-                result = clubops.state(self.mode())
-                result['messaging_test'] = messaging_http.state(clubops.DATA_DIR, result['mode'])
-                result['uid_messaging'] = uid_messaging.state(result['mode'])
-                result['csrf'] = CSRF
-                result['collector'] = collection_state(result['mode'])
-                result['connections']['collector'] = 'observed' if result['collector']['last_received'] else 'unverified'
-                return self.respond(result)
+                view = parse_qs(urlparse(self.path).query).get('view', [None])[0]
+                return self.respond(workbench_state(self.mode(), view))
             if path == '/api/export':
                 result = clubops.state(self.mode())
                 return self.respond({'exported_at': clubops.now(), 'mode': result['mode'], 'comments': result['comments'], 'leads': result['leads']})

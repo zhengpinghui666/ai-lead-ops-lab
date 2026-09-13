@@ -34,7 +34,13 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.ok(groupHtml.includes('&lt;script&gt;unsafe'));
   assert.ok(!groupHtml.includes('<img src=x'));
   assert.ok(groupHtml.includes('服务端接受 · 未确认送达'));
-  assert.ok(groupHtml.includes('公开群搜索、自动加群尚未接通'));
+  assert.ok(groupHtml.includes('公开群筛选'));
+  assert.ok(groupHtml.includes('data-action="group-discovery-toggle"'));
+  assert.ok(groupHtml.includes('data-enabled="true"'));
+  const publicHtml=run(`groupDiscoveryPanel({enabled:true,detail:'<script>bad</script>',candidates:[{status:'pending'},{status:'joined'}]})`);
+  assert.ok(publicHtml.includes('1 个申请等待确认'));
+  assert.ok(publicHtml.includes('暂停筛选'));
+  assert.ok(publicHtml.includes('&lt;script&gt;bad'));
   assert.ok(!groupHtml.includes('data-action="group-send"'));
   run('groupState=null;');
   for(const value of elements.values())value.classList.add=()=>{};

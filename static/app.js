@@ -91,7 +91,29 @@ const metric=(label,note,value,ico,featured=false)=>`<div class="metric ${featur
 function toast(text,error=false){const el=$('#toast');el.textContent=text;el.className='show'+(error?' error':'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className='',5000);}
 function icons(){window.lucide?.createIcons();}
 let loadSequence=0,collectionPollTimer,collectionPolling=false,collectionReloadPending=false,collectionPanelPending=false;
-async function load(){const requestedMode=mode,sequence=++loadSequence;const r=await fetch(`/api/state?mode=${requestedMode}`);const v=await r.json();if(!r.ok)throw Error(v.error||'读取失败');if(requestedMode!==mode||sequence!==loadSequence)return;S=v;render();queueCollectionPoll();}
+function renderNavigation(){
+  if(!pages[page])page='overview';
+  $('#nav').innerHTML=navPages.map(k=>[k,pages[k]]).map(([k,[name,ico]])=>`<a href="#${k}" class="${(page===k||k==='monitor'&&page==='monitor-settings')?'active':''}" ${(page===k||k==='monitor'&&page==='monitor-settings')?'aria-current="page"':''}>${icon(ico)}${name}</a>`).join('')+(mode==='live'?`<a href="/login">${icon('key-round')}账号登录</a>`:'');
+  document.title=`${pages[page][0]} · ClubOps`;
+}
+async function load(){
+  const requestedMode=mode,requestedPage=pages[page]?page:'overview',sequence=++loadSequence;
+  renderNavigation();
+  if(!S||S.view&&S.view!==requestedPage){$('#main').innerHTML=`<div class="page-head"><h1>${esc(pages[requestedPage][0])}</h1></div><div class="loading" role="status">正在加载${esc(pages[requestedPage][0])}…</div>`;icons();}
+  const controller=typeof AbortController==='function'?new AbortController():null;
+  const timeout=controller?setTimeout(()=>controller.abort(),20000):null;
+  const prefetchHistory=requestedPage==='monitor';
+  if(prefetchHistory)void refreshMonitorHistory();
+  try{
+    const r=await fetch(`/api/state?mode=${requestedMode}&view=${encodeURIComponent(requestedPage)}`,controller?{signal:controller.signal}:undefined);
+    const v=await r.json();if(!r.ok)throw Error(v.error||'读取失败');
+    if(requestedMode!==mode||sequence!==loadSequence||requestedPage!==page)return;
+    S=v;render(!prefetchHistory);queueCollectionPoll();
+  }catch(error){
+    if(requestedMode===mode&&sequence===loadSequence&&requestedPage===page)throw error;
+  }finally{if(timeout!==null)clearTimeout(timeout);}
+}
+function loadError(err){$('#main').innerHTML=empty('暂时无法连接工作台',`请确认电脑已开机、联网并运行 ClubOps。${esc(err.name==='AbortError'?'本次读取超时，请重试。':err.message)}`,'refresh','重试','unplug');icons();}
 async function api(action,body={}){const r=await fetch(`/api/${action}?mode=${mode}`,{method:'POST',headers:{'Content-Type':'application/json','X-ClubOps-Token':S.csrf},body:JSON.stringify(body)});const v=await r.json();if(!r.ok)throw Error(v.error||'操作失败');return v.result;}
 async function save(action,body,message='已保存'){const result=await api(action,body);await load();if(message)toast(message);return result;}
 function navigate(next){location.hash=next;if(page===next)render();}
@@ -121,16 +143,16 @@ document.addEventListener('keydown',event=>{
 });
 window.matchMedia?.('(max-width:700px)').addEventListener('change',event=>{if(!event.matches)setMobileNavigation(false,false);});
 
-function render(){
+function render(refreshHistory=true){
   if(!S)return;const openMonitorSettings=page==='monitor-settings';if(openMonitorSettings){page='monitor';history.replaceState(null,'','#monitor');}const opened=openPanelIds();if(!pages[page])page='overview';
   const connectionHint=$('.sidebar-bottom');if(connectionHint)connectionHint.textContent=collectionState().intent_outreach?.enabled?'自建采集 · 意向自动私信':'自建采集 · 私信工作台';
-  $('#nav').innerHTML=navPages.map(k=>[k,pages[k]]).map(([k,[name,ico]])=>`<a href="#${k}" class="${(page===k||k==='monitor'&&page==='monitor-settings')?'active':''}" ${(page===k||k==='monitor'&&page==='monitor-settings')?'aria-current="page"':''}>${icon(ico)}${name}</a>`).join('')+(mode==='live'?`<a href="/login">${icon('key-round')}账号登录</a>`:'');
+  renderNavigation();
   $('#demo-banner').hidden=mode!=='demo';document.title=`${pages[page][0]} · ClubOps`;
   $('#main').innerHTML=({overview,monitor,'monitor-settings':monitorSettingsPage,live:liveMonitor,groups:groupPage,leads,recruit,roster,inbox,analytics,settings}[page])();
   const login=S.collector?.login_recovery,loginAttention=login?.active||(login?.available&&!login.session?.ready);
   if(mode==='live'&&(page==='settings'||(page==='monitor'&&loginAttention)))$('.page-head').insertAdjacentHTML('afterend',loginSummary());
   if(mode==='live'&&page==='monitor')$('.page-head .actions').insertAdjacentHTML('beforeend',`<a class="button small" href="/login">${icon('key-round')}账号登录</a>`);
-  restorePanelIds(opened);syncCollectionForms();icons();if(page==='monitor')void refreshMonitorHistory();if(page==='live')void refreshLiveArchive();if(openMonitorSettings)monitorSettingsDialog();
+  restorePanelIds(opened);syncCollectionForms();icons();if(page==='monitor'&&refreshHistory)void refreshMonitorHistory();if(page==='live')void refreshLiveArchive();if(openMonitorSettings)monitorSettingsDialog();
   if(page==='groups'&&!groupState&&!groupLoading)void refreshGroups();
 }
 
@@ -147,13 +169,22 @@ async function refreshGroups(){
   }catch(e){groupError=e.message;}
   finally{groupLoading=false;if(page==='groups'){$('#main').innerHTML=groupPage();icons();}}
 }
+function groupDiscoveryPanel(d){
+  d=d||{enabled:false,candidates:[],detail:'等待开启公开群筛选'};
+  const rows=d.candidates||[],pending=rows.filter(g=>['pending','accepted','uncertain'].includes(g.status)).length;
+  return `<section class="card section-gap"><div class="card-head"><div><h2>公开群筛选</h2><small>瓦搭子群、瓦开黑群、无畏契约开黑群</small></div><div class="actions">${badge(d.enabled?'筛选中':'未开启',d.enabled?'good':'')}${button(d.enabled?'暂停筛选':'开启筛选','group-discovery-toggle',d.enabled?'small':'primary small',`data-enabled="${!d.enabled}"`)}${button(`候选群${rows.length?' '+rows.length:''}`,'group-public-list','small')}</div></div><div class="card-body"><p class="muted">${esc(d.detail||'等待下一轮筛选')}${pending?` · ${pending} 个申请等待确认`:''}</p><small>从相关招群作品查找公开群，符合条件后申请加入；确认加入后开启监控，群内不发言。</small></div></section>`;
+}
+function showPublicGroups(){
+  const rows=groupState?.discovery?.candidates||[],names={candidate:'待核验',unmatched:'不对口',full:'群已满',restricted:'条件未通过',question:'需要回答问题',pending:'等待审核',accepted:'等待确认加入',uncertain:'结果待核对',rejected:'申请未通过',joined:'已确认加入',observed:'已在群内',unavailable:'当前不可用'};
+  showModal('公开群候选',`<p class="muted">申请提交后保留记录；等待审核或结果不明的申请不会重复提交。</p>${rows.map(g=>`<article class="group-target"><div class="row spread"><h3>${esc(g.name)}</h3>${badge(names[g.status]||'待核验',g.status==='joined'?'good':'')}</div><p>${fmt(g.participants)} 人${g.description?' · '+esc(g.description):''}</p><p>${esc(g.detail)}</p><small>最近核验 ${date(g.checked_at)}</small></article>`).join('')||'<p>尚未发现公开群。开启筛选后，将持续从相关作品的作者主页查找。</p>'}<div class="actions">${button('刷新候选','group-public-list','small')}</div>`);
+}
 function groupPage(){
   const s=groupState||{groups:[],messages:[],enabled:0};
   const status={available:'未开启',waiting:'等待读取',running:'监控中',catching_up:'补读消息',retrying:'读取失败 · 等待重试',paused:'已暂停',unavailable:'当前账号未加入'};
   const header=head('群内只观察，有需求再私信。','瓦搭子群、无畏契约开黑群等对口群聊。近 1 小时的文字消息先初筛，再由模型判断需求。',button('刷新已加入群','group-discover','small')+button('刷新消息','group-refresh','small'));
   if(mode!=='live')return header+notice('群聊监控仅在正式工作区使用。');
   const issue=groupError||s.issue;
-  return header+'<p class="muted">群内只观察；近 1 小时的文字先初筛、再由模型确认需求，符合条件后私信。</p>'+(issue?notice(esc(issue),'warn'):'')+`<div class="group-layout"><section class="card group-list"><div class="card-head"><h2>监控群聊</h2>${badge(`${s.enabled} 个已开启`,s.enabled?'good':'')}</div><div class="card-body">${s.groups.length?s.groups.map(g=>`<article class="group-target"><div class="row spread"><h3>${esc(g.name)}</h3>${badge(status[g.status]||g.status,g.enabled&&g.status!=='retrying'?'good':'')}</div><p>${fmt(g.participants)} 人 · ${g.member?'已加入':'未加入'}</p><p>已采集 <b>${fmt(g.message_count)}</b> 条 · 初筛通过 <b>${fmt(g.screened_count)}</b> 条</p><small>最近读取 ${date(g.last_read_at)}</small><p class="muted">${esc(g.detail||'等待开启监控')}</p>${button(g.enabled?'暂停监控':'开启监控','group-toggle',g.enabled?'small':'primary small',`data-id="${g.id}" data-enabled="${!g.enabled}" ${!g.member&&!g.enabled?'disabled':''}`)}</article>`).join(''):empty(groupLoading?'正在读取群目录':'暂无对口群','刷新已加入群，筛选无畏契约相关群聊。','','')}</div><div class="card-foot">当前支持已加入群的筛选与监控；公开群搜索、自动加群尚未接通。</div></section><section class="card"><div class="card-head"><div><h2>群消息与筛选结果</h2><small>${groupBefore?'历史记录':'最新记录 · 自动更新'} · 群内不发言</small></div>${badge('初筛 → 模型 → 私信')}</div><div class="card-body">${s.messages.length?s.messages.map(m=>{
+  return header+groupDiscoveryPanel(s.discovery)+'<p class="muted">群内只观察；近 1 小时的文字先初筛、再由模型确认需求，符合条件后私信。</p>'+(issue?notice(esc(issue),'warn'):'')+`<div class="group-layout"><section class="card group-list"><div class="card-head"><h2>监控群聊</h2>${badge(`${s.enabled} 个已开启`,s.enabled?'good':'')}</div><div class="card-body">${s.groups.length?s.groups.map(g=>`<article class="group-target"><div class="row spread"><h3>${esc(g.name)}</h3>${badge(status[g.status]||g.status,g.enabled&&g.status!=='retrying'?'good':'')}</div><p>${fmt(g.participants)} 人 · ${g.member?'已加入':'未加入'}</p><p>已采集 <b>${fmt(g.message_count)}</b> 条 · 初筛通过 <b>${fmt(g.screened_count)}</b> 条</p><small>最近读取 ${date(g.last_read_at)}</small><p class="muted">${esc(g.detail||'等待开启监控')}</p>${button(g.enabled?'暂停监控':'开启监控','group-toggle',g.enabled?'small':'primary small',`data-id="${g.id}" data-enabled="${!g.enabled}" ${!g.member&&!g.enabled?'disabled':''}`)}</article>`).join(''):empty(groupLoading?'正在读取群目录':'暂无对口群','刷新已加入群，筛选无畏契约相关群聊。','','')}</div><div class="card-foot">确认加入的对口群可开启监控；申请与审核状态见“候选群”。</div></section><section class="card"><div class="card-head"><div><h2>群消息与筛选结果</h2><small>${groupBefore?'历史记录':'最新记录 · 自动更新'} · 群内不发言</small></div>${badge('初筛 → 模型 → 私信')}</div><div class="card-body">${s.messages.length?s.messages.map(m=>{
     const model=m.model_result,stage=m.filter_reason?'初筛未通过':model?.status==='completed'&&m.analysis_method==='model'?labels[m.category]||'已分析':model?.status==='running'?'模型分析中':model?.status==='failed'?'模型失败 · 未私信':model&&model.status!=='completed'?'模型未生效 · 未私信':'初筛通过 · 待模型';
     return `<article class="group-message"><div class="row spread"><strong>${esc(m.nickname&&m.nickname!=='未提供昵称'?m.nickname:'用户 · '+String(m.uid).slice(-6))}</strong>${badge(stage,m.category==='buyer'&&m.analysis_method==='model'?'good':'')}</div><small>${esc(m.group_title)} · ${commentDate(m.published_at)}</small><blockquote class="quote">${esc(m.raw_text)}</blockquote><p class="muted">${esc(m.filter_reason||m.model_result?.result?.reason||m.reason)}</p>${m.outreach?`<p>${badge(jobLabels[m.outreach.status]||m.outreach.status)}<small>${esc(m.outreach.detail||'')} · 同账号同用户去重记录</small></p>`:'<small>暂无该用户的私信尝试记录</small>'}${modelEvidence(m,false)}${m.lead_id?button('查看私信记录','open-chat','small',`data-id="${m.lead_id}"`):''}</article>`;
   }).join(''):empty(groupLoading?'正在读取消息':'等待新的群消息','开启监控后，采集原文与筛选结果会显示在这里。','','')}</div><div class="card-foot actions">${s.has_more?button('更早消息','group-older','small'):''}${groupBefore?button('回到最新','group-refresh','small'):''}<small>同一账号对同一用户共用评论、弹幕与群聊的私信去重记录。</small></div></section></div>`;
@@ -354,6 +385,8 @@ case 'uid-inbox':case 'uid-inbox-local': await uidInboxDialog(id,Number(el.datas
 case 'uid-inbox-scan': await uidInboxRead('scan');break;
 case 'group-refresh':groupBefore=0;await refreshGroups();break;
 case 'group-older':groupBefore=groupState?.next_before||0;await refreshGroups();break;
+case 'group-public-list':await refreshGroups();showPublicGroups();break;
+case 'group-discovery-toggle':await api('group-discovery-control',{enabled:el.dataset.enabled==='true'});await refreshGroups();toast(el.dataset.enabled==='true'?'已开启公开群筛选':'已暂停公开群筛选');break;
 case 'group-discover':await api('group-discover');groupBefore=0;await refreshGroups();toast('已刷新当前账号的已加入群；未执行加群');break;
 case 'group-toggle':await api('group-control',{id,enabled:el.dataset.enabled==='true'});await refreshGroups();break;
 case 'uid-inbox-read':case 'uid-inbox-older': await uidInboxRead('messages',id,el.dataset.action==='uid-inbox-older');break;
@@ -495,9 +528,9 @@ document.addEventListener('submit',async e=>{const form=e.target;const formId=fo
     default: throw Error('未识别的表单');
   }await api(action,body);if(action==='monitor-save')monitorDraftDirty=false;if(action==='live-save')liveDraftDirty=false;closeModal();await load();toast(message);}
 }catch(err){const formError=$('.form-error',form);if(formError){formError.textContent=err.message;formError.hidden=false;}toast(err.message,true);}finally{busy=false;if(submitButton?.isConnected)submitButton.disabled=false;}});
-window.addEventListener('hashchange',()=>{monitorDraftDirty=false;liveDraftDirty=false;semanticDraftDirty=false;stashDraft();page=location.hash.slice(1)||'overview';gameFilter='';query='';setMobileNavigation(false,false);render();window.scrollTo({top:0});});
+window.addEventListener('hashchange',()=>{monitorDraftDirty=false;liveDraftDirty=false;semanticDraftDirty=false;stashDraft();page=location.hash.slice(1)||'overview';gameFilter='';query='';setMobileNavigation(false,false);void load().catch(loadError);window.scrollTo({top:0});});
 $('#modal').addEventListener('click',e=>{if(e.target===$('#modal')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)closeModal();}});
-load().catch(err=>{$('#main').innerHTML=empty('暂时无法连接工作台',`请确认电脑已开机、联网并运行 ClubOps。${esc(err.message)}`,'refresh','重试','unplug');icons();});
+load().catch(loadError);
 
 const collectionLabels={queued:'等待启动',running:'正在读取',cancelling:'正在停止',needs_login:'等待登录',needs_verification:'等待人工验证',needs_interaction:'等待页面操作',completed:'本批读取完成',partial:'部分读取',failed:'执行失败',cancelled:'已停止',interrupted:'会话中断',rate_limited:'访问频繁 · 已停止',access_denied:'访问被拒绝',no_data:'未取得可识别数据',dependency_missing:'缺少运行依赖',session_expired:'会话已过期',network_error:'连接失败',schema_changed:'响应结构需适配',timeout:'运行超时',resource_limited:'读取预算已达上限',empty_response:'空响应 · 未取得数据',identity_failed:'身份核对未通过',upstream_rejected:'平台业务响应未通过'};
 function collectorHelp(t){
@@ -670,6 +703,7 @@ function monitorResultsPanel(){
     <div class="result-footer"><small>${result.loading?(error?'评论加载失败':'正在加载筛选结果'):`${fmt(remote?result.total:all.length)} 条符合查看条件`} · 北京时间</small><div class="actions">${button('上一页','monitor-result-page','small',`data-step="-1" ${result.loading||monitorResultPage===1?'disabled':''}`)}<span>${monitorResultPage} / ${result.loading?'—':pages}</span>${button('下一页','monitor-result-page','small',`data-step="1" ${result.loading||monitorResultPage===pages?'disabled':''}`)}</div></div></section>`;
 }
 function redrawMonitorResults(){
+  if(!S)return;
   const panel=$('#monitor-result-panel');if(!panel)return;
   const scroll=$('.result-table-scroll'),top=scroll?.scrollTop||0,left=scroll?.scrollLeft||0,opened=openPanelIds();
   const focused=document.activeElement?.tagName==='SUMMARY'?document.activeElement.closest?.('.companion-stage details[id]')?.id:null;
@@ -808,10 +842,10 @@ function schedulePanel(){const plans=(S.collector?.plans||[]).filter(p=>!p.conti
 function planDialog(id){if(mode!=='live')throw Error('演示区不创建真实计划');const p=S.collector?.plans?.find(p=>p.id===id)||{};showModal(p.id?'修改有限采集计划':'新建有限采集计划',`<input name="id" type="hidden" value="${p.id||''}">`+notice('保存不会启动。启用后按所选通道读取；验证、限制或失败时暂停，最多执行指定批次数。')+field('name','计划名称',p.name||'无畏契约需求发现','text','required maxlength="100"')+transportField(p.transport)+select('kind','采集方式',opts({search:'关键词搜索',video:'指定视频',author:'从作品作者发现'},p.kind||'search'))+collectionTargetField(p.target||'无畏契约陪玩','关键词或完整视频链接')+`<div class="fields-2">${field('video_limit','发现后作品上限',p.video_limit||1,'number','required min="1" max="5"')}${field('comment_limit','每视频评论上限',p.comment_limit||10,'number','required min="1" max="100"')}${field('interval_seconds','批次结束后的间隔 / 秒',p.interval_seconds||600,'number','required min="300" max="86400"')}${field('run_limit','计划总批次数',p.run_limit||3,'number','required min="1" max="24"')}</div>`+field('page_concurrency','每批视频读取并发',p.page_concurrency||1,'number','required min="1" max="4"')+select('priority','调度优先级',opts({3:'高',2:'标准',1:'低'},p.priority||2)),'plan-form',submit('保存为暂停计划'));}
 async function pollCollection(){
   if(collectionPolling||mode!=='live'||document.hidden){queueCollectionPoll();return;}
-  collectionPolling=true;const requestedMode=mode,sequence=loadSequence;
+  collectionPolling=true;const requestedMode=mode,requestedPage=page,sequence=loadSequence;
   try{
-    const r=await fetch(`/api/collector?mode=${requestedMode}`);if(!r.ok)throw Error('采集状态读取失败');
-    const value=await r.json();if(mode!==requestedMode||sequence!==loadSequence)return;
+    const r=await fetch(`/api/collector?mode=${requestedMode}&view=${encodeURIComponent(requestedPage)}`);if(!r.ok)throw Error('采集状态读取失败');
+    const value=await r.json();if(mode!==requestedMode||requestedPage!==page||sequence!==loadSequence)return;
     const stable=v=>({...v,board:v?.board?{...v.board,updated_at:null}:undefined});
     const changed=JSON.stringify(stable(S.collector))!==JSON.stringify(stable(value));
     collectionPanelPending ||= changed;

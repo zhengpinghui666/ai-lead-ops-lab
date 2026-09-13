@@ -404,6 +404,35 @@ class DiscoveryTrackingTests(unittest.TestCase):
         self.assertEqual(state['settled_task_id'],task)
         self.assertIn('已有作品评论继续轮询',state['detail'])
 
+    def test_browser_outage_defers_search_and_continues_verified_http_work(self):
+        task,job=self.empty_search(navigation_http_status=502)
+        col.update(task,status='network_error')
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            self.assertEqual(discovery.empty_search_wait(c,row),300)
+            discovery.settle(c,row)
+            next_job=discovery.choose(c,self.plan(run_count=3,last_task_id=task),discovery.future(NOW,30))[1]
+            self.assertEqual(next_job['channel'],'work')
+            self.assertEqual(next_job['transport'],'http')
+            self.assertEqual(c.execute('SELECT status FROM collection_tasks WHERE id=?',(task,)).fetchone()[0],'network_error')
+            c.execute("UPDATE collection_tasks SET status='identity_failed' WHERE id=?",(self.base,))
+            self.assertEqual(discovery.empty_search_wait(c,row),0)
+            self.assertEqual(discovery.choose(c,self.plan(last_task_id=task),NOW)[1],job)
+
+    def test_browser_outage_does_not_isolate_login_verification_or_unknown_errors(self):
+        task,_=self.empty_search(navigation_http_status=502)
+        col.update(task,status='network_error')
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            original=c.execute('SELECT snapshot FROM collection_diagnostics WHERE task_id=?',(task,)).fetchone()[0]
+            for change in ({'navigation_http_status':403},{'navigation_http_status':429},{'navigation_http_status':None},
+                           {'responses':[{'status':'needs_verification'}]}):
+                c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE task_id=?',(json.dumps({**json.loads(original),**change}),task))
+                self.assertEqual(discovery.empty_search_wait(c,row),0)
+            c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE task_id=?',(original,task))
+            c.execute("UPDATE collection_tasks SET finished_at='2026-09-12T00:00:00+00:00' WHERE id=?",(self.base,))
+            self.assertEqual(discovery.empty_search_wait(c,row),0,'Stale HTTP health is not proof the other channel is usable')
+
     def test_empty_search_start_requires_independent_healthy_http_read(self):
         monitor=monitoring.save(dict(transport='local_browser'))
         task,_=self.empty_search()
@@ -412,6 +441,34 @@ class DiscoveryTrackingTests(unittest.TestCase):
         monitoring.command('stop')
         col.update(self.base,status='identity_failed')
         with self.assertRaises(ValueError):monitoring.command('start')
+
+    def test_scoped_out_search_does_not_pause_existing_comment_monitor(self):
+        monitor=monitoring.save(dict(transport='http'))
+        monitoring.command('start')
+        task,_=self.empty_search(video_links=3,responses=[dict(kind='search',status=200,content_kind='json',keys=['status_code','aweme_list','data'])])
+        scope=dict(responses=[dict(policy='game-title-scope-v1',excluded_candidates=3,
+            eligible_candidates=0,reason='no_game_evidence_in_title',all_douyin=False)])
+        with app.db() as c:
+            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                (task,'search-scope',json.dumps(scope),NOW))
+            c.execute('UPDATE collection_plans SET last_task_id=?,run_count=1 WHERE id=?',(task,monitor['id']))
+        scheduler.tick(NOW)
+        self.assertTrue(monitoring.state()['enabled'])
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            self.assertEqual(row['status'],'no_data','Preserve the original observation outcome')
+            self.assertEqual(discovery.empty_search_wait(c,row),300)
+            self.assertEqual(discovery.choose(c,self.plan(last_task_id=task),discovery.future(NOW,30))[1]['channel'],'work')
+            original=c.execute("SELECT snapshot FROM collection_diagnostics WHERE task_id=? AND stage='search-empty'",(task,)).fetchone()[0]
+            for response in [dict(kind='search',status=403),dict(kind='search',status=200,content_kind='json',keys=['data'],status_code=8),
+                    dict(kind='search',status=200,content_kind='json',keys=['data'],body_error='invalid_json')]:
+                value={**json.loads(original),'responses':[response]}
+                c.execute("UPDATE collection_diagnostics SET snapshot=? WHERE task_id=? AND stage='search-empty'",(json.dumps(value),task))
+                self.assertEqual(discovery.empty_search_wait(c,row),0)
+            c.execute("UPDATE collection_diagnostics SET snapshot=? WHERE task_id=? AND stage='search-empty'",(original,task))
+            scope['responses'][0]['eligible_candidates']=1
+            c.execute("UPDATE collection_diagnostics SET snapshot=? WHERE task_id=? AND stage='search-scope'",(json.dumps(scope),task))
+            self.assertEqual(discovery.empty_search_wait(c,row),0)
 
     def test_board_query_count_does_not_grow_with_library(self):
         self.save()

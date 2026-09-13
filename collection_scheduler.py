@@ -451,7 +451,7 @@ def tick(instant=None):
                     detail = p['detail']
                 elif p['continuous'] and p['status']=='running' and discovery_tracking.empty_search_wait(c,task):
                     due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=p['interval_seconds'])).astimezone(timezone.utc).isoformat(timespec='seconds')
-                    detail='搜索页面暂未加载作品，保留失败记录并延后搜索；已有作品评论继续轮询'
+                    detail=('浏览器发现暂时连接失败，保留失败记录并延后搜索；已验证的 HTTP 作品评论继续轮询' if task['status']=='network_error' else '本次搜索未取得合适作品，保留本批记录并延后搜索；已有作品评论继续轮询')
                 elif p['continuous'] and p['status']=='running' and verification_retry_seconds(c,task):
                     due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=300)).astimezone(timezone.utc).isoformat(timespec='seconds')
                     detail='验证码未通过，样本已记录；暂停 5 分钟后在后台重新加载原监控目标。可随时关闭监控。'

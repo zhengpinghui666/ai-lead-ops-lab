@@ -82,6 +82,12 @@ async function main(){
     await status(complete?'completed':comments?'partial':errors?'schema_changed':'no_data',`本批观察到 ${videos} 个视频、${comments} 条评论；视频读取并发峰值 ${peak}。只覆盖已加载内容，不代表全部评论。`+(unavailable?` ${unavailable} 个作品明确不存在，已跳过，未读取其评论。`:'')+(errors?` ${errors} 次响应未能解析。`:''));
   }catch(error){
     fail(error);
+    // Keep only fixed exception classifications and project source locations.
+    // Playwright's raw error text may contain page content or signed URLs.
+    const failure=fatal||error;
+    const frames=String(failure?.stack||'').split('\n').slice(1).map(line=>line.match(/(collector_(?:reader|runner|pool|queue)\.cjs):(\d+):(\d+)/)).filter(Boolean).slice(0,6).map(m=>`${m[1]}:${m[2]}:${m[3]}`);
+    const reason=/strict mode violation/i.test(failure?.message||'')?'locator_not_unique':/Execution context was destroyed/i.test(failure?.message||'')?'page_navigated':/Target page, context or browser has been closed/i.test(failure?.message||'')?'page_closed':failure?.name==='TimeoutError'?'action_timeout':'unclassified';
+    if(!(failure instanceof Stop))await emit({type:'diagnostic',stage:'browser_failure',snapshot:{responses:[{version:'browser-failure-v1',reason,error_type:['TimeoutError','TargetClosedError','Error'].includes(failure?.name)?failure.name:'Other',frames}]}});
     if(!cancelled)await Promise.all(readers.map(r=>r.diagnose('finished-error').catch(()=>{})));
     await Promise.all(readers.map(r=>r.settle()));
     const actual=timedOut?new Stop('timeout','采集运行超过 15 分钟，本批停止；已入库数据保留。'):cancelled?new Stop('cancelled','用户已停止；已入库数据保留。'):fatal;

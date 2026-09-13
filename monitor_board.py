@@ -11,7 +11,9 @@ def build(tasks, plans, mode='live'):
     instant = app.now()
     cutoff = (datetime.fromisoformat(instant)-timedelta(hours=1)).isoformat()
     active = {t['id']:t for t in tasks if t.get('active')}
-    with app.LOCKS[mode], app.db(mode) as c:
+    with app.db(mode) as c:
+        # One WAL read snapshot; rendering must not hold the global writer lock.
+        c.execute('BEGIN')
         # Aggregate in SQLite; historical comments are not shipped to this view.
         rows = [dict(r) for r in c.execute("""SELECT v.id,v.external_id,v.title,v.url,v.enabled,
             COUNT(x.id) AS archived_comments,

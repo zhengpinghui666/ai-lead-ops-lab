@@ -54,10 +54,11 @@ run("syncFreshnessHint=()=>{};refreshMonitorHistory=async()=>{};render=()=>{};co
   run("liveScope='current'");
   run('liveDraftDirty=true');next={...next,live_monitor:{...next.live_monitor,active_id:null,current:{status:'cancelled'}}};await run('pollCollection()');assert.equal(run('loads'),1,'Draft survives a terminal event after blur');assert.match(el('#live-status').outerHTML,/cancelled/);
   run("location.hash='#monitor';stashDraft=()=>{};");windowEvents.get('hashchange')();assert.equal(run('liveDraftDirty'),false,'Leaving the page clears the discarded draft flag');
-  next={tasks:[{id:1,status:'completed',active:false}],plans:[]};await run('pollCollection()');assert.equal(run('loads'),2);
+  assert.equal(run('loads'),2,'Navigation loads the destination page data');
+  next={tasks:[{id:1,status:'completed',active:false}],plans:[]};await run('pollCollection()');assert.equal(run('loads'),3);
   run("page='settings';semanticDraftDirty=true");
-  next={tasks:[{id:1,status:'failed',active:false}],plans:[]};await run('pollCollection()');assert.equal(run('loads'),2,'Unsaved model settings survive a background task transition after blur');
-  run('semanticDraftDirty=false');await run('pollCollection()');assert.equal(run('loads'),3);
+  next={tasks:[{id:1,status:'failed',active:false}],plans:[]};await run('pollCollection()');assert.equal(run('loads'),3,'Unsaved model settings survive a background task transition after blur');
+  run('semanticDraftDirty=false');await run('pollCollection()');assert.equal(run('loads'),4);
   next={tasks:[{id:1,status:'completed',active:false}],plans:[]};await run('pollCollection()');
   fail=true;await run('pollCollection()');assert.equal(run('S.collector.tasks[0].status'),'completed');fail=false;
   document.hidden=true;events.get('visibilitychange')();assert.equal(timers.size,0);const before=requests.length;await run('pollCollection()');assert.equal(requests.length,before);document.hidden=false;

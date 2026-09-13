@@ -12,8 +12,11 @@ const actualRedraw=run('redrawMonitorResults');
 run("render=()=>{};syncFreshnessHint=()=>{};redrawMonitorResults=()=>{};redrawWorkPool=()=>{};");
 const reply=(request,value)=>request.resolve({ok:true,json:async()=>value});
 const result=(video,page=1)=>({rows:[{text:video,video_url:video}],counts:{observed:28,accepted:20,filtered:8},valuable_count:2,page,pages:2,total:28,scope:'all_local_comment_history'});
+const deadline=setTimeout(()=>{console.error('FAIL: history fixture left an unresolved request');process.exitCode=1;},10000);
 (async()=>{
  await new Promise(r=>setImmediate(r));
+ assert.match(requests[0].url,/\/api\/monitor-comments/,'Initial history starts before the shell finishes');
+ reply(requests.shift(),result('initial'));await new Promise(r=>setImmediate(r));
  const first=run("changeMonitorSelection('video-A')"),second=run("changeMonitorSelection('video-B')");
  reply(requests[1],result('video-B'));await second;
  reply(requests[0],result('video-A'));await first;
@@ -113,4 +116,4 @@ const result=(video,page=1)=>({rows:[{text:video,video_url:video}],counts:{obser
  assert.equal(focused,true,'Keyboard focus remains on its explanation toggle');
  assert.equal(scroll.scrollTop,112,'Refreshing an explanation preserves result scroll position');
  console.log('PASS: request races, pagination, stable loading counts, scoped caches, error/retry, workspace isolation, honest empty states, explanation escaping and expansion/focus preservation. Local fixtures only.');
-})().catch(e=>{console.error(e);process.exitCode=1;});
+})().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>clearTimeout(deadline));

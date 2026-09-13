@@ -77,6 +77,7 @@ function createReader(page,shared){
       meta.keys=Object.keys(body||{}).slice(0,25);meta.data_type=Array.isArray(body?.data)?'array':typeof body?.data;
       const verification=parser.blockFromBody(body);
       if(verification){networkBlock=verification;return;}
+      if(Number.isSafeInteger(body?.status_code))meta.status_code=body.status_code;
       if(kind==='search'){
         if(!parser.searchPageMatches(page.url(),config.target))return;
         const rows=parser.searchVideos(body);

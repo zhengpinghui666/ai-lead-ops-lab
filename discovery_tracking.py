@@ -356,22 +356,61 @@ def worker_config(c,task_id):
 
 
 def empty_search_wait(c, task):
-    """Only the observed empty browser shell may defer discovery, never a gate."""
+    """Defer proven browser outages/empty shells without stopping HTTP work.
+
+    Authentication, verification and unknown failures still require handling.
+    The historical function name is retained for callers and old records.
+    """
     from urllib.parse import urlsplit,unquote
-    if not task or task['status']!='no_data' or task['kind']!='search' or task['transport']!='local_browser' or not task['finished_at']:
+    if not task or task['status'] not in ('no_data','network_error') or task['kind']!='search' or task['transport']!='local_browser' or not task['finished_at']:
         return 0
     frozen=worker_config(c,task['id'])
     if not frozen or frozen.get('channel')!='search' or frozen.get('target')!=task['target']:
         return 0
+    if task['status']=='network_error':
+        import collection_scheduler
+        requested=collection_scheduler.transient_http_wait(c,task)
+        if requested is None:return 0
+        # A different, recently verified HTTP channel must actually have worked.
+        baseline=c.execute("SELECT * FROM collection_tasks WHERE transport='http' AND id<? ORDER BY id DESC LIMIT 1",(task['id'],)).fetchone()
+        if not baseline or baseline['status']!='completed' or not baseline['finished_at']:return 0
+        age=(datetime.fromisoformat(task['finished_at'])-datetime.fromisoformat(baseline['finished_at'])).total_seconds()
+        if not 0<=age<=1800:return 0
+        if c.execute("SELECT 1 FROM collection_tasks WHERE id>? AND status IN ('needs_login','needs_verification','rate_limited','access_denied','session_expired','identity_failed') LIMIT 1",(baseline['id'],)).fetchone():return 0
+        return max(300,requested)
     if c.execute('SELECT 1 FROM collection_observations WHERE task_id=? LIMIT 1',(task['id'],)).fetchone():return 0
     found=False
     try:
-        for row in c.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=?',(task['id'],)):
+        diagnostics=c.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=?',(task['id'],)).fetchall()
+        scoped_out=False
+        for row in diagnostics:
+            if row['stage']!='search-scope':continue
+            evidence=json.loads(row['snapshot']).get('responses',[])
+            if len(evidence)!=1:return 0
+            item=evidence[0]
+            scoped_out=(item.get('policy')=='game-title-scope-v1' and item.get('reason')=='no_game_evidence_in_title'
+                and item.get('eligible_candidates')==0 and type(item.get('excluded_candidates')) is int
+                and item['excluded_candidates']>0 and item.get('all_douyin') is False)
+            if not scoped_out:return 0
+        for row in diagnostics:
+            if row['stage']=='search-scope':continue
             if row['stage'] not in ('search-empty','finished-error'):return 0
             s=json.loads(row['snapshot']);url=urlsplit(s.get('page_url',''))
-            if (s.get('navigation_http_status')!=200 or s.get('navigation_error') or s.get('responses')!=[]
-                    or s.get('video_links')!=0 or url.scheme!='https' or url.hostname!='www.douyin.com'
+            if (s.get('navigation_http_status')!=200 or s.get('navigation_error')
+                    or url.scheme!='https' or url.hostname!='www.douyin.com'
                     or unquote(url.path)!='/search/'+task['target']):return 0
+            responses=s.get('responses')
+            if not isinstance(responses,list):return 0
+            if scoped_out:
+                # Parsed candidates were deliberately excluded by the game rule.
+                # That is a discovery outcome, not a failure of comment reads.
+                if type(s.get('video_links')) is not int or s['video_links']<0:return 0
+                for response in responses:
+                    if (response.get('kind')!='search' or response.get('status')!=200
+                            or response.get('content_kind')!='json' or response.get('body_error')
+                            or response.get('status_code',0)!=0
+                            or not {'data','aweme_list','item_list'} & set(response.get('keys',[]))):return 0
+            elif responses or s.get('video_links')!=0:return 0
             text=s.get('visible_text','')
             if any(word in text for word in ('验证码','安全验证','访问受限','操作频繁','请求过多','登录后查看')):return 0
             found |= row['stage']=='search-empty'

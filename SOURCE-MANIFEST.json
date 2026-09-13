@@ -13,8 +13,8 @@
     },
     {
       "name": "ACCESS_PERFORMANCE.md",
-      "sha256": "2471cd5b9757a98e7303986e2d7c685e79e9c66a17fc346729f8d82303fd183a",
-      "bytes": 2818
+      "sha256": "9ec4bc0a6affc3b0346caa41dea9078496f575f99048d2cd23e197ae674d9ffc",
+      "bytes": 6088
     },
     {
       "name": "ASSET_VERTICALITY.md",
@@ -137,6 +137,11 @@
       "bytes": 35744
     },
     {
+      "name": "REQUIREMENTS_DISCUSSION.md",
+      "sha256": "66fddfdd56301d79d9c6a82780a106344ccf83b2aa1c9a0459be7168b9934a7f",
+      "bytes": 3296
+    },
+    {
       "name": "RULES.md",
       "sha256": "084a07437909d3ce90199ce16e8c33e840e8139859e89f033d301e4756b433cd",
       "bytes": 6088
@@ -153,8 +158,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "b1a329782dcc01ed6a392eeacb8c3c4e049e34b0568852b6ab74415ab2f1addc",
-      "bytes": 32299
+      "sha256": "2b39e4696192f4f3a765b2520fb8b138ca72640ba2b9d05e1338e8d6f86b8fba",
+      "bytes": 34829
     },
     {
       "name": "UID_HTTP.md",
@@ -263,18 +268,18 @@
     },
     {
       "name": "clubops.py",
-      "sha256": "dbd9d695c4081f2b99d9ae4394c22e0bdc22c2319a51028b8c33878aa302a6c8",
-      "bytes": 55692
+      "sha256": "19db78d24a9d24cc06fabf975d084d1ce5e5dcc32bec42e87b37aacc5c3a24d4",
+      "bytes": 57253
     },
     {
       "name": "collection_scheduler.py",
-      "sha256": "79a78a79551921f921d8ad567621c2c490368263d5b3e49b01a4dc920e5aa93f",
-      "bytes": 35208
+      "sha256": "f95b0869deba6a10da017d591ca9504edf1fd57dfb51a6186be221dae2104bd0",
+      "bytes": 35370
     },
     {
       "name": "collector.py",
-      "sha256": "ec80cd53e8e2f8ddb841abb3c73184f3c0944175367e42677b532e9f43f97bbf",
-      "bytes": 40939
+      "sha256": "2bea3a5a63c8c86a7931dab9a1959866ee4acc616c63d5e0ed74ffcf6deb159f",
+      "bytes": 41235
     },
     {
       "name": "collector_http.py",
@@ -308,13 +313,13 @@
     },
     {
       "name": "collector_reader.cjs",
-      "sha256": "ed6ae5fb2f057030cb68e37c823b4e32973f399915c52ff48207087bb51d8f28",
-      "bytes": 20644
+      "sha256": "9564b71be1be7afe1db1301efe8c6656e96de4f932d0debb0ce5248e811c8943",
+      "bytes": 20728
     },
     {
       "name": "collector_runner.cjs",
-      "sha256": "d2c801aa0c9984a031b614239f7e6d35936612c7581c4d76cc950362fe7d9f26",
-      "bytes": 8402
+      "sha256": "0a36290a19f71afa05766928a1b719fec06f70f4b2f9bc1744c22a71796f94e2",
+      "bytes": 9381
     },
     {
       "name": "collector_verification.cjs",
@@ -368,8 +373,8 @@
     },
     {
       "name": "discovery_tracking.py",
-      "sha256": "aedb5dca0406d0a3481dd7b1079f936ea63e5aad37bc72efa1541bb0ff35720b",
-      "bytes": 29340
+      "sha256": "a2eaac47aa64696047ac234082714e4d797bb47e5e7111bbc1437e8ca8537170",
+      "bytes": 31921
     },
     {
       "name": "evaluation/intent-development-v1.json",
@@ -598,13 +603,13 @@
     },
     {
       "name": "monitor_board.py",
-      "sha256": "9e056a415cd5b59987f0a955c703942b984d6b0e070a3a4d668863e3e4df5db2",
-      "bytes": 6575
+      "sha256": "941ed8e40f96341a47eb5729c84e6f06f138fae60c9817d4db07ea7af8b5100a",
+      "bytes": 6666
     },
     {
       "name": "monitor_comments.py",
-      "sha256": "680040255905f069131d0eaa5f8f3e9d43e1e8525ddca211b5e8b4a188ac840a",
-      "bytes": 5913
+      "sha256": "a753db3557241f5bf3da5eb1bd1a4748eecb705e2b03bb4175c17a7f9d4fff4e",
+      "bytes": 6828
     },
     {
       "name": "monitoring.py",
@@ -613,8 +618,8 @@
     },
     {
       "name": "package.json",
-      "sha256": "4f113a6d17f584a3c483a0782284dc03cf4e7f05b2233d5ff9c4bd61fa0c2b2b",
-      "bytes": 963
+      "sha256": "f7ad7b746d51747cbef712e423bdc5d89d585375f206051832bde75eba12a74f",
+      "bytes": 997
     },
     {
       "name": "pnpm-lock.yaml",
@@ -783,13 +788,13 @@
     },
     {
       "name": "server.py",
-      "sha256": "d7028a783d500a3b552a4e1ed4b250cb420e27c77c30d6390648ff49ef812370",
-      "bytes": 22286
+      "sha256": "675c0710660986ff0b65c7a09b66cf2581e0fb018521e4994dcc009e780fbb68",
+      "bytes": 23577
     },
     {
       "name": "source-files.json",
-      "sha256": "8c9cfd0614bbb2c125d78f754a66167551e2ca8d3abc887f51c41c148f168ce7",
-      "bytes": 7907
+      "sha256": "89e8f8dce355bff22889b2f29c97ea7f8f2f6366d5f2934ceb8484e1279a42ac",
+      "bytes": 8002
     },
     {
       "name": "start.ps1",
@@ -808,8 +813,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "8cbd104e1949e02f592ee021b09e1b8f0b0e5f2309fba6b796f0c563e089a18d",
-      "bytes": 185729
+      "sha256": "55b0e81edebcf153397cd38059b3d27f0c57484ebcf320103a56b86e2842ee09",
+      "bytes": 189363
     },
     {
       "name": "static/clubops-iphone.js",
@@ -958,8 +963,8 @@
     },
     {
       "name": "test_discovery_tracking.py",
-      "sha256": "85bb6599f0b95795f44c91f17da04dbe3e1e0dbde410a19d19affa66c5d16782",
-      "bytes": 38508
+      "sha256": "216b5090eb24ad6eb2688081e52c7e4e31e247662ce12cbedc25751019e0fa7d",
+      "bytes": 43099
     },
     {
       "name": "test_freshness_audit.py",
@@ -968,8 +973,8 @@
     },
     {
       "name": "test_frontend.cjs",
-      "sha256": "5a96e56e5509e7fb8a15d719c30e62ca36c6295b33fc0965c6deb014dd1b5226",
-      "bytes": 44005
+      "sha256": "d013e8c72ede56fe2b09f0e395f7229e23e3e3370ab73455d1ceed9a46f442e2",
+      "bytes": 44415
     },
     {
       "name": "test_frontend_live_history.cjs",
@@ -977,14 +982,19 @@
       "bytes": 5550
     },
     {
+      "name": "test_frontend_loading.cjs",
+      "sha256": "80f9f81d4bdac488cd4ed2e4ed52637515901c27e95e67063bacd1457da95dea",
+      "bytes": 2259
+    },
+    {
       "name": "test_frontend_monitor_history.cjs",
-      "sha256": "a8d3731a5ecabb25c222823fdbab446179b59678b0b0c5328d0b504a6dae353f",
-      "bytes": 10949
+      "sha256": "2c3d5d14ea96c5ab984bdfe859651c51dd2ce1508914ed653cd5a61bd20acdbd",
+      "bytes": 11302
     },
     {
       "name": "test_frontend_poll.cjs",
-      "sha256": "78212cddce8d017b94ded93f1db4bb1a86087d4b327e7c870cfb56dbd7d98acb",
-      "bytes": 8167
+      "sha256": "d012de917a5cd13ac9eef979e83f3619305305e9ddd330cc52dfdbb08516f1c1",
+      "bytes": 8244
     },
     {
       "name": "test_game_scope.py",
@@ -1260,6 +1270,11 @@
       "name": "test_video_metadata.py",
       "sha256": "61e5cb4fad8a97adf9ced7ae3dbc89b0031450c68b5ff71c40a173e8686f381e",
       "bytes": 3036
+    },
+    {
+      "name": "test_workbench_state.py",
+      "sha256": "3564157c3fd9cc4822ef98032ac04dd37c8fe5eec29fa2cd862f00d6fb7e87c7",
+      "bytes": 2185
     },
     {
       "name": "test_worker.cjs",

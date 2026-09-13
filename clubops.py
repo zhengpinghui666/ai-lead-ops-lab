@@ -410,6 +410,31 @@ def analyze(mode='live', *, comment_ids=None):
         return {'analyzed': len(rows), 'method': 'rules', 'model_queue': queued}
 
 
+def shell_state(mode='live'):
+    """Configuration for monitoring views, without unrelated lead histories.
+
+    These pages read their records through their own paginated endpoints. Full
+    lead and analysis state stays available when opening the corresponding view.
+    """
+    import semantic
+    import semantic_queue
+    model = semantic.state()
+    model['queue'] = semantic_queue.state(mode)
+    with db(mode) as c:
+        settings = {r['key']: json.loads(r['value']) for r in c.execute('SELECT * FROM settings')}
+        sources = [dict(r) for r in c.execute('SELECT * FROM sources')]
+        videos = [dict(r) for r in c.execute('''SELECT v.*,s.name AS source_name,
+            (SELECT COUNT(*) FROM comments x WHERE x.video_id=v.id) AS comment_count
+            FROM videos v JOIN sources s ON s.id=v.source_id ORDER BY v.id DESC''')]
+        stats = {name: c.execute('SELECT COUNT(*) FROM '+name).fetchone()[0] for name in ('videos','comments')}
+        stats['pending'] = c.execute("SELECT COUNT(*) FROM comments WHERE analysis_method='pending'").fetchone()[0]
+        events = [dict(r) for r in c.execute('SELECT * FROM events ORDER BY id DESC LIMIT 60')]
+    return dict(mode=mode,profile={'game':TARGET_GAME,'services':list(SERVICE_TYPES)},settings=settings,
+        sources=sources,videos=videos,comments=[],live_messages=[],leads=[],members=[],jobs=[],messages=[],
+        events=events,stats=stats,semantic=model,
+        connections={'collector':'not_connected','messaging':'not_connected','ai':model['mode'] if mode=='live' else 'rules'})
+
+
 def state(mode='live'):
     import semantic
     import analysis_store
