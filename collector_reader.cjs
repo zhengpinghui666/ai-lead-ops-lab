@@ -54,6 +54,12 @@ function createReader(page,shared){
     const requestNumber=response.request?requestNumbers.get(response.request())||0:0;
     if(kind==='comment')commentResponses++;
     const http=response.status(),meta={kind,status:http};responseMeta.push(meta);if(responseMeta.length>30)responseMeta.shift();
+    if(kind==='comment'){
+      const query=new URL(response.url()).searchParams;
+      meta.request_scope={cursor:/^\d{1,12}$/.test(query.get('cursor')||'')?query.get('cursor'):null,
+        count:/^\d{1,4}$/.test(query.get('count')||'')?query.get('count'):null,
+        query_keys:[...new Set(query.keys())].sort(),method:response.request?.().method?.()||'unknown'};
+    }
     if(kind==='search'&&http!==200)searchEmptyOnly=false;
     if(http===429||http===403){networkBlock=http===429?'rate_limited':'access_denied';shared.fail(new Stop(networkBlock,shared.reasons[networkBlock]));return;}
     if(http===401){networkBlock='needs_login';return;}
@@ -66,7 +72,9 @@ function createReader(page,shared){
       if(Number(headers['content-length']||0)>8_000_000){meta.body_error='body_too_large';throw Error('Response exceeds byte budget');}
       let raw;
       try{raw=await bounded(response.body(),7000);}
-      catch(error){meta.body_error=error.message==='timeout'?'body_timeout':'body_unavailable';throw Error('Response body unavailable');}
+      catch(error){meta.body_error=error.message==='timeout'?'body_timeout':'body_unavailable';
+        meta.body_failure_reason=/evicted.*cache/i.test(error.message)?'inspector_cache_evicted':/No resource with given identifier/i.test(error.message)?'resource_missing':/No data found for resource/i.test(error.message)?'resource_data_missing':/redirect/i.test(error.message)?'redirect_response':/closed/i.test(error.message)?'page_closed':'unknown';
+        throw Error('Response body unavailable');}
       meta.body_bytes=Math.min(raw.length,8_000_001);
       if(raw.length>8_000_000){meta.body_error='body_too_large';throw Error('Response exceeds byte budget');}
       const text=raw.toString('utf8');

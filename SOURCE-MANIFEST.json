@@ -168,8 +168,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "949d970a8d1e8ebbfe3a7a9eebc13b3971f01a38c3e81dcc4f4ecd5352d8ba67",
-      "bytes": 77071
+      "sha256": "a5bc5dda33282cd5663115018f2c5577efa2d4a9994002d628dd1a999ccb3f78",
+      "bytes": 79347
     },
     {
       "name": "UID_HTTP.md",
@@ -283,8 +283,8 @@
     },
     {
       "name": "collection_scheduler.py",
-      "sha256": "5b781a8b46976e702673c1705cc03464103b5cfdb1a1a54fbaef259f16de6060",
-      "bytes": 39781
+      "sha256": "593878685662a9aa1591af86511e20bf1aaa03b8257e8f8f3d69a5a0ca6d8744",
+      "bytes": 42065
     },
     {
       "name": "collector.py",
@@ -323,8 +323,8 @@
     },
     {
       "name": "collector_reader.cjs",
-      "sha256": "45617cd60cd84770d29fce7d3ca71fab9e3d5968476f523cefb3c02cacd6a46b",
-      "bytes": 22928
+      "sha256": "e437917598020508b5e4bf215013f6d9e0c213671fbc6b1d42d47be0a13e6d33",
+      "bytes": 23666
     },
     {
       "name": "collector_runner.cjs",
@@ -1218,8 +1218,8 @@
     },
     {
       "name": "test_monitoring.py",
-      "sha256": "1721280d41c0b1fcc8224a3af8863d1cacbc1389d5a051fca11a24924fe26193",
-      "bytes": 60038
+      "sha256": "4fbe3c8eb6d2345e7f31e5c0fd3544eb10bf157f0cd1ae30bb1c293b6093dacf",
+      "bytes": 65515
     },
     {
       "name": "test_parallel_worker.cjs",

@@ -384,6 +384,63 @@ class MonitorTests(unittest.TestCase):
             self.assertIsNone(sch.transient_batch_wait(c,row))
             self.assertEqual(c.execute('SELECT status FROM collection_tasks WHERE id=?',(task,)).fetchone()[0],'partial')
 
+    def test_note_body_unavailable_with_verified_zero_stays_partial_and_is_retryable(self):
+        task=self.task();self.incomplete_page(task)
+        page='https://www.douyin.com/video/'+VIDEO
+        snapshot=dict(page_url=page,navigation_error='',navigation_http_status=200,
+            processing=dict(version='comment-quality-v1',recognized=True,skipped=0,non_text_skipped=0,invalid_records=0,parse_errors=1),
+            responses=[dict(kind='comment',status=200,content_kind='json',body_error='body_unavailable'),
+                       dict(kind='comment',status=200,content_kind='json',status_code=0,comments_type='null',total=0,has_more=0,invalid_records=0)])
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            note=c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(task,'note-comments-open',json.dumps(dict(page_url=page.replace('/video/','/note/'),responses=[])),NOW)).lastrowid
+            detail=c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(task,'comment-read',json.dumps(snapshot),NOW)).lastrowid
+            self.assertEqual(sch.transient_batch_wait(c,row),0)
+            for change in (dict(body_error='empty_body'),dict(body_error='invalid_json'),dict(status=429),dict(status=403)):
+                changed={**snapshot,'responses':[{**snapshot['responses'][0],**change},snapshot['responses'][1]]}
+                c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps(changed),detail))
+                self.assertIsNone(sch.transient_batch_wait(c,row))
+            for change in (dict(total=1),dict(total=None),dict(has_more=1),dict(status_code=1)):
+                changed={**snapshot,'responses':[snapshot['responses'][0],{**snapshot['responses'][1],**change}]}
+                c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps(changed),detail))
+                self.assertIsNone(sch.transient_batch_wait(c,row))
+            c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps(snapshot),detail))
+            c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps(dict(page_url='https://www.douyin.com/note/99999999999',responses=[])),note))
+            self.assertIsNone(sch.transient_batch_wait(c,row))
+            self.assertEqual(c.execute('SELECT status FROM collection_tasks WHERE id=?',(task,)).fetchone()[0],'partial')
+
+    def test_known_body_transfer_failure_with_no_text_uses_only_three_retries(self):
+        self.baseline();mon.command('start');task=sch.tick(NOW)
+        for delay in (60,120,240,None):
+            self.incomplete_page(task)
+            snapshot=dict(page_url='https://www.douyin.com/video/'+VIDEO,navigation_error='',navigation_http_status=200,
+                processing=dict(version='comment-quality-v1',recognized=True,skipped=0,non_text_skipped=0,invalid_records=0,parse_errors=1),
+                responses=[dict(kind='comment',status=200,content_kind='json',body_error='body_unavailable'),
+                           dict(kind='comment',status=200,content_kind='json',status_code=0,comments_type='null',total=0,has_more=0,invalid_records=0)])
+            with app.db() as c:
+                c.execute("UPDATE collection_tasks SET status='schema_changed',comments=0,filtered_old=0 WHERE id=?",(task,))
+                c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(task,'comment-read',json.dumps(snapshot),NOW))
+            finished=app.now();sch.tick();state=mon.state()
+            with app.db() as c:self.assertEqual(c.execute('SELECT status FROM collection_tasks WHERE id=?',(task,)).fetchone()[0],'schema_changed')
+            if delay is None:self.assertFalse(state['enabled'])
+            else:
+                self.assertTrue(state['enabled']);self.assertEqual(state['next_run_at'],(datetime.fromisoformat(finished)+timedelta(seconds=delay)).isoformat())
+                task=self.at(state['next_run_at'])
+
+    def test_loading_shell_retry_requires_both_same_target_diagnostics(self):
+        task=self.task();self.incomplete_page(task)
+        with app.db() as c:
+            c.execute("UPDATE collection_tasks SET status='network_error' WHERE id=?",(task,))
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            snapshot=dict(page_url='https://www.douyin.com/video/'+VIDEO,navigation_http_status=200,navigation_error='',responses=[],visible_text='视频数据加载中')
+            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(task,'comment-loading-timeout',json.dumps(snapshot),NOW))
+            self.assertIsNone(sch.transient_http_wait(c,row))
+            start=c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(task,'comment-loading',json.dumps(snapshot),NOW)).lastrowid
+            self.assertEqual(sch.transient_http_wait(c,row),0)
+            for change in (dict(visible_text='加载失败'),dict(page_url='https://www.douyin.com/video/99999999'),dict(navigation_http_status=403),dict(responses=[{'status':429}])):
+                c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps({**snapshot,**change}),start))
+                self.assertIsNone(sch.transient_http_wait(c,row))
+
     def test_nontext_quality_allows_retry_but_requires_complete_consistent_evidence(self):
         task=self.task();self.incomplete_page(task)
         page='https://www.douyin.com/video/'+VIDEO

@@ -19,13 +19,25 @@ def transient_http_wait(connection, task):
         return None
     found, requested = False, 0
     try:
-        for row in connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=? ORDER BY id DESC LIMIT 25', (task['id'],)):
+        rows=connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=? ORDER BY id DESC LIMIT 25', (task['id'],)).fetchall()
+        expected={r['video_url'] for r in connection.execute('SELECT video_url FROM collection_checkpoints WHERE task_id=?',(task['id'],))}
+        loading=set()
+        for row in rows:
+            snapshot=json.loads(row['snapshot'])
+            if (row['stage']=='comment-loading' and snapshot.get('page_url') in expected
+                    and snapshot.get('navigation_http_status')==200 and not snapshot.get('navigation_error')
+                    and snapshot.get('responses')==[] and re.search(r'(?:^|\n)\s*视频数据加载中\s*(?:\n|$)',snapshot.get('visible_text',''))):
+                loading.add(snapshot['page_url'])
+        for row in rows:
             if row['stage'] in ('captcha_workflow', 'captcha_dom', 'needs_login', 'needs_verification'):
                 return None
             snapshot = json.loads(row['snapshot'])
             responses = snapshot.get('responses', [])
             if not isinstance(responses, list):
                 return None
+            if (row['stage']=='comment-loading-timeout' and snapshot.get('page_url') in loading
+                    and snapshot.get('navigation_http_status')==200 and not snapshot.get('navigation_error') and not responses):
+                found=True
             if (row['stage'] == 'document-timeout' and snapshot.get('navigation_error') == 'navigation_timeout'
                     and snapshot.get('navigation_http_status') is None
                     and re.fullmatch(r'https://www\.douyin\.com/video/\d{5,30}/?', snapshot.get('page_url', ''))
@@ -178,39 +190,49 @@ def transient_data_wait(connection, task):
 
 
 def transient_browser_body_wait(connection, task):
-    """A single timed-out body amid proven valid pages, never a parser bypass."""
-    if not task or task['transport']!='local_browser' or task['status']!='partial' or not task['finished_at']:
+    """One failed body transfer amid verified pages; preserve partial and retry."""
+    if not task or task['transport']!='local_browser' or task['status'] not in ('partial','schema_changed') or not task['finished_at']:
         return None
-    if sum(task[k] for k in ('comments','filtered_old','filtered_unknown','filtered_future','filtered_keyword','filtered_blocked'))<=0:
-        return None
-    count=0
+    count=0;quality={};skipped=0
     try:
+        checkpoints={r['video_url']:r['status'] for r in connection.execute('SELECT video_url,status FROM collection_checkpoints WHERE task_id=?',(task['id'],))}
+        expected={url for url,status in checkpoints.items() if status!='unavailable'}
+        if not expected or 'partial' not in checkpoints.values() or any(s not in ('done','partial','unavailable') for s in checkpoints.values()):return None
         for row in connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=?',(task['id'],)):
             snapshot=json.loads(row['snapshot'])
             if row['stage'] in ('search-scope','candidate_selection'):continue
+            if row['stage']=='note-comments-open':
+                note=re.fullmatch(r'https://www\.douyin\.com/note/(\d{5,30})',snapshot.get('page_url',''))
+                if not note or 'https://www.douyin.com/video/'+note[1] not in expected or snapshot.get('responses')!=[]:return None
+                continue
             if row['stage']!='comment-read' or snapshot.get('navigation_error') or snapshot.get('navigation_http_status')!=200:return None
             info=snapshot.get('processing',{})
+            page=snapshot.get('page_url')
             if (info.get('version')!='comment-quality-v1' or info.get('recognized') is not True or info.get('invalid_records')!=0
-                    or info.get('skipped')!=info.get('non_text_skipped') or not re.fullmatch(r'https://www\.douyin\.com/video/\d{5,30}/?',snapshot.get('page_url',''))):return None
+                    or any(type(info.get(k)) is not int or info[k]<0 for k in ('skipped','non_text_skipped','invalid_records','parse_errors'))
+                    or info.get('skipped')!=info.get('non_text_skipped') or page not in expected or page in quality):return None
             responses=snapshot.get('responses')
             if not isinstance(responses,list) or not responses:return None
             failures=0;successes=0
             for item in responses:
                 if item.get('kind')!='comment' or item.get('status')!=200 or item.get('content_kind')!='json':return None
-                if item.get('body_error')=='body_timeout':failures+=1
-                elif (item.get('body_error') or item.get('status_code')!=0 or item.get('comments_type')!='array'
-                      or type(item.get('comments_count')) is not int or item['comments_count']<0 or item.get('invalid_records')!=0):return None
-                else:successes+=item['comments_count']
+                if item.get('body_error') in ('body_timeout','body_unavailable'):failures+=1
+                elif item.get('body_error') or type(item.get('status_code')) is not int or item['status_code']!=0 or item.get('invalid_records')!=0:return None
+                elif item.get('comments_type')=='array' and type(item.get('comments_count')) is int and item['comments_count']>=0:successes+=1
+                elif item.get('comments_type')=='null' and type(item.get('total')) is int and item['total']==0 and type(item.get('has_more')) is int and item['has_more']==0:successes+=1
+                else:return None
             if info.get('parse_errors')!=failures or failures and successes<=0:return None
+            if failures and checkpoints[page]!='partial':return None
+            quality[page]=failures;skipped+=info['skipped']
             count+=failures
-        return 0 if count==1 else None
+        return 0 if count==1 and set(quality)==expected and skipped==task['skipped'] else None
     except (ValueError,TypeError,AttributeError):return None
 
 
 def transient_batch_wait(connection, task):
     """Keep ordinary incomplete page reads distinct from parser/auth failures."""
     if task and task['status'] == 'schema_changed':
-        return transient_reply_wait(connection, task)
+        return transient_browser_body_wait(connection,task) if task['transport']=='local_browser' else transient_reply_wait(connection, task)
     if task and task['transport'] == 'http' and task['status'] == 'network_error':
         identity_wait = transient_identity_wait(connection, task)
         return identity_wait if identity_wait is not None else transient_data_wait(connection, task)
@@ -517,7 +539,7 @@ def tick(instant=None):
                     if retry:
                         due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=retry)).astimezone(timezone.utc).isoformat(timespec='seconds')
                         reason=('部分评论未能继续加载，保留部分结果与断点' if task['status']=='partial' else
-                                '回复分页返回异常，保留已读评论与原失败记录' if task['status']=='schema_changed' else
+                                ('评论响应正文未能完整取回，保留断点与原失败记录' if task['transport']=='local_browser' else '回复分页返回异常，保留已读评论与原失败记录') if task['status']=='schema_changed' else
                                 'HTTP 读取临时连接失败，保留会话、已读内容与断点' if task['transport']=='http' else '页面或接口暂不可用')
                         detail=f'{reason}；等待 {retry} 秒后在后台重试原监控目标，最多连续自动重试 3 次。可随时关闭监控。'
                     else:
