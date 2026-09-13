@@ -15,6 +15,7 @@ import semantic_queue as queue
 import intent_outreach as outreach
 import uid_protocol as wire
 import uid_session
+import uid_transport
 from test_uid_inbox import InboxTests,reply
 from test_uid_session import data,SENDER,RECEIVER
 from test_semantic import prediction
@@ -37,6 +38,51 @@ def page(messages,more=False,cursor=0):
 
 
 class ProtocolTests(InboxTests):
+    def test_oversized_catalog_shrinks_at_same_cursor_with_fresh_sequence(self):
+        limits=[];sequences=[]
+        def read(operation,prepared,body):
+            limit=wire.one(body,4,0);limits.append(limit)
+            sequences.append(wire.one(wire.decode(prepared['payload']),2,0))
+            self.assertEqual(wire.one(body,2,0),42)
+            if limit>2:
+                raise uid_transport.TransportError('response_exceeds_bound','response_body',http_status=200,response_bytes=262145)
+            return reply(operation,prepared,b'')
+        result=group_inbox.catalog(SENDER,cursor=42,limit=20,provider=self.provider,exchange=self.exchange(read))
+        self.assertEqual(limits,[20,10,5,2])
+        self.assertEqual(len(set(sequences)),4)
+        self.assertEqual(self.calls.count('identity'),1)
+        self.assertEqual(result['page_limit'],2)
+        self.assertEqual(sum(p.get('transport_error')=='response_exceeds_bound' for p in result['evidence']),3)
+        self.assertFalse(result['has_more'])
+
+    def test_catalog_does_not_retry_other_errors_or_oversized_single_entry(self):
+        for reason,phase,status,limit in [('timeout','response_body',200,5),
+                ('response_exceeds_bound','response_body',403,5),
+                ('response_exceeds_bound','response_body',429,5),
+                ('response_exceeds_bound','response_headers',200,5),
+                ('response_exceeds_bound','response_body',200,1)]:
+            with self.subTest(reason=reason,phase=phase,status=status,limit=limit):
+                self.calls.clear()
+                def read(*args):raise uid_transport.TransportError(reason,phase,http_status=status)
+                with self.assertRaises(uid_transport.TransportError):
+                    group_inbox.catalog(SENDER,limit=limit,provider=self.provider,exchange=self.exchange(read))
+                self.assertEqual(self.calls,['identity','conversations'])
+
+    def test_reduced_catalog_still_validates_response_identity_and_row_count(self):
+        for invalid in ('identity','count'):
+            with self.subTest(invalid=invalid):
+                self.calls.clear()
+                def read(operation,prepared,body):
+                    if wire.one(body,4,0)>1:
+                        raise uid_transport.TransportError('response_exceeds_bound','response_body',http_status=200)
+                    if invalid=='identity':return reply(operation,prepared,b'',**{'13':int(RECEIVER)})
+                    core=wire.field(1,GROUP['conversation_id'])+wire.field(2,int(GROUP['conversation_short_id']))+wire.field(3,2)
+                    row=wire.field(1,core+wire.field(8,1)+wire.field(50,core))
+                    return reply(operation,prepared,row+row)
+                with self.assertRaises(ValueError):
+                    group_inbox.catalog(SENDER,limit=2,provider=self.provider,exchange=self.exchange(read))
+                self.assertEqual(self.calls,['identity','conversations','conversations'])
+
     def test_group_shape_and_no_group_write_operation(self):
         def read(operation,prepared,body):
             if operation=='conversations':
@@ -129,6 +175,46 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(len(ids),6)
         for rid in ids:monitor.control(dict(id=rid,enabled=True))
         self.assertEqual(monitor.state()['enabled'],6)
+
+    def test_small_catalog_pages_cover_more_than_five_pages(self):
+        calls=[]
+        def read(account,*,cursor,limit):
+            calls.append((cursor,limit))
+            group=dict(GROUP,conversation_id=str(int(GROUP['conversation_id'])+cursor),
+                       conversation_short_id=str(int(GROUP['conversation_short_id'])+cursor))
+            return dict(groups=[group],has_more=cursor<11,next_cursor=str(cursor+1),page_limit=1,evidence=[])
+        result=monitor.discover(reader=read)
+        self.assertTrue(result['complete']);self.assertEqual(result['discovered'],12)
+        self.assertEqual(calls,[(0,5)]+[(i,1) for i in range(1,12)])
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM monitored_groups WHERE member=1').fetchone()[0],12)
+
+    def test_partial_catalog_keeps_unseen_members_and_rejects_nonadvancing_page(self):
+        def read(account,*,cursor,limit):
+            group=dict(GROUP,conversation_id=str(8000000000000000000+cursor),
+                       conversation_short_id=str(8000000000000000000+cursor))
+            return dict(groups=[group],has_more=True,next_cursor=str(cursor+1),page_limit=1,evidence=[])
+        result=monitor.discover(reader=read)
+        self.assertFalse(result['complete']);self.assertEqual(result['discovered'],100)
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT member,enabled FROM monitored_groups WHERE id=1').fetchone()[:],(1,1))
+            before=c.execute('SELECT COUNT(*) FROM group_reads').fetchone()[0]
+        with self.assertRaisesRegex(ValueError,'nonadvancing_cursor'):
+            monitor.discover(reader=lambda *a,**k:dict(groups=[GROUP],has_more=True,next_cursor='0',evidence=[]))
+        with app.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM group_reads').fetchone()[0],before)
+
+    def test_catalog_transport_failure_records_stage_without_consuming_message_progress(self):
+        def read(*args,**kwargs):
+            raise uid_transport.TransportError('response_exceeds_bound','response_body',http_status=200,response_bytes=262145)
+        with patch('group_inbox.messages') as messages:
+            monitor.tick(catalog_reader=read)
+            messages.assert_not_called()
+        with app.db() as c:
+            group=dict(c.execute('SELECT * FROM monitored_groups WHERE id=1').fetchone())
+            record=dict(c.execute('SELECT * FROM group_reads ORDER BY id DESC LIMIT 1').fetchone())
+        self.assertEqual((group['status'],group['failures'],group['watermark'],group['cursor']),('retrying',1,'0','0'))
+        self.assertEqual(record['operation'],'catalog')
+        self.assertEqual(json.loads(record['detail'])['evidence']['transport_error'],'response_exceeds_bound')
 
     def test_idle_groups_slow_down_and_new_text_restores_fast_polling(self):
         with app.db() as c:

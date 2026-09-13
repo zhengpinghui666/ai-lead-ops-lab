@@ -78,8 +78,8 @@
     },
     {
       "name": "GROUP_MONITOR.md",
-      "sha256": "6eb47723b856c4ed744795cdf434763ddfe32d2e266fcc5d7a0e14b26b739326",
-      "bytes": 9948
+      "sha256": "676d4ad90e4f6024bc250c14abc72a3615fde7d3b48331a0d160b767e4358471",
+      "bytes": 10806
     },
     {
       "name": "INFORMATION_ARCHITECTURE.md",
@@ -168,8 +168,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "a5bc5dda33282cd5663115018f2c5577efa2d4a9994002d628dd1a999ccb3f78",
-      "bytes": 79347
+      "sha256": "94886c0f00429c0dc09c271e0d5139bcde35bdafcf1f7b48c88b8bf6d74ebe90",
+      "bytes": 80957
     },
     {
       "name": "UID_HTTP.md",
@@ -448,13 +448,13 @@
     },
     {
       "name": "group_inbox.py",
-      "sha256": "5af845f9838a10ad38a4dcde0cf99af6539e11b746f0d31857376e21a9fb91d5",
-      "bytes": 6216
+      "sha256": "7dc0a45d7489b0682b99fd407d3295344379b1673bf15b81d4e13e3c917ef605",
+      "bytes": 6827
     },
     {
       "name": "group_monitor.py",
-      "sha256": "6ef37c7325ed6f82d094bbaf2724e59081051c96f24e5d4add19036cc8acd8f9",
-      "bytes": 25083
+      "sha256": "7f53bb63928318d78bfbbc1f62fa02cfc45c45c3e58587e5e7ec129bcb7ec9ae",
+      "bytes": 25952
     },
     {
       "name": "group_profiles.py",
@@ -1073,8 +1073,8 @@
     },
     {
       "name": "test_group_monitor.py",
-      "sha256": "bf717263b5ef92534c57f5116761a7c41f07440a5c6826bc52f4f049792fadf5",
-      "bytes": 17736
+      "sha256": "3fb6aefdf46c4531effd24e423903f096a6e16e0c36ea1a5f0646bc260bd6751",
+      "bytes": 23478
     },
     {
       "name": "test_group_profiles.py",

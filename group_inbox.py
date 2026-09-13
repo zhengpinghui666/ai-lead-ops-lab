@@ -20,18 +20,32 @@ def group_row(row):
                 member=inbox._flag(row,8),participants=inbox._number(wire.one(row,7,0,0)),inbox=0)
 
 
-def catalog(account,*,cursor=0,limit=20,provider=None,exchange=None):
+DEFAULT_CATALOG_LIMIT = 5
+
+
+def catalog(account,*,cursor=0,limit=DEFAULT_CATALOG_LIMIT,provider=None,exchange=None):
     inbox._number(cursor);inbox._number(limit,1,20)
     provider=provider or uid_session.Provider();exchange=exchange or uid_transport.request
     evidence=[];inbox._identity(account,provider,exchange,evidence)
     # Verified public encoder: 1 sort_type, 2 cursor, 3 con_type, 4 limit.
-    body=wire.field(2006,wire.field(1,1)+wire.field(2,cursor)+wire.field(3,2)+wire.field(4,limit))
-    info=inbox._read('conversations',body,account,provider,exchange,evidence)
+    # Group entries include large metadata. Keep the transport's body bound and
+    # retry only an oversized HTTP 200 read, at the same cursor with a fresh seq.
+    while True:
+        body=wire.field(2006,wire.field(1,1)+wire.field(2,cursor)+wire.field(3,2)+wire.field(4,limit))
+        try:
+            info=inbox._read('conversations',body,account,provider,exchange,evidence)
+            break
+        except uid_transport.TransportError as exc:
+            proof=exc.evidence
+            if (limit<=1 or proof.get('transport_error')!='response_exceeds_bound'
+                    or proof.get('http_status')!=200 or proof.get('transport_phase')!='response_body'):
+                raise
+            limit=max(1,limit//2)
     rows=[group_row(r) for r in inbox._items(info,1,limit)]
     if len({r['conversation_id'] for r in rows})!=len(rows):raise inbox.ReadError('duplicate_conversations_in_page')
     more=inbox._flag(info,2);next_cursor=inbox._number(wire.one(info,3,0,0))
     if more and next_cursor<=cursor:raise inbox.ReadError('nonadvancing_cursor')
-    return dict(groups=rows,has_more=more,next_cursor=str(next_cursor),evidence=evidence)
+    return dict(groups=rows,has_more=more,next_cursor=str(next_cursor),page_limit=limit,evidence=evidence)
 
 
 def messages(account,group,*,cursor=0,limit=20,provider=None,exchange=None):

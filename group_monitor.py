@@ -70,12 +70,19 @@ def policy(c):
 
 def discover(*,reader=None):
     account=uid_inbox_store._account();reader=reader or group_inbox.catalog
-    rows=[];proof=[];cursor=0
-    for _ in range(5):
-        result=reader(account,cursor=cursor)
+    rows=[];proof=[];cursor=0;limit=group_inbox.DEFAULT_CATALOG_LIMIT
+    # Small response pages must not reduce coverage to the old five-page cap.
+    # A bounded partial catalog never marks unseen groups as having left.
+    for _ in range(100):
+        result=reader(account,cursor=cursor,limit=limit)
         rows.extend(result['groups']);proof.extend(result['evidence'])
         if not result['has_more']:break
-        cursor=int(result['next_cursor'])
+        next_cursor=int(result['next_cursor'])
+        if next_cursor<=cursor or not result['groups']:
+            raise group_inbox.inbox.ReadError('nonadvancing_cursor')
+        cursor=next_cursor
+        limit=group_inbox.inbox._number(result.get('page_limit',limit),1,20)
+        if len(rows)>=1000:break
     complete=not result['has_more']
     if len({r['conversation_id'] for r in rows})!=len(rows):raise ValueError('群目录分页重复；未覆盖已有目录')
     with app.LOCKS['live'],app.db() as c:
@@ -232,7 +239,7 @@ def tick(*,reader=None,catalog_reader=None):
         return
     global ACTIVE
     if STOP.is_set() or not GUARD.acquire(blocking=False):return
-    acquired=False;group=None
+    acquired=False;group=None;operation='catalog'
     try:
         with app.db() as c:
             group=c.execute('SELECT * FROM monitored_groups WHERE enabled=1 AND account_uid=? AND next_run_at<=? ORDER BY next_run_at,id LIMIT 1',(uid_inbox_store._account(),app.now())).fetchone()
@@ -246,6 +253,7 @@ def tick(*,reader=None,catalog_reader=None):
             discover(reader=catalog_reader)
         with app.db() as c:group=dict(c.execute('SELECT * FROM monitored_groups WHERE id=?',(group['id'],)).fetchone())
         if not group['enabled'] or group['account_uid']!=uid_inbox_store._account():return
+        operation='messages'
         reader=reader or group_inbox.messages
         for _ in range(3):
             if STOP.is_set():break
@@ -268,12 +276,17 @@ def tick(*,reader=None,catalog_reader=None):
     except Exception as exc:
         if group is not None:
             # Never persist raw transport errors: they may contain session material.
-            detail='群读取未完成；已保存进度，稍后重试。'+(' '+str(exc) if isinstance(exc,group_inbox.inbox.ReadError) else '')
+            detail=('群目录刷新未完成' if operation=='catalog' else '群消息读取未完成')+'；已保存进度，稍后重试。'
+            proof={}
+            if isinstance(exc,group_inbox.uid_transport.TransportError):
+                proof=dict(exc.evidence)
+                if proof.get('transport_error')=='response_exceeds_bound':detail+=' 单页响应超过读取上限。'
+            elif isinstance(exc,group_inbox.inbox.ReadError):detail+=' '+str(exc)
             with app.LOCKS['live'],app.db() as c:
                 c.execute("UPDATE monitored_groups SET status='retrying',detail=?,failures=failures+1,next_run_at=? WHERE id=?",
                           (detail,stamp_after(min(600,60*2**min(3,group['failures']))),group['id']))
                 c.execute('INSERT INTO group_reads(group_id,account_uid,operation,status,detail,created_at) VALUES(?,?,?,?,?,?)',
-                          (group['id'],group['account_uid'],'messages','failed',json.dumps(dict(detail=detail)),app.now()))
+                          (group['id'],group['account_uid'],operation,'failed',json.dumps(dict(detail=detail,evidence=proof)),app.now()))
     finally:
         ACTIVE=False
         if acquired:uid_messaging.GUARD.release()
