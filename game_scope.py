@@ -8,6 +8,8 @@ ALIASES = CONFIG['aliases']
 GAME_PATTERN = re.compile('|'.join(map(re.escape, ALIASES))+'|'+CONFIG['isolated_pattern'], re.I)
 MOBILE_PATTERN = re.compile(CONFIG['mobile_pattern'], re.I)
 DESKTOP_PATTERN = re.compile(CONFIG['desktop_pattern'], re.I)
+FOREIGN_REGION_PATTERN = re.compile(CONFIG['foreign_region_pattern'], re.I)
+DOMESTIC_REGION_PATTERN = re.compile(CONFIG['domestic_region_pattern'], re.I)
 
 
 def exclusion_reason(*contexts):
@@ -20,6 +22,9 @@ def exclusion_reason(*contexts):
     if (GAME_PATTERN.search(text) or re.search('源能行[动動]',text)) and MOBILE_PATTERN.search(text):
         return ('端手游信息混杂，需核对端游需求；不自动触达。' if DESKTOP_PATTERN.search(text)
                 else '包含手游范围，Mimo 仅承接端游无畏契约；不自动触达。')
+    if GAME_PATTERN.search(text) and FOREIGN_REGION_PATTERN.search(text):
+        return ('国服与其他区服信息混杂，需核对国服需求；不自动触达。' if DOMESTIC_REGION_PATTERN.search(text)
+                else '包含非国服范围，Mimo 仅承接国服端游无畏契约；不自动触达。')
     return ''
 
 

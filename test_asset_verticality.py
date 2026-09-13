@@ -45,6 +45,17 @@ class ClassificationTests(unittest.TestCase):
 
 
 class RoutingTests(unittest.TestCase):
+    def test_foreign_region_in_text_or_parent_blocks_model_despite_domestic_source(self):
+        rid,result=self.comment('亚服找陪玩','无畏契约国服陪玩')
+        self.assertEqual(result['model_queue']['queued'],0)
+        with app.db() as c:
+            self.assertFalse(assets.routing(c,'comment',rid)['model_allowed'])
+            c.execute("UPDATE comments SET raw_text='亚服有吗',external_id='parent'")
+        child,_=self.comment('多少钱','无畏契约国服陪玩',key='child')
+        with app.db() as c:
+            c.execute("UPDATE comments SET parent_external_id='parent' WHERE id=?",(child,))
+            self.assertFalse(assets.routing(c,'comment',child)['model_allowed'])
+
     def test_scope_migration_is_idempotent_and_preserves_raw_and_analysis_history(self):
         import game_scope
         self.comment('找陪玩','手瓦陪玩')

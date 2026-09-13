@@ -2,7 +2,7 @@
 import re
 from game_scope import GAME_PATTERN, exclusion_reason
 
-RULESET_VERSION = 'rules-v5-pc'
+RULESET_VERSION = 'rules-v6-cn-pc'
 SEPARATOR = re.compile(r'[，,。.!?！？；;\n]')
 NEGATIVE_BEFORE = re.compile(r'(?:不(?:是|再|要|想|用|需要|打算|考虑)?|没(?:有|想|打算)?|并非|无需|拒绝|谢绝)(?:再|去|找)?\s*$')
 NEGATIVE_AFTER = re.compile(r'^\s*(?:不要|不行|没空|不方便|不考虑|不用|不需要|不合适|取消|太贵)')

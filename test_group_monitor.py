@@ -65,6 +65,13 @@ class ProtocolTests(InboxTests):
 
 
 class MonitorTests(unittest.TestCase):
+    def test_foreign_region_group_context_blocks_existing_message(self):
+        ids=self.add([msg()])
+        with app.db() as c:
+            c.execute("UPDATE monitored_groups SET notice='无畏契约亚服开黑'")
+            self.assertFalse(monitor.routing(c,ids[0])['model_allowed'])
+            self.assertFalse(monitor.eligible(c,self.raw(c),semantic.state()['engine'],SENDER))
+
     def test_mobile_message_and_changed_group_notice_block_model_and_outreach(self):
         ids=self.add([msg(text='手瓦找陪玩，预算100元')])
         with app.db() as c:

@@ -96,7 +96,7 @@ def toggle(body, mode='live'):
         if not c.execute('SELECT 1 FROM live_rooms WHERE room_url=?', (url,)).fetchone():
             raise ValueError('房间尚未加入直播间库')
         if body['enabled'] and exclusion_reason(c.execute('SELECT title FROM live_rooms WHERE room_url=?',(url,)).fetchone()[0]):
-            raise ValueError('该直播间包含手游范围，Mimo 仅承接端游无畏契约')
+            raise ValueError('该直播间不符合国服端游无畏契约服务范围')
         c.execute('UPDATE live_rooms SET enabled=? WHERE room_url=?', (int(body['enabled']), url))
     return {'saved': True, 'detail': '房间关注已更新，下批生效；历史弹幕保留'}
 

@@ -53,8 +53,8 @@
     },
     {
       "name": "DELIVERY.md",
-      "sha256": "011eff480d4b088c0287be821213e65b069d7388874e6cc33e3bce1e2696d8ca",
-      "bytes": 130171
+      "sha256": "d984548787c26a379122d66b45bf3da029014ddc766caca419043861e0ea0f80",
+      "bytes": 130613
     },
     {
       "name": "DISCOVERY_TRACKING.md",
@@ -73,8 +73,8 @@
     },
     {
       "name": "GOAL.md",
-      "sha256": "cc47d1ba7acf0b8c973411c3fa982508338205a0dfe9517619dea55194a7bc23",
-      "bytes": 171534
+      "sha256": "7076ec2ede6aacfe1f146b35cf720e94564d5c1267b8f0171ffdfc2784b04a06",
+      "bytes": 171821
     },
     {
       "name": "GROUP_MONITOR.md",
@@ -148,8 +148,8 @@
     },
     {
       "name": "REQUIREMENTS_DISCUSSION.md",
-      "sha256": "d66ceb5fc986a09b8f8691725ab0a651dc45a9f0b8b70b805883ccc5c5ac6077",
-      "bytes": 6978
+      "sha256": "7de086567c7d70c3bcd175fbf16a69ad5a614ee85d18b8283febf2481162dbe5",
+      "bytes": 7452
     },
     {
       "name": "RULES.md",
@@ -168,8 +168,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "82740a9159ad373a7c06d1773fb8b5b14943d83e59de783544af5ba5f174e5a3",
-      "bytes": 46633
+      "sha256": "f3dab31f1641c8eebfddddcfba058072f5896da741a77bd6b85943b7a4822368",
+      "bytes": 49242
     },
     {
       "name": "UID_HTTP.md",
@@ -208,8 +208,8 @@
     },
     {
       "name": "asset_verticality.py",
-      "sha256": "53f9bbd4cec6b83350e906a836ba983d82e17a1bbff60a828ee6075053e741ed",
-      "bytes": 9532
+      "sha256": "2dbc2ec1301926307b45fb3ff4d06d342e476ffd09bb477559a8970405fbe3bd",
+      "bytes": 9535
     },
     {
       "name": "browser_config.cjs",
@@ -278,8 +278,8 @@
     },
     {
       "name": "clubops.py",
-      "sha256": "3b4df85e14681cafd62b39a4b6d4f3bc84dafd6c266f4980a9af424ba3024be1",
-      "bytes": 57507
+      "sha256": "53a47bed878b5944506f8fbe41b7e1e9dde50182fb02a712019590837b73d328",
+      "bytes": 57767
     },
     {
       "name": "collection_scheduler.py",
@@ -303,13 +303,13 @@
     },
     {
       "name": "collector_http_worker.py",
-      "sha256": "f86d34b689f194708ba73b0ee7dd5ac9408bff663e3af987d794ce093ba35a47",
-      "bytes": 20472
+      "sha256": "7cd4572e69a8731e05d83c6809edfd8180cf2d8d1294052be3af271d821f1089",
+      "bytes": 20440
     },
     {
       "name": "collector_parser.cjs",
-      "sha256": "fe738aaff50f0fd4217cc76d70d5d1fc7fb792391080695c0eaf6fe6d8da93b2",
-      "bytes": 8909
+      "sha256": "d868e63ef6d61645db872adf6f0699539fd2a5dbcf626b6ff820555ffe5a5c30",
+      "bytes": 9055
     },
     {
       "name": "collector_pool.cjs",
@@ -323,8 +323,8 @@
     },
     {
       "name": "collector_reader.cjs",
-      "sha256": "65c66909493242af3effa1f49742711e0009e1127e43d47dd73d551f9f36d99f",
-      "bytes": 22172
+      "sha256": "9cf55933993eef629f31bec2d75f29bd05bbc5c5611773e813b87fc3e7579325",
+      "bytes": 22166
     },
     {
       "name": "collector_runner.cjs",
@@ -388,8 +388,8 @@
     },
     {
       "name": "discovery_tracking.py",
-      "sha256": "189fa67cc1594f655cf138cf416fd2f8c6a14fb37ec084bbf1154e251d749c92",
-      "bytes": 34173
+      "sha256": "d2437887d2500314bba0d9de9468e1baec7b3ec81fd7d4c128454ea38c7383a6",
+      "bytes": 34179
     },
     {
       "name": "evaluation/intent-development-v1.json",
@@ -408,13 +408,13 @@
     },
     {
       "name": "game_scope.json",
-      "sha256": "68d18e64d9c1efc88e3119f36e05edb2a92ae5e8f975ca5edfcc3b1294524575",
-      "bytes": 739
+      "sha256": "c357558edd160a2d1f380ce253f100412897493ddec1d49ebf05fc01343c619d",
+      "bytes": 1072
     },
     {
       "name": "game_scope.py",
-      "sha256": "65226d275937e0dda09c1d12b0097e7669cddd0b503662823c6cf6b41639f1a4",
-      "bytes": 4243
+      "sha256": "e409617096d06834b4928932744a8660b9cc261d0c42d707bdec5591a8b8bfd4",
+      "bytes": 4716
     },
     {
       "name": "github_backup.py",
@@ -548,8 +548,8 @@
     },
     {
       "name": "intent_rules.py",
-      "sha256": "3620d5d375323f6fbc692d0e3b2255875cec6d66699344b19c58f569d6d02311",
-      "bytes": 15769
+      "sha256": "ca875caeea7c8ec6dfca3bf9b357209c0226a2f6065e45be1fa39d79969734cd",
+      "bytes": 15772
     },
     {
       "name": "live_discovery.py",
@@ -558,8 +558,8 @@
     },
     {
       "name": "live_monitor.py",
-      "sha256": "613da4b9cc68a8262dc7f44662fe980b687514b9bcf160928ad25a9985909239",
-      "bytes": 27143
+      "sha256": "6692aa89e47f2f6758fe1d17ddf5843bc467b6ef39adf7fd34407a24073172f5",
+      "bytes": 27107
     },
     {
       "name": "live_protocol.cjs",
@@ -568,8 +568,8 @@
     },
     {
       "name": "live_room_pool.py",
-      "sha256": "d4d5d245954fb7da38d8a4fb63641edb50ac0c517569f465aff1a7b5967634a1",
-      "bytes": 10601
+      "sha256": "6b3b032d1b654bc2a9da45c4bb1c1026360b2db1c46f9180e40186b697aca5f4",
+      "bytes": 10593
     },
     {
       "name": "live_rules.py",
@@ -888,8 +888,8 @@
     },
     {
       "name": "test_asset_verticality.py",
-      "sha256": "82f814defb91db9687ed76641b85ceb9889b1b8576c01efa65d923264ffaca4c",
-      "bytes": 9751
+      "sha256": "22d25c6c76ad63a1282311e926b4319f419be66fbc7b4cfc0bdc4b0640117242",
+      "bytes": 10460
     },
     {
       "name": "test_author_collection.py",
@@ -1028,8 +1028,8 @@
     },
     {
       "name": "test_game_scope.py",
-      "sha256": "9eea619cbc8aa859ed4d573dca97e154fce4d5942759935d5b07927027628eb6",
-      "bytes": 5492
+      "sha256": "88322f031abb2cb5a35f62482a4508fb1404a9eaab92100041da08486b9a5e39",
+      "bytes": 6873
     },
     {
       "name": "test_github_backup.py",
@@ -1038,8 +1038,8 @@
     },
     {
       "name": "test_group_monitor.py",
-      "sha256": "c482d65d75566e8130275beaac459cfd8f8a8a0095a76edea9a85b772eba9bdb",
-      "bytes": 11930
+      "sha256": "100180ac62425ed7bcb3130a937637fb9edba7b1b5cdae8e70f5d634a80c8170",
+      "bytes": 12318
     },
     {
       "name": "test_group_public.py",
@@ -1053,8 +1053,8 @@
     },
     {
       "name": "test_intent_outreach.py",
-      "sha256": "4dd0c583d15729b149abfc09f3b93bf42e155464f59caa16e0fb8b18f46b5dbd",
-      "bytes": 7513
+      "sha256": "9e432c0e0210b1219ec24475088d9f4f16143504b48b533f3074da10c483b4a1",
+      "bytes": 7982
     },
     {
       "name": "test_intent_rules.py",
@@ -1313,8 +1313,8 @@
     },
     {
       "name": "test_worker.cjs",
-      "sha256": "2fb3ad88569c975bf1f4476c6259e318c552a07b444a4d91805a4c6afaaedb76",
-      "bytes": 15559
+      "sha256": "e37ebb96c2883a3f5509132d1195cc639c55542b5cc3355fef2b1ff253de9389",
+      "bytes": 15624
     },
     {
       "name": "tests/fixtures/captcha/background.png",
@@ -1333,8 +1333,8 @@
     },
     {
       "name": "tests/fixtures/playwright_fixture.cjs",
-      "sha256": "d0893c9820cc467d7eef1c31a4051e0dadf5b966069886c61040b0af1b107d77",
-      "bytes": 10973
+      "sha256": "75379ef4dc2b8d543e7a32876e515f63ff23875481a422476d292016463caae7",
+      "bytes": 11036
     },
     {
       "name": "tests/fixtures/playwright_parallel_fixture.cjs",

@@ -15,6 +15,23 @@ from video_discovery import in_search_scope
 
 
 class GameScopeTests(unittest.TestCase):
+    def test_domestic_pc_scope_is_shared_and_unknown_region_is_not_invented(self):
+        foreign=['亚服','港服','台服','日服','韩服','美服','欧服','国际服','新加坡服','APAC server','NA服']
+        titles=['无畏契约 '+term+' 陪玩' for term in foreign]+['端瓦国服亚服都玩']
+        for title in titles:
+            self.assertTrue(exclusion_reason(title))
+            self.assertFalse(in_search_scope({'video_title':title},'瓦'))
+            self.assertFalse(groups.match({'name':title}))
+            self.assertFalse(assets.classify(title,[])['matched'])
+            self.assertNotEqual(app.classify('找陪玩',title)['category'],'buyer')
+        code="console.log(JSON.stringify(JSON.parse(process.argv[1]).map(video_title=>require('./collector_parser.cjs').inSearchScope({video_title},'瓦'))))"
+        result=subprocess.run(['node','-e',code,json.dumps(titles)],text=True,capture_output=True,check=True,timeout=10,
+            cwd=Path(__file__).resolve().parent,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        self.assertEqual(json.loads(result.stdout),[False]*len(titles))
+        for title in ('无畏契约国服陪玩','国服瓦搭子群','端瓦陪玩 额外服务'):
+            self.assertFalse(exclusion_reason(title))
+        self.assertEqual(app.classify('找个搭子','瓦搭子群')['facts']['region'],'')
+
     def test_browser_http_groups_and_assets_share_scope(self):
         positive=['瓦','【瓦】陪玩','#瓦 #陪玩','打瓦找队友','瓦搭子群','瓦友开黑','瓦群','瓦开黑',
                   '瓦排位陪练','瓦双排','瓦组队','国服瓦','端瓦','女瓦陪玩','男瓦',

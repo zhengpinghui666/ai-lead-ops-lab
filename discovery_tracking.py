@@ -127,7 +127,7 @@ def save(body,mode='live'):
             if not isinstance(cfg[key],list) or len(cfg[key])>(12 if key=='keywords' else 10):raise ValueError('发现入口数量超出上限')
             if any(not isinstance(v,str) for v in cfg[key]):raise ValueError('发现入口格式无效')
             cfg[key]=list(dict.fromkeys(v.strip() for v in cfg[key] if v.strip()))
-        if not cfg['keywords'] or any(len(v)>80 or not in_pc_scope(v) for v in cfg['keywords']):raise ValueError('搜索词需包含端游无畏契约或明确游戏别名；不承接手游')
+        if not cfg['keywords'] or any(len(v)>80 or not in_pc_scope(v) for v in cfg['keywords']):raise ValueError('搜索词需符合国服端游无畏契约范围；不承接手游或其他区服')
         if any(not re.fullmatch(r'[0-9]{5,30}',v) for v in cfg['seed_videos']):raise ValueError('作者种子需使用视频数字 ID')
         c.execute("INSERT INTO settings VALUES('discovery_tracking',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(json.dumps(cfg,ensure_ascii=False),))
         for keyword in cfg['keywords']:c.execute('INSERT OR IGNORE INTO discovery_queries(keyword,next_check_at) VALUES(?,?)',(keyword,app.now()))

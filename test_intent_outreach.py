@@ -9,6 +9,14 @@ SENDER = fixtures.SENDER
 
 
 class OutreachTests(unittest.TestCase):
+    def test_non_domestic_source_blocks_saved_intent_and_old_grant(self):
+        with app.db() as c:c.execute("UPDATE videos SET title='无畏契约亚服陪玩'")
+        with patch('uid_transport.send') as transport:
+            outreach.tick();transport.assert_not_called()
+            with self.assertRaisesRegex(ValueError,'非国服'):
+                channel.send_one(self.job['id'],operator_authorization=self.grant)
+            transport.assert_not_called()
+
     def test_saved_buyer_on_mobile_source_never_creates_an_outreach_job(self):
         with app.db() as c:
             c.execute("UPDATE videos SET title='无畏契约手游陪玩'")

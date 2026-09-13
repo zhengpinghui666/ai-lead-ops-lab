@@ -188,7 +188,7 @@ function createReader(page,shared){
   }
   async function collect(row){
     if(parser.outsideServiceScope(row.video_title)){
-      await emit({type:'checkpoint',video_id:row.video_id,status:'unavailable',reason:'outside_pc_scope',detail:'作品包含手游范围，仅承接端游无畏契约；未打开其评论页'});
+      await emit({type:'checkpoint',video_id:row.video_id,status:'unavailable',reason:'outside_pc_scope',detail:'作品不符合国服端游服务范围；未打开其评论页'});
       return {unavailable:true};
     }
     phase='idle';await drain();await ready();current=row;outsidePC=false;recognized=false;hasMore=null;commentResponses=0;invalidComments=0;nonTextComments=0;responseMeta.length=0;
@@ -242,7 +242,7 @@ function createReader(page,shared){
     }
     await guard();phase='idle';await drain();
     if(outsidePC){
-      await emit({type:'checkpoint',video_id:row.video_id,status:'unavailable',reason:'outside_pc_scope',detail:'页面标题确认包含手游范围；未入库评论，已停止该作品读取'});
+      await emit({type:'checkpoint',video_id:row.video_id,status:'unavailable',reason:'outside_pc_scope',detail:'页面标题不符合国服端游服务范围；未入库评论，已停止该作品读取'});
       return {unavailable:true};
     }
     const errors=readErrors+schemaErrors-errorsAtStart,done=!errors&&!invalidComments&&(hasMore===false||(perVideo.get(row.video_id)||0)>=config.comment_limit);

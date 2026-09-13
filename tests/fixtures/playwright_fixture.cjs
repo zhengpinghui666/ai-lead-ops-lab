@@ -17,7 +17,7 @@ class Page extends EventEmitter {
   constructor(ctx){super();this.ctx=ctx;this.address='about:blank';this.mouse={wheel:async()=>{}};}
   url(){return this.address;}
   isClosed(){return this.ctx.closed;}
-  async title(){return scenario==='mobile-video'?'无畏契约手游陪玩 - 抖音':scenario==='gateway-title-only'?'502 Bad Gateway':scenario==='public-comments-login-to-post'?'合成夹具：无畏契约陪玩 - 抖音':scenario.includes('verification')&&!verified?'验证码中间页':'合成夹具页面';}
+  async title(){return scenario==='foreign-video'?'无畏契约港服陪玩 - 抖音':scenario==='mobile-video'?'无畏契约手游陪玩 - 抖音':scenario==='gateway-title-only'?'502 Bad Gateway':scenario==='public-comments-login-to-post'?'合成夹具：无畏契约陪玩 - 抖音':scenario.includes('verification')&&!verified?'验证码中间页':'合成夹具页面';}
   async goto(url){
     this.address=url;
     if(url.includes('/search/'))searchKeyword=decodeURIComponent(new URL(url).pathname.slice('/search/'.length));

@@ -13,7 +13,7 @@ from intent_rules import COMPANION, companion_relevance
 from video_discovery import GAME_PATTERN
 from game_scope import exclusion_reason, record_exclusion
 
-VERSION='asset-verticality-v5-pc'
+VERSION='asset-verticality-v6-cn-pc'
 SAMPLE_LIMIT=300
 SERVICE_PATTERN=re.compile(COMPANION+r'|陪同上分|付费教学|有偿教学|复盘接单|陪练接单',re.I)
 SCHEMA='''CREATE TABLE IF NOT EXISTS asset_verticality (

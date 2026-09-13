@@ -6,7 +6,8 @@ const gameScope=require('./game_scope.json');
 const escapeRE=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 const gamePattern=new RegExp(gameScope.aliases.map(escapeRE).join('|')+'|'+gameScope.isolated_pattern,'i');
 const mobilePattern=new RegExp(gameScope.mobile_pattern,'i');
-function outsideServiceScope(...values){const combined=values.map(v=>text(v)).join(' ');return (gamePattern.test(combined)||/源能行[动動]/.test(combined))&&mobilePattern.test(combined);}
+const foreignRegionPattern=new RegExp(gameScope.foreign_region_pattern,'i');
+function outsideServiceScope(...values){const combined=values.map(v=>text(v)).join(' ');return ((gamePattern.test(combined)||/源能行[动動]/.test(combined))&&mobilePattern.test(combined))||(gamePattern.test(combined)&&foreignRegionPattern.test(combined));}
 function inSearchScope(row,keyword){
   return !outsideServiceScope(row?.video_title,keyword)&&(!gamePattern.test(text(keyword))||gamePattern.test(text(row?.video_title)));
 }
