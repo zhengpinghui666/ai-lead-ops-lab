@@ -1,0 +1,88 @@
+"""Isolated event/time/deduplication tests. No platform reads or messages."""
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from datetime import datetime
+from unittest.mock import patch
+import clubops as app
+import daily_dashboard as dashboard
+import server
+
+DAY = '2026-09-13T00:00:00+08:00'
+NOON = datetime.fromisoformat('2026-09-13T12:30:00+08:00')
+
+
+class DailyDashboardTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.patch = patch.object(app, 'DATA_DIR', Path(self.temp.name)); self.patch.start()
+        app.init()
+
+    def tearDown(self):
+        self.patch.stop(); self.temp.cleanup()
+
+    def task(self, c):
+        return c.execute("""INSERT INTO collection_tasks(request_id,kind,target,video_limit,comment_limit,
+            interactive,status,created_at,updated_at) VALUES(lower(hex(randomblob(16))),'video','fixture',1,1,0,'completed',?,?)""",(DAY,DAY)).lastrowid
+
+    def event(self,c,task,stamp,phase,submissions,**extra):
+        c.execute("INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,'captcha_workflow',?,?)",
+                  (task,json.dumps({'verification':dict(phase=phase,attempt_id='new-id-on-every-phase',submissions=submissions,**extra)}),stamp))
+
+    def test_empty_is_no_attempt_not_zero_percent_and_no_future_hours(self):
+        value = dashboard.snapshot(reference=NOON)
+        self.assertIsNone(value['captcha']['pass_rate'])
+        self.assertEqual(value['labels'][-1], '12:30')
+        self.assertEqual(len(value['labels']),14)
+        self.assertIsNone(value['conversions']['orders'])
+        self.assertTrue(all(n == 0 for n in value['totals'].values()))
+
+    def test_captcha_cumulative_counts_strict_evidence_and_midnight(self):
+        with app.db() as c:
+            passed=self.task(c);unknown=self.task(c);legacy=self.task(c);previous=self.task(c)
+            self.event(c,passed,'2026-09-12T16:00:00+00:00','detected',0)
+            self.event(c,passed,'2026-09-13T00:01:00+08:00','verifying',1)
+            for _ in range(3):
+                self.event(c,passed,'2026-09-13T00:02:00+08:00','accepted',1,platform_verdict='passed',verdict_source='visible_platform_result')
+            self.event(c,unknown,'2026-09-13T02:00:00+08:00','needs_review',1)
+            self.event(c,legacy,'2026-09-13T03:00:00+08:00','accepted',1)
+            self.event(c,previous,'2026-09-12T23:59:00+08:00','needs_review',1)
+        v=dashboard.snapshot(reference=NOON);r=v['captcha']
+        self.assertEqual((r['encounters'],r['submitted'],r['passed'],r['unknown']), (3,3,1,2))
+        self.assertEqual(r['pass_rate'],33.3)
+        self.assertEqual(r['legacy_accepted'],1)
+        self.assertEqual(r['all_time']['submitted'],4)
+        self.assertEqual(v['series']['captcha_passed'][-1],1)
+
+    def test_first_observation_and_first_buyer_survive_repeated_reads_and_reanalysis(self):
+        with app.db() as c:
+            source=c.execute("INSERT INTO sources(name,kind) VALUES('fixture','browser')").lastrowid
+            video=c.execute("INSERT INTO videos(source_id,external_id,title,url,created_at) VALUES(?,'1','fixture','https://example.test/1',?)",(source,DAY)).lastrowid
+            person=c.execute("INSERT INTO people(source_id,external_id,nickname) VALUES(?,'12345','fixture')",(source,)).lastrowid
+            for external,stamp in [('older','2026-09-12T23:59:00+08:00'),('today','2026-09-12T16:00:00+00:00')]:
+                record=c.execute("""INSERT INTO comments(source_id,external_id,video_id,person_id,raw_text,discovered_at)
+                    VALUES(?,?,?,?,'fixture',?)""",(source,external,video,person,stamp)).lastrowid
+                for finish in [stamp,'2026-09-13T05:00:00+08:00']:
+                    c.execute("""INSERT INTO intent_results(evidence_type,record_id,method,engine,request_id,input_hash,
+                        input_json,status,result_json,started_at,finished_at) VALUES('comment',?,'model','fixture',?,'hash','{}','completed',?,?,?)""",
+                        (record,finish,json.dumps(dict(category='buyer',game='无畏契约')),finish,finish))
+                task=self.task(c)
+                c.execute("""INSERT INTO collection_observations(task_id,kind,external_id,page_url,observed_at,payload_hash,comment_text)
+                    VALUES(?,'comment',?,'https://example.test/1','2026-09-13T06:00:00+08:00','hash','fixture')""",(task,external))
+        v=dashboard.snapshot(reference=NOON)
+        self.assertEqual(v['totals']['comments'],1)
+        self.assertEqual(v['totals']['modeled'],1)
+        self.assertEqual(v['totals']['intent_users'],0,'Already a buyer yesterday, not newly identified today')
+        self.assertEqual(v['series']['comments'][1],1,'UTC midnight boundary belongs to Beijing today')
+        self.assertEqual(v['series']['comments'][-1],1)
+
+    def test_home_does_not_build_full_state_or_collect_network_state(self):
+        with patch('clubops.state',side_effect=AssertionError('full state')),patch('server.collection_state',side_effect=AssertionError('collector state')):
+            v=server.workbench_state('live','overview')
+        self.assertIn('dashboard',v)
+        self.assertLess(len(json.dumps(v)),12000)
+        self.assertEqual(v['comments'],[])
+
+
+if __name__=='__main__':unittest.main()

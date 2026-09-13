@@ -30,6 +30,7 @@ import socket
 import threading
 import uuid
 import sys
+import daily_dashboard
 
 BASE = Path(__file__).resolve().parent
 HOST = '127.0.0.1'
@@ -61,9 +62,12 @@ VIEWS = {'overview','monitor','monitor-settings','live','groups','leads','inbox'
 def workbench_state(mode, view=None):
     if view is not None and view not in VIEWS:
         raise ValueError('页面不存在')
+    if view == 'overview' and mode == 'live':
+        return {**daily_dashboard.workbench(mode), 'csrf': CSRF, 'view': view}
     light = view in {'monitor','monitor-settings','live','groups','settings'} and mode == 'live'
     result = clubops.shell_state(mode) if light else clubops.state(mode)
     if view == 'overview':
+        result['dashboard'] = daily_dashboard.snapshot(mode)
         result['leads'] = sorted((r for r in result['leads'] if r['category']=='buyer' and r['game']==clubops.TARGET_GAME),
             key=lambda r:r['latest'].get('published_at') or '', reverse=True)[:5]
         result.update(comments=[],videos=[],live_messages=[],members=[],messages=[],jobs=[])
@@ -120,6 +124,8 @@ class Handler(BaseHTTPRequestHandler):
             path = urlparse(self.path).path
             if path == '/api/service':
                 return self.respond(self.server.service_state())
+            if path == '/api/dashboard':
+                return self.respond(daily_dashboard.snapshot(self.mode()))
             if path == '/api/uid-inbox':
                 import uid_inbox_store
                 query=parse_qs(urlparse(self.path).query)

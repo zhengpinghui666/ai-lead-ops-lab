@@ -102,9 +102,13 @@ function renderNavigation(){
   document.title=`${pages[page][0]} · ClubOps`;
 }
 function loadingFrame(target){
-  const sections={overview:['获客进展','最近需求'],monitor:['作品库','有意向的评论'],live:['实时弹幕与需求初筛'],groups:['监控群聊','群消息与筛选结果'],leads:['需求筛选结果'],inbox:['会话列表','私信记录'],analytics:['导流情况'],settings:['数据与设置'],'monitor-settings':['监控设置']};
+  if(target==='overview'){
+    const names=['今日新增作品','今日采集评论','今日采集弹幕','今日采集群消息','今日初筛通过','今日模型分析','今日模型新增意向','今日私信接受'];
+    return `<div class="page-head"><h1>${esc(pages[target][0])}</h1><div class="actions frame-actions" aria-hidden="true"><span></span></div></div><div class="page-loading-frame" aria-busy="true"><div class="daily-heading"><div><h2>今日运营看板</h2><p role="status">正在加载工作总览数据…</p></div></div><div class="daily-metrics" aria-hidden="true">${names.map(name=>`<div class="metric frame-metric daily-frame-metric"><div class="metric-label">${name}<span class="metric-icon"></span></div><strong><span class="skeleton-line skeleton-value"></span></strong><small><span class="skeleton-line"></span></small></div>`).join('')}</div><div class="daily-highlight-row">${['今日验证码确认通过率','今日运行与承接'].map(title=>`<section class="card daily-frame-summary"><div class="card-head"><h2>${title}</h2></div><div class="card-body frame-lines" aria-hidden="true">${Array(4).fill('<span class="skeleton-line"></span>').join('')}</div></section>`).join('')}</div></div>`;
+  }
+  const sections={overview:['今日验证码确认通过率','今日运行与承接'],monitor:['作品库','有意向的评论'],live:['实时弹幕与需求初筛'],groups:['监控群聊','群消息与筛选结果'],leads:['需求筛选结果'],inbox:['会话列表','私信记录'],analytics:['导流情况'],settings:['数据与设置'],'monitor-settings':['监控设置']};
   const lines='<div class="card-body frame-lines" aria-hidden="true">'+Array(4).fill('<span class="skeleton-line"></span>').join('')+'</div>';
-  const metrics=['overview','monitor','analytics'].includes(target)?'<div class="frame-metrics" aria-hidden="true">'+Array(target==='monitor'?5:4).fill('<div class="card frame-metric"><span class="skeleton-line"></span><span class="skeleton-line skeleton-value"></span></div>').join('')+'</div>':'';
+  const metrics=['overview','monitor','analytics'].includes(target)?'<div class="frame-metrics '+(target==='overview'?'daily-metrics':'')+'" aria-hidden="true">'+Array(target==='monitor'?5:target==='overview'?8:4).fill('<div class="card frame-metric"><span class="skeleton-line"></span><span class="skeleton-line skeleton-value"></span></div>').join('')+'</div>':'';
   const columns=sections[target]||['正在读取'];
   const status=target==='monitor'?`<section class="card frame-monitor-summary"><div class="card-head"><h2>评论监控</h2></div><div class="card-foot" role="status">正在加载监控中心数据…</div></section>`:`<p class="frame-status" role="status">正在加载${esc(pages[target][0])}数据…</p>`;
   const discovery=target==='monitor'?'<section class="card frame-discovery"><div class="card-head"><h2>作品与作者持续发现</h2></div></section>':'';
@@ -215,7 +219,49 @@ function groupPage(){
   }).join(''):empty(groupLoading?'正在读取消息':'等待新的群消息','开启监控后，采集原文与筛选结果会显示在这里。','','')}</div><div class="card-foot actions">${s.has_more?button('更早消息','group-older','small'):''}${groupBefore?button('回到最新','group-refresh','small'):''}<small>同一账号对同一用户共用评论、弹幕与群聊的私信去重记录。</small></div></section></div>`;
 }
 
-function overview(){const s=S.stats;const leads=S.leads.filter(l=>l.category==='buyer'&&l.game===TARGET_GAME).sort((a,b)=>compareLeadTime(a,b,'published')).slice(0,5);return head('','',button(icon('scan-text')+' 运行初筛','analyze','primary'))+`<div class='metrics'>${metric('已入库评论','',s.comments,'message-square-text')}${metric('潜在需求用户','需人工核对',s.buyers,'scan-text',true)}${metric('待初筛评论','',s.pending,'list-filter')}${metric('待发送草稿','尚未发送',s.drafts,'file-pen-line')}</div><div class="card"><div class="card-head"><div><h2>最近客户需求</h2><small>先看原文，再决定是否跟进</small></div><a href="#leads" class="button subtle small">全部线索 ${icon('arrow-right')}</a></div>${leads.length?leadTable(leads,true):empty('从第一条真实评论开始','在视频与采集页开启监控，读到的评论会自动入库并初筛。')}</div>`+folded('overview-records','工作记录',eventList(5));}
+function dailyChart(d,title,description,lines){
+  const width=520,height=210,left=48,right=20,top=16,bottom=30,plotWidth=width-left-right,plotHeight=height-top-bottom;
+  const ceiling=Math.max(1,...lines.flatMap(([key])=>d.series[key]||[]));
+  const max=ceiling<=5?Math.ceil(ceiling):Math.ceil(ceiling/5)*5;
+  const hours=d.elapsed_hours||d.labels.map((_,i)=>i),last=Math.max(hours.at(-1)||0,1/60);
+  const px=i=>left+hours[i]/last*plotWidth,py=n=>top+plotHeight-(n/max)*plotHeight;
+  const axes=[...new Set([0,Math.floor(max/2),max])].map(n=>`<line x1="${left}" x2="${width-right}" y1="${py(n)}" y2="${py(n)}" class="daily-gridline"/><text x="${left-8}" y="${py(n)+4}" text-anchor="end">${fmt(n)}</text>`).join('');
+  const ticks=[...new Set([0,Math.floor((d.labels.length-1)/2),d.labels.length-1])];
+  const paths=lines.map(([key,name,color],lineIndex)=>{
+    const values=d.series[key]||d.labels.map(()=>0);
+    return `<polyline fill="none" stroke="${color}" stroke-width="2.5" ${lineIndex?'stroke-dasharray="'+(lineIndex===1?'6 3':'2 3')+'"':''} points="${values.map((n,i)=>`${px(i)},${py(n)}`).join(' ')}"/>`+values.map((n,i)=>`<circle cx="${px(i)}" cy="${py(n)}" r="3" fill="${color}"><title>${esc(name)} · ${esc(d.labels[i])} · 累计 ${fmt(n)}</title></circle>`).join('');
+  });
+  return `<section class="card daily-chart"><div class="card-head"><div><h2>${esc(title)}</h2><small>${esc(description)}</small></div></div><div class="daily-chart-body"><div class="daily-legend">${lines.map(([key,name,color])=>`<span><i style="background:${color}"></i>${esc(name)}<b>${fmt(d.series[key]?.at(-1))}</b></span>`).join('')}</div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(title)}，今日按小时累计；下方可展开数值表"><g>${axes}${ticks.map(i=>`<text x="${px(i)}" y="${height-7}" text-anchor="${i===0?'start':i===d.labels.length-1?'end':'middle'}">${esc(d.labels[i])}</text>`).join('')}${paths.join('')}</g></svg><details id="daily-table-${lines[0][0]}" class="daily-data-table"><summary>查看分时数值</summary><div class="table-scroll"><table><thead><tr><th>北京时间</th>${lines.map(([,name])=>`<th>${esc(name)}</th>`).join('')}</tr></thead><tbody>${d.labels.map((label,i)=>`<tr><td>${esc(label)}</td>${lines.map(([key])=>`<td>${fmt(d.series[key]?.[i])}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div></section>`;
+}
+
+function overview(){
+  const d=S.dashboard;
+  const header=head('','',button(icon('refresh-cw')+' 刷新数据','refresh','small'));
+  if(!d)return header+notice('今日看板数据尚未就绪，请稍后刷新。');
+  const t=d.totals,c=d.captcha,r=d.runtime,p=r.monitor,latest=r.latest_batch;
+  const monitoring=p?.status==='running',attention=p?.status==='attention';
+  const rate=c.pass_rate===null?'未尝试':c.pass_rate+'%';
+  const card=(label,value,note,ico,featured=false)=>`<article class="metric ${featured?'featured':''}"><div class="metric-label">${esc(label)}<span class="metric-icon">${icon(ico)}</span></div><strong>${esc(value)}</strong><small>${esc(note)}</small></article>`;
+  const cards=[
+    card('今日新增作品',fmt(t.works),'首次加入作品库','clapperboard'),
+    card('今日采集评论',fmt(t.comments),'首次观察 · 含未通过采集条件的评论','message-square-text'),
+    card('今日采集弹幕',fmt(t.live),'本地新增弹幕存档','radio'),
+    card('今日采集群消息',fmt(t.groups),'群内只读 · 新增消息','messages-square'),
+    card('今日初筛通过',fmt(t.screened),'通过采集条件 · 不等于有意向','list-filter'),
+    card('今日模型分析',fmt(t.modeled),'首次分析成功的原文条数','sparkles'),
+    card('今日模型新增意向',fmt(t.intent_users),'首次模型判为客户 · 跨来源按 UID 去重','scan-text',true),
+    card('今日私信接受',fmt(t.dm_accepted),'服务端已接受 · 未确认送达','send'),
+  ];
+  return header+`<div class="daily-heading"><div><h2>今日运营看板 <span>${esc(d.date)}</span></h2><p>北京时间 00:00 至今 · 每 10 秒更新 · <time id="dashboard-as-of">${esc(date(d.as_of))}</time></p></div><div class="daily-status">${badge(monitoring?'评论监控已开启':attention?'评论监控需处理':'评论监控未开启',monitoring?'good':attention?'warn':'')}${badge(`待模型分析 ${fmt(r.model_pending)}`)}</div></div><div id="dashboard-refresh-error" class="notice warn" role="status" hidden></div>`+
+    (attention?notice(`评论监控需要处理${latest?`：批次 #${latest.id}，${latest.detail}`:''}。可在监控中心查看完整原因。`,true):'')+
+    `<div class="daily-metrics">${cards.join('')}</div><div class="daily-highlight-row"><section class="card daily-captcha"><div><span class="daily-eyebrow">今日验证码确认通过率</span><strong>${rate}</strong><p><b>${c.passed}</b> 次确认通过 / <b>${c.submitted}</b> 次实际提交</p></div><div class="daily-captcha-counts"><span>遇到验证的批次 <b>${c.encounters}</b></span><span>尚未提交 <b>${c.not_submitted}</b></span><span>平台明确失败 <b>${c.failed}</b></span><span>提交结果未确认 <b>${c.unknown}</b></span></div><p class="daily-note">通过须有平台明确判定，并恢复有效采集。没有结果不计为明确失败；没有提交不计算通过率。历史累计：${c.all_time.passed}/${c.all_time.submitted} 次确认通过，另有 ${c.all_time.legacy_accepted} 次旧版通过标记待核验。</p></section><section class="card daily-runtime"><h2>今日运行与承接</h2><div class="daily-runtime-grid"><span>完成批次<b>${fmt(t.batches_completed)}</b></span><span>部分完成<b>${fmt(t.batches_partial)}</b></span><span>异常批次<b>${fmt(t.batches_error)}</b></span><span>私信失败 / 结果未知<b>${d.dm.failed} / ${d.dm.unknown}</b></span></div><p class="daily-note">公众号关注、添加客服和订单：未接入数据。客户回复尚未完整覆盖，暂不统计转化率。</p>${latest?`<p class="daily-note">最近批次 #${latest.id} · ${esc(collectionLabels[latest.status]||latest.status)}${p?.next_run_at?` · 下次检查 ${esc(date(p.next_run_at))}`:""}</p>`:""}<div class="daily-links"><a href="#monitor">查看监控 ${icon('arrow-up-right')}</a><a href="#leads">查看意向 ${icon('arrow-up-right')}</a><a href="#inbox">查看私信 ${icon('arrow-up-right')}</a></div></section></div><div class="daily-charts">`+
+    dailyChart(d,'采集增长','今日首次观察 / 入库的累计条数',[['comments','评论','#087f77'],['live','弹幕','#507cba'],['groups','群消息','#b27736']])+
+    dailyChart(d,'需求与触达增长','首次模型识别人数与私信服务端接受条数',[['intent_users','新增意向','#087f77'],['dm_accepted','私信接受','#507cba']])+
+    dailyChart(d,'作品与分析增长','新增作品、通过采集条件及首次模型分析成功',[['works','作品','#b27736'],['screened','初筛通过','#507cba'],['modeled','模型分析','#087f77']])+
+    dailyChart(d,'验证码处理增长','按提交时间归日；确认结果随证据更新',[['captcha_submitted','实际提交','#b27736'],['captcha_passed','确认通过','#087f77']])+
+    `</div><p class="daily-footnote">统计按本地事件发生时间归入今日，采集旧评论也会计入今日采集量；重复读取不重复计数。模型新增意向记录历史上首次判为客户的用户，后续复核不会倒改这条增长曲线，当前可联系名单以“需求筛选”为准。曲线截至当前时刻，未发生的时段不补零。</p>`;
+}
+
 function connectionRows(){const c=collectionState(),h=c.http||{};return [['radar','自建抖音采集','按任务选择 HTTP 或本机浏览器 · 有限批次',c.active?'任务进行中':c.last_received?'已有采集数据':'待实测',c.last_received?'good':'warn'],['network','纯 HTTP 采集','指定视频、搜索与回复分别记录结果；正常读取不打开浏览器',h.session?.status==='identity_failed'?'身份核对失败，需准备新会话':h.live_verified?'本工作区已读到评论':h.session?.ready?'会话已准备':h.installed?'待准备会话':'待安装依赖',h.live_verified?'good':'warn'],['sparkles','需求识别',S.semantic?.can_analyze?(S.semantic.config?.auto_analyze?'规则初筛后自动调用所选模型':'规则自动初筛 · 可单条调用所选模型'):'关键词规则初筛 · 非语义模型',S.semantic?.can_analyze?(S.semantic.config?.backend==='openai_compatible'?'远程 API 已配置':'本机模型已配置'):'规则模式',''],['send','个人号 HTTP 私信','独立消息通道；状态以发送记录为准',S.uid_messaging?.can_attempt?'配置就绪':'待配置','warn']].map(x=>`<div class="source-row"><div class="row"><span class="source-icon">${icon(x[0])}</span><div><h3>${x[1]}</h3><small>${x[2]}</small></div></div>${badge(x[3],x[4])}</div>`).join('');}
 function eventList(n=10){return S.events.length?`<ul class="events">${S.events.slice(0,n).map(e=>`<li>${esc(e.detail)}<small>${date(e.created_at)}</small></li>`).join('')}</ul>`:'<p class="muted">暂时没有操作记录。</p>';}
 
@@ -864,7 +910,7 @@ function syncCollectionForm(form){
 function syncFreshnessHint(){const form=$('#monitor-form');if(!form)return;const target=Number($('[name="freshness_target_seconds"]',form)?.value),interval=Number($('[name="interval_seconds"]',form)?.value),hint=$('#freshness-hint');if(hint)hint.textContent=interval>=target?'当前检查间隔已达到或超过时效目标，再加读取耗时，可能无法达标。':'目标用于衡量实际采集延迟；检查间隔从上一批结束后计算，仍需实测。';for(const b of document.querySelectorAll('[data-action="freshness-preset"]')){b.classList.toggle('selected',Number(b.dataset.seconds)===target);b.setAttribute('aria-pressed',String(Number(b.dataset.seconds)===target));}}
 function syncCollectionForms(){syncFreshnessHint();for(const form of document.querySelectorAll?.('#collector-form,#plan-form,#monitor-form')||[])syncCollectionForm(form);}
 function collectorDialog(video=null,retry=null){if(mode!=='live')throw Error('请先切换正式数据');if(collectionState().active)throw Error('已有采集会话，请先完成或停止它');const kind=video?'video':retry?.kind||'search';const target=video?(video.url||video.external_id):retry?.target||(S.settings.keywords||'无畏契约陪玩').split(/[,，\n]/)[0];showModal('新建真实采集任务',notice('HTTP 使用已准备的本机会话；浏览器通道会打开专用窗口。验证码会进入自动处理实验流程；未确认通过时暂停，保留已有数据。')+`<input type="hidden" name="request_id" value="${crypto.randomUUID()}">`+transportField(retry?.transport)+select('kind','发现方式',opts({search:'关键词搜索相关视频',video:'指定抖音完整视频链接 / ID',author:'从作品作者发现'},kind))+collectionTargetField(target,'关键词或完整视频链接')+`<div class="fields-2">${field('video_limit','发现后最多读取视频数',retry?.video_limit||3,'number','required min="1" max="5"')}${field('comment_limit','每视频评论上限',retry?.comment_limit||30,'number','required min="1" max="100"')}</div>`+field('page_concurrency','同时读取的视频数',retry?.page_concurrency||1,'number','required min="1" max="4"')+notice('视频页并发范围 1–4，不超过本批视频数；这不是平台安全频率保证。遇到验证暂停后续页面操作，遇到访问限制停止整批。'),'collector-form',submit('开始本批采集'));}
-function queueCollectionPoll(){clearTimeout(collectionPollTimer);if(mode==='live'&&!document.hidden)collectionPollTimer=setTimeout(pollCollection,collectionState().active||liveState().active_id||S.collector?.model_queue?.active||S.collector?.plans?.some(p=>p.status==='running')?2500:15000);}
+function queueCollectionPoll(){clearTimeout(collectionPollTimer);if(mode==='live'&&!document.hidden)collectionPollTimer=setTimeout(pollCollection,page==='overview'?10000:collectionState().active||liveState().active_id||S.collector?.model_queue?.active||S.collector?.plans?.some(p=>p.status==='running')?2500:15000);}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&mode==='live')void pollCollection();else queueCollectionPoll();});
 function checkpointPanel(t){const rows=t.checkpoints||[];if(!rows.length)return '';const names={pending:'未开始',reading:'读取中 / 中断点',done:'本批已完成',partial:'部分读取'};return `<details class="collection-checkpoints" data-checkpoint-id="${t.id}"><summary>视频进度 ${rows.filter(r=>r.status==='done').length} / ${rows.length}${t.parent_task_id?` · 接续任务 #${t.parent_task_id}`:''}</summary>${rows.map(r=>`<div class="checkpoint-row"><div><a href="${esc(r.video_url)}" target="_blank" rel="noopener noreferrer">${esc(r.video_title)}</a><small>${esc(r.detail||'等待读取')}${r.status==='done'?' · 不代表全量评论':''}</small></div>${badge(names[r.status]||r.status,r.status==='done'?'good':'')}</div>`).join('')}</details>`;}
 function checkpointDialog(id){const t=collectionState().tasks.find(t=>t.id===id);if(!t?.resumable||t.active)throw Error('当前没有可恢复的视频断点');showModal('从视频断点继续',`<input name="id" type="hidden" value="${id}"><input name="request_id" type="hidden" value="${crypto.randomUUID()}">`+notice('沿用原任务通道，跳过已完成的视频。中断视频从第一页重新读取并去重；不会切换通道或绕过验证。')+checkpointPanel(t),'checkpoint-form',submit('从断点继续读取'));}
@@ -874,6 +920,25 @@ async function pollCollection(){
   if(collectionPolling||mode!=='live'||document.hidden){queueCollectionPoll();return;}
   collectionPolling=true;const requestedMode=mode,requestedPage=page,sequence=loadSequence;
   try{
+    if(requestedPage==='overview'){
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
+      try{
+        const r=await fetch(`/api/state?mode=${requestedMode}&view=overview`,{signal:controller.signal});
+        if(!r.ok)throw Error('今日数据读取失败');
+        const data=(await r.json()).dashboard;
+        if(!data)throw Error('今日统计尚未就绪');
+        if(page===requestedPage&&mode===requestedMode&&sequence===loadSequence&&S){
+          S.dashboard=data;
+          // Preserve keyboard focus and open numerical tables while refreshing.
+          const active=document.activeElement,summary=active?.tagName==='SUMMARY'?active.closest('details[id]')?.id:null;
+          const action=active?.dataset?.action,href=active?.getAttribute?.('href');
+          render(false);
+          if(summary)document.getElementById(summary)?.querySelector('summary')?.focus({preventScroll:true});
+          else if(action||href){const match=[...document.querySelectorAll('#main button,#main a')].find(el=>action?el.dataset.action===action:el.getAttribute('href')===href);match?.focus({preventScroll:true});} 
+        }
+      }finally{clearTimeout(timer);}
+      return;
+    }
     const r=await fetch(`/api/collector?mode=${requestedMode}&view=${encodeURIComponent(requestedPage)}`);if(!r.ok)throw Error('采集状态读取失败');
     const value=await r.json();if(mode!==requestedMode||requestedPage!==page||sequence!==loadSequence)return;
     const stable=v=>({...v,board:v?.board?{...v.board,updated_at:null}:undefined});
@@ -910,7 +975,7 @@ async function pollCollection(){
     if(page==='monitor'&&!editing)await refreshMonitorHistory();
     if(page==='groups'&&!editing&&!groupBefore)await refreshGroups();
     if(collectionReloadPending&&!editing&&!(page==='live'&&value.live_monitor?.active_id)){await load();collectionReloadPending=false;}
-  }catch{if(page==='monitor')toast('暂时无法刷新采集状态；不会因此重启任务',true);}
+  }catch{if(page==='monitor')toast('暂时无法刷新采集状态；不会因此重启任务',true);if(page==='overview'&&$('#dashboard-refresh-error')){const el=$('#dashboard-refresh-error');el.hidden=false;el.textContent='刷新暂时失败，保留上次数据；请按更新时间判断。';}}
   finally{collectionPolling=false;queueCollectionPoll();}
 }
 

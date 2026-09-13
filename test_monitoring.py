@@ -17,6 +17,21 @@ VIDEO = '7600000000000000001'
 
 
 class MonitorTests(unittest.TestCase):
+    def test_author_selection_metadata_is_not_an_http_failure(self):
+        self.http_baseline()
+        task=sch.tick(NOW)
+        self.data_network_failure(task)
+        selection={'operation':'candidate_selection','policy':'candidate-vertical-rotation-v2',
+                   'scope':'current_author_response','candidate_count':2,'selected':['12345']}
+        with app.db() as c:
+            diagnostic=c.execute("INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,'http_read',?,?)",
+                                 (task,json.dumps({'responses':[selection]}),NOW)).lastrowid
+            t=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            self.assertEqual(sch.transient_data_wait(c,t),0)
+            for injected in ({'status':'needs_verification'},{'http_status':429},{'verification_indicated':True},{'scope':'unknown'}):
+                c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps({'responses':[{**selection,**injected}]}),diagnostic))
+                self.assertIsNone(sch.transient_data_wait(c,t))
+
     def data_network_failure(self, task):
         self.finish(task, 'network_error')
         evidence = [

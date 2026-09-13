@@ -7,6 +7,7 @@ import clubops as app
 import collector
 
 STOP = threading.Event()
+WAKE = threading.Event()
 THREAD = None
 GATED = {'needs_login', 'needs_verification', 'rate_limited', 'access_denied', 'session_expired', 'identity_failed'}
 
@@ -148,6 +149,17 @@ def transient_data_wait(connection, task):
             if not isinstance(responses, list) or not responses:
                 return None
             for item in responses:
+                if item.get('operation') == 'candidate_selection':
+                    # Local selection metadata shares the diagnostics envelope
+                    # with HTTP responses but has no transport/status fields.
+                    allowed = {'operation','policy','scope','candidate_count','selected',
+                               'priority_basis','vertical_candidates','selected_vertical','vertical_snapshot_truncated'}
+                    if (not identity or set(item)-allowed
+                            or item.get('scope') != 'current_author_response'
+                            or item.get('policy') != 'candidate-vertical-rotation-v2'
+                            or not isinstance(item.get('selected'), list)):
+                        return None
+                    continue
                 if item.get('transport') != 'http' or item.get('verification_indicated') or item.get('response_shape', {}).get('verification_indicated'):
                     return None
                 if item.get('operation') == 'identity':
@@ -364,6 +376,17 @@ def command(plan_id, action, mode='live', *, allow_monitor=False):
                         AND status='completed' AND comments+filtered_old+filtered_unknown+filtered_future+filtered_keyword+filtered_blocked>0 LIMIT 1""",
                         (row['transport'],row['kind'],row['target'])).fetchone())
                     retry = max(60, upstream, row['interval_seconds'])
+            if row['continuous'] and discovery_tracking.config(c)['enabled']:
+                bound_task = c.execute('SELECT * FROM collection_tasks WHERE id=?', (row['last_task_id'],)).fetchone()
+                if bound_task and discovery_tracking.worker_config(c,bound_task['id']):
+                    upstream = transient_batch_wait(c,bound_task)
+                    if upstream is not None:
+                        proven = c.execute("""SELECT 1 FROM collection_tasks WHERE transport=? AND kind=?
+                            AND status='completed' AND comments+filtered_old+filtered_unknown+filtered_future+filtered_keyword+filtered_blocked>0 LIMIT 1""",
+                            (bound_task['transport'],bound_task['kind'])).fetchone()
+                        if proven:
+                            healthy, latest = True, bound_task
+                            retry = max(60, upstream, row['interval_seconds'])
             if not healthy:
                 raise ValueError('请先手动完成一批实际读到评论的采集，再启用持续计划；目前尚未验证或最近一批未正常完成')
             status, due = 'running', app.now()
@@ -463,7 +486,7 @@ def tick(instant=None):
                         due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=retry)).astimezone(timezone.utc).isoformat(timespec='seconds')
                         reason=('部分评论未能继续加载，保留部分结果与断点' if task['status']=='partial' else
                                 '回复分页返回异常，保留已读评论与原失败记录' if task['status']=='schema_changed' else
-                                '身份核对网络请求暂未完成，保留会话并等待重新核对' if task['transport']=='http' else '页面或接口暂不可用')
+                                'HTTP 读取临时连接失败，保留会话、已读内容与断点' if task['transport']=='http' else '页面或接口暂不可用')
                         detail=f'{reason}；等待 {retry} 秒后在后台重试原监控目标，最多连续自动重试 3 次。可随时关闭监控。'
                     else:
                         new_status, detail = 'attention', f'上批结果 {task["status"]}：{task["detail"]}；计划停止自动执行'
@@ -474,6 +497,8 @@ def tick(instant=None):
                     due = (finished + timedelta(seconds=p['interval_seconds'])).astimezone(timezone.utc).isoformat(timespec='seconds')
                     detail = '上一批完成，等待下一批；间隔不代表平台认可的请求频率'
                 c.execute('UPDATE collection_plans SET settled_count=settled_count+1,settled_task_id=?,status=?,detail=?,next_run_at=?,updated_at=? WHERE id=?', (task['id'], new_status, detail, due, instant, p['id']))
+                if task['status'] != 'completed':
+                    app.event(c, 'monitor-incident', f'批次 #{task["id"]} · {task["status"]} · {detail}')
             if collector.ACTIVE:
                 return None
             # Stored timestamps may use UTC or +08:00. Compare instants, never ISO strings.
@@ -496,13 +521,22 @@ def tick(instant=None):
             return None
 
 
+def notify_finished():
+    """Wake the recovery decision immediately; never shorten retry cooldowns."""
+    WAKE.set()
+
+
 def start_service():
     global THREAD
     if THREAD and THREAD.is_alive():
         return
     STOP.clear()
     def loop():
-        while not STOP.wait(3):
+        while not STOP.is_set():
+            WAKE.wait(3)  # Timer remains a fallback for due jobs and missed wakeups.
+            WAKE.clear()
+            if STOP.is_set():
+                break
             try:
                 tick()
             except Exception:
@@ -515,6 +549,7 @@ def start_service():
 
 def shutdown():
     STOP.set()
+    WAKE.set()
     if THREAD:
         THREAD.join(timeout=4)
     recover()

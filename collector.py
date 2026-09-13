@@ -636,6 +636,8 @@ def run(task_id, control):
             app.event(c, 'collector', f"采集任务 #{task_id} 结束：{row['status']}，观察到 {row['comments']} 条评论")
         import login_recovery
         login_recovery.after_collection(task_id)
+        import collection_scheduler
+        collection_scheduler.notify_finished()
 
 
 def shutdown():

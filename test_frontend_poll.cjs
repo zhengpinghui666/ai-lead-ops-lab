@@ -5,10 +5,10 @@ const elements=new Map(),timers=new Map(),events=new Map(),windowEvents=new Map(
 let timerId=0,next={tasks:[],plans:[]},fail=false,deferred;
 const el=id=>{if(!elements.has(id))elements.set(id,{innerHTML:'',outerHTML:'',open:false,addEventListener(){},classList:{remove(){}},setAttribute(){}});return elements.get(id);};
 const document={hidden:false,activeElement:{matches:()=>false},querySelector:el,querySelectorAll:()=>[],addEventListener:(type,fn)=>events.set(type,fn),body:el('body')};
-const context=vm.createContext({document,location:{hash:'#monitor'},window:{addEventListener:(type,fn)=>windowEvents.set(type,fn),scrollTo(){},lucide:{createIcons(){}}},setTimeout:(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId;},clearTimeout:id=>timers.delete(id),console,crypto:globalThis.crypto,fetch:async url=>{
+const context=vm.createContext({AbortController,document,location:{hash:'#monitor'},window:{addEventListener:(type,fn)=>windowEvents.set(type,fn),scrollTo(){},lucide:{createIcons(){}}},setTimeout:(fn,ms)=>{timers.set(++timerId,{fn,ms});return timerId;},clearTimeout:id=>timers.delete(id),console,crypto:globalThis.crypto,fetch:async url=>{
   requests.push(url);if(deferred)return deferred;
   if(fail)throw Error('synthetic offline');
-  return {ok:true,json:async()=>url.startsWith('/api/state')?{collector:next}:{...next}};
+  return {ok:true,json:async()=>url.startsWith('/api/state')?{collector:next,dashboard:next}:{...next}};
 }});
 const run=code=>vm.runInContext(code,context);
 vm.runInContext(fs.readFileSync('static/app.js','utf8'),context);
@@ -65,5 +65,16 @@ run("syncFreshnessHint=()=>{};refreshMonitorHistory=async()=>{};render=()=>{};co
   let resolve;deferred=new Promise(r=>resolve=r);const pending=run('pollCollection()');await run('pollCollection()');assert.equal(requests.length,before+1,'Only one polling request in flight');
   run("mode='demo'");resolve({ok:true,json:async()=>({tasks:[{id:99,active:true}],plans:[]})});await pending;assert.equal(run('S.collector.tasks[0].id'),1,'Late response must not cross workspaces');assert.equal(timers.size,0);
   assert.ok(requests.every(url=>url.startsWith('/api/')),'Status polling never initiates platform collection');
+  deferred=null;run("mode='live';page='overview';S.dashboard={marker:'old'}");
+  next={marker:'today'};await run('pollCollection()');
+  assert.match(requests.at(-1),/^\/api\/state\?.*view=overview/,'Homepage polling uses the light view already allowed by the remote connector');
+  assert.equal(run('S.dashboard.marker'),'today');
+  assert.equal([...timers.values()].at(-1).ms,10000);
+  fail=true;await run('pollCollection()');fail=false;
+  assert.equal(run('S.dashboard.marker'),'today','A failure preserves last known dashboard values');
+  assert.equal(el('#dashboard-refresh-error').hidden,false);
+  deferred=new Promise(r=>resolve=r);const lateDashboard=run('pollCollection()');
+  run("page='monitor'");resolve({ok:true,json:async()=>({dashboard:{marker:'late'}})});await lateDashboard;
+  assert.equal(run('S.dashboard.marker'),'today','A late dashboard response must not redraw another view');
   console.log('PASS: idle/active local polling, hidden tabs, deferred redraw, no duplicate fetch, failure recovery and workspace race. Synthetic only.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

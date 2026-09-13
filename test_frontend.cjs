@@ -7,9 +7,9 @@ const {spawnSync}=require('node:child_process');
 const path=require('node:path');
 const lucide=require('./static/vendor/lucide.min.js');
 const python=process.env.CLUBOPS_TEST_PYTHON||process.env.CLUBOPS_PYTHON||'python';
-const result=spawnSync(python,['-c',`import tempfile,json; from pathlib import Path; import clubops as a
+const result=spawnSync(python,['-c',`import tempfile,json; from pathlib import Path; import clubops as a; import daily_dashboard as dashboard
 with tempfile.TemporaryDirectory(prefix='clubops-ui-test-') as td:
- a.DATA_DIR=Path(td); a.init(); a.seed_demo(); print(json.dumps({'live':a.state(),'demo':a.state('demo')}))`],{cwd:__dirname,encoding:'utf8'});
+ a.DATA_DIR=Path(td); a.init(); a.seed_demo(); print(json.dumps({'live':dict(a.state(),dashboard=dashboard.snapshot()),'demo':dict(a.state('demo'),dashboard=dashboard.snapshot('demo'))}))`],{cwd:__dirname,encoding:'utf8'});
 assert.equal(result.status,0,result.stderr);
 const fixture=JSON.parse(result.stdout);
 const elements=new Map();
@@ -144,7 +144,10 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.ok(!element('#nav').innerHTML.includes('#recruit'));
   assert.match(element('#nav').innerHTML,/私信导流/);
   assert.ok(!element('#main').innerHTML.includes('可接单人员'));
-  assert.match(element('#main').innerHTML,/待发送草稿/);
+  assert.match(element('#main').innerHTML,/今日运营看板/);
+  assert.match(element('#main').innerHTML,/今日验证码确认通过率/);
+  assert.match(element('#main').innerHTML,/未尝试/);
+  assert.match(element('#main').innerHTML,/查看分时数值/);
   const demandDetail=run('leadDetail(S.leads[0])');
   assert.ok(!demandDetail.includes('俱乐部候选人员'));
   assert.ok(!demandDetail.includes('暂无符合已知条件的可用人员'));
@@ -263,7 +266,7 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   run("page='settings';render()");assert.ok(!element('#main').innerHTML.includes('关于这次重建'));
   assert.match(element('#main').innerHTML,/纯 HTTP 采集/);
   run("page='overview';render()");assert.ok(!element('#main').innerHTML.includes('开始搭建你的工作流'));
-  assert.match(element('#main').innerHTML,/工作记录/);
+  assert.match(element('#main').innerHTML,/今日运行与承接/);
   run("mode='live';S=fixtures.live;planDialog()");checkHtml(element('#modal-content').innerHTML);
   assert.ok(element('#modal-content').innerHTML.includes('保存为暂停计划'));
   assert.ok(element('#modal-content').innerHTML.includes('name="page_concurrency"'));
