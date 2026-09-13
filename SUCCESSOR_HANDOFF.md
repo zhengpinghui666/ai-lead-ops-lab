@@ -1,5 +1,13 @@
 # ClubOps 接续说明
 
+## 2026-09-14 私信会话缺失昵称截图
+
+用户截图中8位“未提供昵称”均为群聊来源用户，已有发送任务、无评论/弹幕名称来源。group_monitor.attach 当前仅按 UID 建立 people 并填占位名称，group_inbox.messages 只读 UID/文本，真实昵称补全尚未实现。不是数据层摘要优化丢字段。静态前端统一用 personName 在私信、需求表与详情显示“用户 · UID尾六位”；完整 UID 仍展示，缺失明确标注，原 people.nickname 不改。group 页原本已有同类回退显示。
+
+截图所选 lead4748 / UID2902311452805591 / job32 的“点陪🥣看我主业”是北京时间9月13日23:28的真实历史消息，保留原文。新 public_gender_greeting_v1 仍启用且 fallback=armed，不能把旧消息当作新模板失败/回退，也不能重发作验证。
+
+本次仅 static/app.js 展示修改，无后端重启/配置写入/私信发送。test_frontend.cjs 20页状态及已有检查通过；真实站点只读浏览器检查：8个占位会话均可按尾号区分、所选身份与历史原文保留、JS错误0/写请求0，截图已检查。回退原文件与验收在 artifacts/conversation-names-20260914/。这次修复的是显示区分，真实昵称尚未补全。
+
 ## 2026-09-14 00:53 各页面数据加载与新模板
 
 两次正常管理重启：259728→270720→266524，当前 instance 以 artifacts/outreach-template-20260914/final.json 为准。新私信模板已经用户明确批准并替换，content_fallback=armed；旧文案是“点陪🥣看我主业”。详见 REQUIREMENTS_DISCUSSION.md 顶部。不可再把模板说成仅候选，也不能说实际新模板已发送/接受。没有测试DM或补发失败对象。
