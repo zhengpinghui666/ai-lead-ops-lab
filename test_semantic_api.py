@@ -44,7 +44,7 @@ class APITests(unittest.TestCase):
         self.assertFalse(credentials.ready('https://elsewhere.example.test'))
         with self.assertRaises(ValueError):
             semantic.save(dict(self.settings,api_base_url='https://elsewhere.example.test'))
-        app.ingest({'records':[dict(comment_id='1',video_id='1',user_id='12345',text=SOURCE['text'])]})
+        app.ingest({'records':[dict(comment_id='1',video_id='1',video_title='无畏契约陪练服务',user_id='12345',text=SOURCE['text'])]})
         self.assertEqual(app.analyze()['model_queue']['queued'],1)
         with app.db() as c:
             queued=c.execute('SELECT config_json FROM semantic_jobs').fetchone()[0]
@@ -103,7 +103,7 @@ class APITests(unittest.TestCase):
         self.assertEqual(json.loads(body['messages'][1]['content']),SOURCE)
         self.assertNotIn('tools',body)
         self.assertFalse(body['stream'])
-        self.assertIn(json.dumps(app.GAMES,ensure_ascii=False),body['messages'][0]['content'])
+        self.assertIn(json.dumps(semantic.game_terms(SOURCE),ensure_ascii=False),body['messages'][0]['content'])
         self.assertEqual(len(fingerprint),64)
         self.assertEqual(semantic.validate_result(result,SOURCE)['category'],'noise')
         invalid=response()
@@ -142,7 +142,7 @@ class APITests(unittest.TestCase):
 
     def test_default_queue_selects_api_and_preserves_rules_without_contact(self):
         semantic.save(dict(self.settings,auto_analyze=True))
-        app.ingest({'records':[dict(comment_id='1',video_id='1',user_id='12345',text=SOURCE['text'])]})
+        app.ingest({'records':[dict(comment_id='1',video_id='1',video_title='无畏契约陪练服务',user_id='12345',text=SOURCE['text'])]})
         self.assertEqual(app.analyze()['model_queue']['queued'],1)
         with patch.object(semantic_api.ChatAPIAdapter,'request',return_value=response()) as request:
             self.assertTrue(queue.run_one())

@@ -12,7 +12,7 @@ import asset_keywords as vocabulary
 from intent_rules import COMPANION, companion_relevance
 from video_discovery import GAME_PATTERN
 
-VERSION='asset-verticality-v3'
+VERSION='asset-verticality-v4'
 SAMPLE_LIMIT=300
 SERVICE_PATTERN=re.compile(COMPANION+r'|陪同上分|付费教学|有偿教学|复盘接单|陪练接单',re.I)
 SCHEMA='''CREATE TABLE IF NOT EXISTS asset_verticality (
@@ -112,6 +112,9 @@ def profiles(c,kind):
 
 
 def routing(c,kind,record_id,*,refresh_asset=False):
+    if kind=='group':
+        import group_monitor
+        return group_monitor.routing(c,record_id)
     if kind=='comment':
         row=c.execute('''SELECT x.raw_text,x.video_id,v.external_id AS asset_key,v.title,'' AS filter_reason
           FROM comments x JOIN videos v ON v.id=x.video_id WHERE x.id=?''',(record_id,)).fetchone()

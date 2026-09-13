@@ -1,7 +1,8 @@
 """Auditable local rules, not a semantic model or a calibrated probability model."""
 import re
+from game_scope import GAME_PATTERN
 
-RULESET_VERSION = 'rules-v3'
+RULESET_VERSION = 'rules-v4'
 SEPARATOR = re.compile(r'[，,。.!?！？；;\n]')
 NEGATIVE_BEFORE = re.compile(r'(?:不(?:是|再|要|想|用|需要|打算|考虑)?|没(?:有|想|打算)?|并非|无需|拒绝|谢绝)(?:再|去|找)?\s*$')
 NEGATIVE_AFTER = re.compile(r'^\s*(?:不要|不行|没空|不方便|不考虑|不用|不需要|不合适|取消|太贵)')
@@ -88,7 +89,8 @@ def classify_comment(raw, video_context, parent_context, games, target_game):
     for source, text in [('comment', raw), ('parent', parent_context), ('video', video_context)]:
         found = []
         for name, terms in games.items():
-            hits = positive(matches(text, '|'.join(re.escape(t) for t in terms), 'game', source=source))
+            pattern = GAME_PATTERN.pattern if name == '无畏契约' else '|'.join(re.escape(t) for t in terms)
+            hits = positive(matches(text, pattern, 'game', source=source))
             if hits:
                 found.append((name, hits[0]))
         if found:

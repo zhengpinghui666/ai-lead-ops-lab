@@ -127,7 +127,7 @@ def observation_analysis(c, comment_id, text, model_engine):
     job = c.execute("""SELECT created_at,started_at,finished_at,status FROM semantic_jobs
         WHERE evidence_type='comment' AND record_id=? AND input_hash=? AND engine=?""",
         (comment_id, projected['analysis_input_hash'], model_engine)).fetchone() if model_engine else None
-    current_model = model if model.get('engine') == model_engine else {}
+    current_model = model if analysis_store.compatible_engine(model.get('engine'),model_engine) else {}
     relevance=projected.get('companion_relevance')
     if method=='rules' and state=='rules' and not projected['model_routing']['model_allowed']:
         state='skipped'

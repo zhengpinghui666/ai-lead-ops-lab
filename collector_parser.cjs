@@ -2,7 +2,9 @@
 // Normalizes only responses produced by ordinary page navigation. No request signing/replay.
 const id = value => typeof value==='string' && /^\d{5,30}$/.test(value) ? value : Number.isSafeInteger(value)&&value>9999 ? String(value) : '';
 const text = (value, max=5000) => typeof value==='string' ? value.trim().slice(0,max) : '';
-const gamePattern=/无畏契约|无畏契約|無畏契約|瓦罗兰特|瓦羅蘭特|valorant|瓦陪|陪瓦|打瓦|瓦手游|手瓦|瓦友|(?:^|[\s#＃])瓦(?=$|[\s#＃])/i;
+const gameScope=require('./game_scope.json');
+const escapeRE=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+const gamePattern=new RegExp(gameScope.aliases.map(escapeRE).join('|')+'|'+gameScope.isolated_pattern,'i');
 function inSearchScope(row,keyword){
   return !gamePattern.test(text(keyword))||gamePattern.test(text(row?.video_title));
 }

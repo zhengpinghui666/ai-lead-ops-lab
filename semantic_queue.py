@@ -37,7 +37,7 @@ def enqueue(kind, record_ids, mode='live'):
     summary = dict(queued=0, existing=0, skipped=0, full=0)
     if mode != 'live':
         return summary
-    if kind not in ('comment', 'live') or not isinstance(record_ids, list) or len(record_ids) > 1000:
+    if kind not in ('comment', 'live', 'group') or not isinstance(record_ids, list) or len(record_ids) > 1000:
         raise ValueError('模型入队范围无效')
     if any(type(i) is not int or i <= 0 for i in record_ids):
         raise ValueError('模型入队记录无效')
@@ -94,7 +94,7 @@ def finish(c, job_id, result):
 def cancel_all(mode='live', *, detail='用户停止自动分析；保留规则结果', evidence_type=None):
     if mode != 'live':
         raise ValueError('演示区没有自动模型任务')
-    if evidence_type not in (None, 'comment', 'live'):
+    if evidence_type not in (None, 'comment', 'live', 'group'):
         raise ValueError('模型取消范围无效')
     with app.LOCKS[mode], app.db(mode) as c:
         scope = ' AND evidence_type=?' if evidence_type else ''
@@ -128,13 +128,15 @@ def run_one(*, adapter_factory=None):
             row = c.execute("""SELECT j.* FROM semantic_jobs j
                 LEFT JOIN comments x ON j.evidence_type='comment' AND x.id=j.record_id
                 LEFT JOIN live_messages m ON j.evidence_type='live' AND m.id=j.record_id
+                LEFT JOIN group_messages g ON j.evidence_type='group' AND g.id=j.record_id
                 WHERE j.status='queued'
                 AND NOT EXISTS (SELECT 1 FROM semantic_jobs running
                     WHERE running.status IN ('running','cancelling')
                     AND running.evidence_type=j.evidence_type AND running.record_id=j.record_id)
                 ORDER BY CASE WHEN julianday(x.published_at) BETWEEN julianday(?)-1.0/24
                     AND julianday(?) OR julianday(m.observed_at) BETWEEN julianday(?)-1.0/24
-                    AND julianday(?) THEN 0 ELSE 1 END,j.id LIMIT 1""", (app.now(),)*4).fetchone()
+                    AND julianday(?) OR julianday(g.published_at) BETWEEN julianday(?)-1.0/24
+                    AND julianday(?) THEN 0 ELSE 1 END,j.id LIMIT 1""", (app.now(),)*6).fetchone()
             if not row:
                 return False
             job = dict(row)

@@ -179,6 +179,19 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(store.history('comment', self.id), history_before)
             predict.assert_not_called()
 
+    def test_alias_extension_keeps_identical_input_v6_result_without_rewriting(self):
+        with patch.object(model,'PROMPT_VERSION','intent-prompt-v6'):
+            model.analyze_one(self.body(),adapter_factory=SyntheticAdapter)
+            previous=app.state()['comments'][0]
+        history_before=store.history('comment',self.id)
+        with patch.object(model,'PROMPT_VERSION','intent-prompt-v7'),patch.object(SyntheticAdapter,'predict') as predict:
+            current=app.state()['comments'][0]
+            self.assertEqual((current['analysis_method'],current['category']),('model',previous['category']))
+            self.assertEqual(current['model_result'],previous['model_result'])
+            self.assertEqual(store.history('comment',self.id),history_before)
+            predict.assert_not_called()
+        self.assertFalse(store.compatible_engine('provider:a:intent-prompt-v6:format','provider:b:intent-prompt-v7:format'))
+
     def test_failure_reverts_to_rule_instead_of_stale_success(self):
         model.analyze_one(self.body(), adapter_factory=SyntheticAdapter)
         with patch.object(SyntheticAdapter,'predict',side_effect=TimeoutError('private response')):

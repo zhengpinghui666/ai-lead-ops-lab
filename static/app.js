@@ -6,10 +6,11 @@ const pages = {overview:['工作总览','layout-dashboard','OVERVIEW'],monitor:[
 // Legacy personnel pages stay reachable by their old URL; they are not primary workflows.
 pages['monitor-settings']=['监控设置','sliders-horizontal','MONITOR SETTINGS'];
 pages.live=['直播弹幕','radio','LIVE CHAT'];
-const navPages=['overview','monitor','live','leads','inbox','analytics','settings'];
+pages.groups=['群聊监控','messages-square','GROUP MONITORING'];
+const navPages=['overview','monitor','live','groups','leads','inbox','analytics','settings'];
 const labels={buyer:'客户需求',seller:'陪玩接单',recruit:'招募需求',social:'免费组队',noise:'无关讨论',uncertain:'待判断'};
-const evidenceName=c=>c.evidence_type==='live'?'弹幕':'评论';
-const evidenceCount=l=>[l.comment_count?`${l.comment_count} 条评论`:'',l.live_count?`${l.live_count} 条弹幕`:''].filter(Boolean).join(' · ')||'暂无来源记录';
+const evidenceName=c=>c.evidence_type==='group'?'群消息':c.evidence_type==='live'?'弹幕':'评论';
+const evidenceCount=l=>[l.comment_count?`${l.comment_count} 条评论`:'',l.live_count?`${l.live_count} 条弹幕`:'',l.group_count?`${l.group_count} 条群消息`:''].filter(Boolean).join(' · ')||'暂无来源记录';
 const stages={new:'待联系',reviewed:'已核对',following:'沟通中',referred:'已导流',won:'已成交（历史）',lost:'已结束'};
 const jobLabels={draft:'草稿 · 未发送',blocked:'拦截 · 未发送',not_connected:'通道未接 · 未发送',demo_sent:'演示已执行',submitting:'提交中',unknown:'提交结果未知',failed:'失败 · 不自动重发',accepted:'服务端接受 · 未确认送达',delivered:'已送达',replied:'已回复',observed:'已收件'};
 const TARGET_GAME='无畏契约';
@@ -79,7 +80,7 @@ function publicationSummary(reference=Date.now()){
 function resetLeadFilters(){query='';gameFilter='';serviceFilter='';publishedFilter='all';publishedFrom='';publishedUntil='';leadSort='published';selected=null;}
 const avatarInitials=name=>{const text=String(name||'?');const parts=typeof Intl.Segmenter==='function'?[...new Intl.Segmenter('zh',{granularity:'grapheme'}).segment(text)].map(p=>p.segment):Array.from(text);return parts.slice(-2).join('');};
 const avatar=(name,small=false)=>`<span class="avatar ${small?'small':''}">${esc(avatarInitials(name))}</span>`;
-const sourceLink=c=>(c.source_url||c.video_url)?`<a href="${esc(c.source_url||c.video_url)}" target="_blank" rel="noopener noreferrer">${icon('arrow-up-right')} ${c.evidence_type==='live'?'查看直播间':'查看原视频'}</a>`:'<span class="muted">未提供来源链接</span>';
+const sourceLink=c=>c.evidence_type==='group'?`<a href="#groups">群聊 · ${esc(c.group_title)}</a>`:(c.source_url||c.video_url)?`<a href="${esc(c.source_url||c.video_url)}" target="_blank" rel="noopener noreferrer">${icon('arrow-up-right')} ${c.evidence_type==='live'?'查看直播间':'查看原视频'}</a>`:'<span class="muted">未提供来源链接</span>';
 const empty=(title,text,action='go-monitor',cta='前往视频与采集',ico='inbox')=>`<div class="empty">${icon(ico)}<h3>${title}</h3><p>${text}</p>${cta?button(cta,action,'small'):''}</div>`;
 const notice=(text,warn=false)=>`<div class="notice ${warn?'warn':''}">${icon(warn?'circle-alert':'info')}<p>${text}</p></div>`;
 const head=(title,desc,actions='')=>`<div class='page-head'><h1>${esc(pages[page][0])}</h1><div class='actions'>${actions}</div></div>`;
@@ -125,14 +126,38 @@ function render(){
   const connectionHint=$('.sidebar-bottom');if(connectionHint)connectionHint.textContent=collectionState().intent_outreach?.enabled?'自建采集 · 意向自动私信':'自建采集 · 私信工作台';
   $('#nav').innerHTML=navPages.map(k=>[k,pages[k]]).map(([k,[name,ico]])=>`<a href="#${k}" class="${(page===k||k==='monitor'&&page==='monitor-settings')?'active':''}" ${(page===k||k==='monitor'&&page==='monitor-settings')?'aria-current="page"':''}>${icon(ico)}${name}</a>`).join('')+(mode==='live'?`<a href="/login">${icon('key-round')}账号登录</a>`:'');
   $('#demo-banner').hidden=mode!=='demo';document.title=`${pages[page][0]} · ClubOps`;
-  $('#main').innerHTML=({overview,monitor,'monitor-settings':monitorSettingsPage,live:liveMonitor,leads,recruit,roster,inbox,analytics,settings}[page])();
+  $('#main').innerHTML=({overview,monitor,'monitor-settings':monitorSettingsPage,live:liveMonitor,groups:groupPage,leads,recruit,roster,inbox,analytics,settings}[page])();
   const login=S.collector?.login_recovery,loginAttention=login?.active||(login?.available&&!login.session?.ready);
   if(mode==='live'&&(page==='settings'||(page==='monitor'&&loginAttention)))$('.page-head').insertAdjacentHTML('afterend',loginSummary());
   if(mode==='live'&&page==='monitor')$('.page-head .actions').insertAdjacentHTML('beforeend',`<a class="button small" href="/login">${icon('key-round')}账号登录</a>`);
   restorePanelIds(opened);syncCollectionForms();icons();if(page==='monitor')void refreshMonitorHistory();if(page==='live')void refreshLiveArchive();if(openMonitorSettings)monitorSettingsDialog();
+  if(page==='groups'&&!groupState&&!groupLoading)void refreshGroups();
 }
 
 function loginSummary(){const value=S.collector?.login_recovery;const title=value?.active?'账号正在恢复登录':value?.session?.ready?'账号会话已保存':'账号登录与手机连接';const hint=value?.active?'查看当前步骤，处理登录页提示。':value?.relay?.ready?'中转已绑定；手机测试与自动恢复在账号页设置。':'手机验证码自动转发尚未连接。';return `<section class="card login-summary" aria-label="账号连接状态"><div><strong>${title}</strong><small>${hint}</small></div><a class="button small" href="/login">管理账号登录</a></section>`;}
+
+let groupState=null,groupLoading=false,groupError='',groupBefore=0;
+async function refreshGroups(){
+  if(groupLoading||page!=='groups')return;
+  groupLoading=true;
+  try{
+    const r=await fetch(`/api/groups?mode=${mode}&before=${groupBefore}`),data=await r.json();
+    if(!r.ok)throw Error(data.error||'群消息读取失败');
+    groupState=data;groupError='';
+  }catch(e){groupError=e.message;}
+  finally{groupLoading=false;if(page==='groups'){$('#main').innerHTML=groupPage();icons();}}
+}
+function groupPage(){
+  const s=groupState||{groups:[],messages:[],enabled:0};
+  const status={available:'未开启',waiting:'等待读取',running:'监控中',catching_up:'补读消息',retrying:'读取失败 · 等待重试',paused:'已暂停',unavailable:'当前账号未加入'};
+  const header=head('群内只观察，有需求再私信。','瓦搭子群、无畏契约开黑群等对口群聊。近 1 小时的文字消息先初筛，再由模型判断需求。',button('刷新已加入群','group-discover','small')+button('刷新消息','group-refresh','small'));
+  if(mode!=='live')return header+notice('群聊监控仅在正式工作区使用。');
+  const issue=groupError||s.issue;
+  return header+'<p class="muted">群内只观察；近 1 小时的文字先初筛、再由模型确认需求，符合条件后私信。</p>'+(issue?notice(esc(issue),'warn'):'')+`<div class="group-layout"><section class="card group-list"><div class="card-head"><h2>监控群聊</h2>${badge(`${s.enabled} 个已开启`,s.enabled?'good':'')}</div><div class="card-body">${s.groups.length?s.groups.map(g=>`<article class="group-target"><div class="row spread"><h3>${esc(g.name)}</h3>${badge(status[g.status]||g.status,g.enabled&&g.status!=='retrying'?'good':'')}</div><p>${fmt(g.participants)} 人 · ${g.member?'已加入':'未加入'}</p><p>已采集 <b>${fmt(g.message_count)}</b> 条 · 初筛通过 <b>${fmt(g.screened_count)}</b> 条</p><small>最近读取 ${date(g.last_read_at)}</small><p class="muted">${esc(g.detail||'等待开启监控')}</p>${button(g.enabled?'暂停监控':'开启监控','group-toggle',g.enabled?'small':'primary small',`data-id="${g.id}" data-enabled="${!g.enabled}" ${!g.member&&!g.enabled?'disabled':''}`)}</article>`).join(''):empty(groupLoading?'正在读取群目录':'暂无对口群','刷新已加入群，筛选无畏契约相关群聊。','','')}</div><div class="card-foot">当前支持已加入群的筛选与监控；公开群搜索、自动加群尚未接通。</div></section><section class="card"><div class="card-head"><div><h2>群消息与筛选结果</h2><small>${groupBefore?'历史记录':'最新记录 · 自动更新'} · 群内不发言</small></div>${badge('初筛 → 模型 → 私信')}</div><div class="card-body">${s.messages.length?s.messages.map(m=>{
+    const model=m.model_result,stage=m.filter_reason?'初筛未通过':model?.status==='completed'&&m.analysis_method==='model'?labels[m.category]||'已分析':model?.status==='running'?'模型分析中':model?.status==='failed'?'模型失败 · 未私信':model&&model.status!=='completed'?'模型未生效 · 未私信':'初筛通过 · 待模型';
+    return `<article class="group-message"><div class="row spread"><strong>${esc(m.nickname&&m.nickname!=='未提供昵称'?m.nickname:'用户 · '+String(m.uid).slice(-6))}</strong>${badge(stage,m.category==='buyer'&&m.analysis_method==='model'?'good':'')}</div><small>${esc(m.group_title)} · ${commentDate(m.published_at)}</small><blockquote class="quote">${esc(m.raw_text)}</blockquote><p class="muted">${esc(m.filter_reason||m.model_result?.result?.reason||m.reason)}</p>${m.outreach?`<p>${badge(jobLabels[m.outreach.status]||m.outreach.status)}<small>${esc(m.outreach.detail||'')} · 同账号同用户去重记录</small></p>`:'<small>暂无该用户的私信尝试记录</small>'}${modelEvidence(m,false)}${m.lead_id?button('查看私信记录','open-chat','small',`data-id="${m.lead_id}"`):''}</article>`;
+  }).join(''):empty(groupLoading?'正在读取消息':'等待新的群消息','开启监控后，采集原文与筛选结果会显示在这里。','','')}</div><div class="card-foot actions">${s.has_more?button('更早消息','group-older','small'):''}${groupBefore?button('回到最新','group-refresh','small'):''}<small>同一账号对同一用户共用评论、弹幕与群聊的私信去重记录。</small></div></section></div>`;
+}
 
 function overview(){const s=S.stats;const leads=S.leads.filter(l=>l.category==='buyer'&&l.game===TARGET_GAME).sort((a,b)=>compareLeadTime(a,b,'published')).slice(0,5);return head('','',button(icon('scan-text')+' 运行初筛','analyze','primary'))+`<div class='metrics'>${metric('已入库评论','',s.comments,'message-square-text')}${metric('潜在需求用户','需人工核对',s.buyers,'scan-text',true)}${metric('待初筛评论','',s.pending,'list-filter')}${metric('待发送草稿','尚未发送',s.drafts,'file-pen-line')}</div><div class="card"><div class="card-head"><div><h2>最近客户需求</h2><small>先看原文，再决定是否跟进</small></div><a href="#leads" class="button subtle small">全部线索 ${icon('arrow-right')}</a></div>${leads.length?leadTable(leads,true):empty('从第一条真实评论开始','在视频与采集页开启监控，读到的评论会自动入库并初筛。')}</div>`+folded('overview-records','工作记录',eventList(5));}
 function connectionRows(){const c=collectionState(),h=c.http||{};return [['radar','自建抖音采集','按任务选择 HTTP 或本机浏览器 · 有限批次',c.active?'任务进行中':c.last_received?'已有采集数据':'待实测',c.last_received?'good':'warn'],['network','纯 HTTP 采集','指定视频、搜索与回复分别记录结果；正常读取不打开浏览器',h.session?.status==='identity_failed'?'身份核对失败，需准备新会话':h.live_verified?'本工作区已读到评论':h.session?.ready?'会话已准备':h.installed?'待准备会话':'待安装依赖',h.live_verified?'good':'warn'],['sparkles','需求识别',S.semantic?.can_analyze?(S.semantic.config?.auto_analyze?'规则初筛后自动调用所选模型':'规则自动初筛 · 可单条调用所选模型'):'关键词规则初筛 · 非语义模型',S.semantic?.can_analyze?(S.semantic.config?.backend==='openai_compatible'?'远程 API 已配置':'本机模型已配置'):'规则模式',''],['send','个人号 HTTP 私信','独立消息通道；状态以发送记录为准',S.uid_messaging?.can_attempt?'配置就绪':'待配置','warn']].map(x=>`<div class="source-row"><div class="row"><span class="source-icon">${icon(x[0])}</span><div><h3>${x[1]}</h3><small>${x[2]}</small></div></div>${badge(x[3],x[4])}</div>`).join('');}
@@ -166,14 +191,14 @@ function semanticPanel(){
 function modelQueuePanel(){
   const q=S.collector?.model_queue||S.semantic?.queue||{counts:{},rows:[],active:0,capacity:200},c=q.counts;
   const names={queued:'等待分析',running:'正在分析',cancelling:'正在取消',completed:'已完成',failed:'失败 · 保留规则',stale:'版本已变化',skipped:'无需自动分析',cancelled:'已取消',interrupted:'服务中断'};
-  return `<section id="model-queue-panel" class="card"><div class="card-head"><h2>自动模型分析</h2>${badge(`${q.active} 条待处理`,q.active?'warn':'')}</div><div class="card-body"><p>等待 ${c.queued||0} · 分析中 ${c.running||0} · 完成 ${c.completed||0} · 失败 ${c.failed||0}</p><p class="muted">同时最多分析 ${q.concurrency_limit||S.semantic?.concurrency_limit||1} 条，等待与分析中合计最多 ${q.capacity} 条。失败保留规则结果；已核对的人工结果优先。</p>${button('停止当前队列','semantic-queue-cancel','small',`type="button" ${q.active?'':'disabled'}`)}<p class="muted">停止只取消当前队列；后续新内容是否入队由模型配置决定。</p>${q.rows.length?`<details><summary>最近任务</summary>${q.rows.map(r=>`<div class="history-item"><strong>${r.evidence_type==='live'?'弹幕':'评论'} #${r.record_id} · ${esc(names[r.status]||r.status)}</strong><small>${esc(r.detail||'等待模型处理')}</small></div>`).join('')}</details>`:'<p class="muted">尚无自动模型任务。</p>'}</div></section>`;
+  return `<section id="model-queue-panel" class="card"><div class="card-head"><h2>自动模型分析</h2>${badge(`${q.active} 条待处理`,q.active?'warn':'')}</div><div class="card-body"><p>等待 ${c.queued||0} · 分析中 ${c.running||0} · 完成 ${c.completed||0} · 失败 ${c.failed||0}</p><p class="muted">同时最多分析 ${q.concurrency_limit||S.semantic?.concurrency_limit||1} 条，等待与分析中合计最多 ${q.capacity} 条。失败保留规则结果；已核对的人工结果优先。</p>${button('停止当前队列','semantic-queue-cancel','small',`type="button" ${q.active?'':'disabled'}`)}<p class="muted">停止只取消当前队列；后续新内容是否入队由模型配置决定。</p>${q.rows.length?`<details><summary>最近任务</summary>${q.rows.map(r=>`<div class="history-item"><strong>${evidenceName(r)} #${r.record_id} · ${esc(names[r.status]||r.status)}</strong><small>${esc(r.detail||'等待模型处理')}</small></div>`).join('')}</details>`:'<p class="muted">尚无自动模型任务。</p>'}</div></section>`;
 }
 function modelEvidence(c,allowAction=true){
   const m=c.model_result,r=m?.result||{},can=mode==='live'&&S.semantic?.can_analyze&&(c.evidence_type!=='live'||S.semantic.config?.live_model_enabled!==false)&&c.model_routing?.model_allowed!==false&&c.analysis_input_hash&&c.analysis_method!=='pending';
   const action=allowAction&&can?button('分析此条原文','semantic-analyze','small',`type="button" data-kind="${esc(c.evidence_type||'comment')}" data-id="${c.id}" data-hash="${esc(c.analysis_input_hash)}" ${(m?.status==='running'||(S.semantic?.at_capacity??S.semantic?.running))?'disabled':''}`):'';
   if(!m)return action?`<div class="actions">${action}</div>`:'';
   const names={running:'模型分析中',completed:'已保存模型结果',failed:'模型失败 · 回退规则',stale:'历史版本 · 不采用',interrupted:'模型中断 · 回退规则',cancelled:'模型已取消 · 保留规则'};
-  return `<details class="rule-evidence"><summary>${esc(names[m.status]||'模型状态待核对')}${c.analysis_method==='human'?' · 人工判断优先':''}</summary><small>${esc(m.engine)} · ${date(m.finished_at||m.started_at)}</small><p>${esc(m.detail)}</p>${m.status==='completed'?`<p>模型分类：${esc(labels[r.category]||'待判断')} · ${r.certainty==='clear'?'模型自报明确':'确定性不足'}；尚未测定准确率。</p><p><strong>模型理由：</strong>${esc(r.reason||"这条历史结果未保存判断理由")}</p><ul class="rule-hits">${(r.facts?.evidence||[]).map(e=>`<li><small>${esc(e.kind)} · ${esc({comment:'当前原文',parent:'上级原文',video:'视频标题'}[e.source]||e.source)}</small><q>${esc(e.text)}</q></li>`).join('')}</ul>`:''}${action}</details>`;
+  return `<details class="rule-evidence"><summary>${esc(names[m.status]||'模型状态待核对')}${c.analysis_method==='human'?' · 人工判断优先':''}</summary><small>${esc(m.engine)} · ${date(m.finished_at||m.started_at)}</small><p>${esc(m.detail)}</p>${m.status==='completed'?`<p>模型分类：${esc(labels[r.category]||'待判断')} · ${r.certainty==='clear'?'模型自报明确':'确定性不足'}；尚未测定准确率。</p><p><strong>模型理由：</strong>${esc(r.reason||"这条历史结果未保存判断理由")}</p><ul class="rule-hits">${(r.facts?.evidence||[]).map(e=>`<li><small>${esc(e.kind)} · ${esc({comment:'当前原文',parent:'上级原文',video:c.evidence_type==='group'?'群名':'视频标题'}[e.source]||e.source)}</small><q>${esc(e.text)}</q></li>`).join('')}</ul>`:''}${action}</details>`;
 }
 function ruleEvidence(c,allowModel=true){
   const human=humanEvidence(c)+modelEvidence(c,allowModel)+(c.analysis_method==='human'&&c.rule_category?`<p class="rule-note">保留的规则分类：${esc(labels[c.rule_category]||c.rule_category)}。${esc(c.rule_reason||'')}</p>`:'');
@@ -182,7 +207,7 @@ function ruleEvidence(c,allowModel=true){
   if(!f.rules_version&&!items.length)return human+(c.analysis_method==='rules'?'<p class="rule-note">此条旧规则结果没有保存命中片段；不能据此核验具体词句。</p>':'');
   const kinds={game:'游戏',request:'服务需求',pricing:'询价',supply:'接单 / 求职',availability_question:'询问接单',recruit:'招募',group:'组队',free:'免费表达',payment:'付费表达',budget:'预算',party_size:'人数',region:'区服',time:'时间',rank_label:'段位',service_type:'服务方向',service_context:'询价语境',product_context:'物品 / 设备语境',reported:'转述 / 举例',hypothetical:'假设 / 将来考虑',live_paid_help:'付费求带',live_help_price:'求带询价',live_group:'求带 / 缺人',live_offer:'提供服务',live_third_party:'他人需求',live_denial:'否定 / 劝阻',live_ambiguity:'玩笑 / 词义讨论'};
   const currentRules=c.evidence_type==='live'?S.collector?.live_monitor?.ruleset_version:S.settings?.ruleset_version;
-  const sources={comment:c.evidence_type==='live'?'此条弹幕':'此条评论',parent:'上级原文',video:'视频标题'};
+  const sources={comment:'此条'+evidenceName(c),parent:'上级原文',video:c.evidence_type==='group'?'群名':'视频标题'};
   return human+`<details class="rule-evidence"><summary>${c.analysis_method==='human'?'查看先前规则依据':'查看初筛依据'}${warnings.length?' · 有待核对项':''}</summary><p class="rule-note">${c.analysis_method==='human'?'以下保留先前规则命中，不代表人工已确认这些字段；已纠正字段单独列在上方。':'规则命中仅用于初筛，不是模型概率或联系授权。'}</p><small>规则版本：${esc(f.rules_version||'未记录')}</small>${f.rules_version&&currentRules&&f.rules_version!==currentRules?`<p class="rule-note">当前规则为 ${esc(currentRules)}；此条保留历史判断，升级不会自动改写。可通过人工核对确认当前结论。</p>`:''}${warnings.length?`<ul class="rule-warnings">${warnings.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}${items.length?`<ul class="rule-hits">${items.map(e=>`<li><div><span>${esc(kinds[e.kind]||e.kind||'未标注')}</span><small>${esc(sources[e.source]||'来源未标注')}</small></div><q>${esc(e.text)}</q>${e.negated?'<strong class="negated-hit">含否定 · 不作正向命中</strong>':''}${e.attribution==='unconfirmed'?'<strong class="negated-hit">归属待核对 · 未提取为此用户字段</strong>':''}</li>`).join('')}</ul>`:'<p class="rule-note">未命中明确词句，保留待判断。</p>'}</details>`;
 }
 function revealLeadDetail(){
@@ -201,7 +226,7 @@ function leadDetail(l){
     <div class="facts">${[['游戏',l.game],['服务方向',f.service_type],['段位原文',f.rank_label],['时间表达',f.time],['人数原文',f.party_size],['预算数值 / 范围',f.budget],['区服',f.region],['识别方式',{pending:'尚未处理',rules:'规则初筛',human:'人工确认',model:'语义模型 · 未测准确率'}[c.analysis_method]]].filter(x=>x[1]).map(x=>`<div class="fact"><small>${x[0]}</small><b>${esc(x[1]||'未明确')}</b></div>`).join('')}</div>
     <p class="muted" style="font-size:.875rem">${esc(c.reason||'等待初筛；不从昵称推断职业、身份或消费能力。')}</p>
     ${ruleEvidence(c)}</details>
-    <div class="actions" style="margin-top:14px">${c.id?button('核对分类',c.evidence_type==='live'?'live-review':'review','small',`data-id="${c.id}"`):''}${button(`查看 ${l.evidence_count??l.comment_count} 条历史`,'history','small',`data-id="${l.id}"`)}</div><hr class="divider">
+    <div class="actions" style="margin-top:14px">${c.id&&c.evidence_type!=='group'?button('核对分类',c.evidence_type==='live'?'live-review':'review','small',`data-id="${c.id}"`):''}${button(l.group_count?'评论与弹幕历史':`查看 ${l.evidence_count??l.comment_count} 条历史`,'history','small',`data-id="${l.id}"`)}${l.group_count?'<a href="#groups" class="button small">查看群聊原文</a>':''}</div><hr class="divider">
     <div class="row spread"><span class="muted" style="font-size:.875rem">${stages[l.stage]} · ${esc(l.owner||'未分配负责人')}</span>${button('跟进记录','follow','small',`data-id="${l.id}"`)}</div>${button(icon('messages-square')+' 进入私信工作台','open-chat','primary',`data-id="${l.id}" style="width:100%;margin-top:15px"`)}<small style="display:block;text-align:center;margin-top:9px">进入工作台不等于已发送消息</small>
   </div></aside>`;
 }
@@ -327,6 +352,10 @@ case 'refresh': await load();toast('数据已刷新');break;
 case 'uid-http-check': await save('uid-http-check',{},'本地配置已检查，没有发送消息');break;
 case 'uid-inbox':case 'uid-inbox-local': await uidInboxDialog(id,Number(el.dataset.before||0));break;
 case 'uid-inbox-scan': await uidInboxRead('scan');break;
+case 'group-refresh':groupBefore=0;await refreshGroups();break;
+case 'group-older':groupBefore=groupState?.next_before||0;await refreshGroups();break;
+case 'group-discover':await api('group-discover');groupBefore=0;await refreshGroups();toast('已刷新当前账号的已加入群；未执行加群');break;
+case 'group-toggle':await api('group-control',{id,enabled:el.dataset.enabled==='true'});await refreshGroups();break;
 case 'uid-inbox-read':case 'uid-inbox-older': await uidInboxRead('messages',id,el.dataset.action==='uid-inbox-older');break;
 case 'uid-http-probe': {el.disabled=true;try{const r=await api('uid-http-probe',{});showModal('HTTP 登录身份核对',`<p>${esc(r.detail)}</p><p class="muted">核对时间：${date(r.checked_at)}</p><p>该结果仅用于核对当时的登录身份。发送时仍会重新核对账号、接收方和联系依据。</p>`);}finally{el.disabled=false;}break;}
 case 'uid-http-target-new': uidTargetDialog();break;
@@ -363,7 +392,7 @@ case 'work-clear': await changeMonitorSelection('');break;
 case 'monitor-history-retry': await refreshMonitorHistory();break;
 case 'work-details': workDetailDialog(el.dataset.url);break;
 case 'comment-details': commentDetailDialog(el.dataset.url,el.dataset.key);break;
-case 'comment-filter-help': showModal('筛选说明','<p>采集通过：符合当批时间、关键词等采集条件。</p><p>垂直作品的新评论直接进入模型；普通作品仅做关键词匹配。有意向只展示当前判定为客户需求的评论。</p><p>采集未通过的原文仍保留在全部观察中，不等于内容没有价值。</p>');break;
+case 'comment-filter-help': showModal('筛选说明','<p>采集通过：符合当批时间、关键词等采集条件。</p><p>垂直作品的新评论直接进入模型；普通作品仅做关键词匹配。有意向仅展示模型或人工确认的客户需求；规则初筛结果留在采集通过中。</p><p>采集未通过的原文仍保留在全部观察中，不等于内容没有价值。</p>');break;
 case 'work-log': {const panel=$('#monitor-run-details');if(panel){panel.open=true;panel.scrollIntoView({behavior:'smooth',block:'start'});}break;}
 case 'monitor-result-filter': monitorResultFilter=['valuable','all','accepted','filtered'].includes(el.dataset.filter)?el.dataset.filter:'valuable';monitorResultPage=1;redrawMonitorResults();await refreshMonitorHistory();break;
 case 'monitor-result-page': monitorResultPage+=Number(el.dataset.step)||0;redrawMonitorResults();await refreshMonitorHistory();break;
@@ -815,6 +844,7 @@ async function pollCollection(){
       collectionPanelPending=false;
     }
     if(page==='monitor'&&!editing)await refreshMonitorHistory();
+    if(page==='groups'&&!editing&&!groupBefore)await refreshGroups();
     if(collectionReloadPending&&!editing&&!(page==='live'&&value.live_monitor?.active_id)){await load();collectionReloadPending=false;}
   }catch{if(page==='monitor')toast('暂时无法刷新采集状态；不会因此重启任务',true);}
   finally{collectionPolling=false;queueCollectionPoll();}

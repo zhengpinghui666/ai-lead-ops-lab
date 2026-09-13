@@ -15,6 +15,7 @@ import monitoring
 import uid_messaging
 import intent_outreach
 import uid_inbox_sync
+import group_monitor
 import live_monitor
 import live_tracking
 import live_workflow
@@ -107,6 +108,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond({**login_recovery.state(self.mode()), 'csrf': CSRF})
             if path == '/api/collector':
                 return self.respond(collection_state(self.mode()))
+            if path == '/api/groups':
+                query=parse_qs(urlparse(self.path).query)
+                return self.respond(group_monitor.state(self.mode(),int(query.get('before',['0'])[0])))
             if path == '/api/monitor-comments':
                 import monitor_comments
                 query = {k:v[0] for k,v in parse_qs(urlparse(self.path).query).items()}
@@ -237,6 +241,13 @@ class Handler(BaseHTTPRequestHandler):
                 result = uid_messaging.state(mode)
             elif action == 'intent-outreach-control':
                 result = intent_outreach.control(body.get('enabled'), mode)
+            elif action == 'group-discover':
+                result = group_monitor.refresh(mode)
+            elif action == 'group-control':
+                result = group_monitor.control(body,mode)
+            elif action == 'group-discovery-control':
+                import group_discovery
+                result = group_discovery.control(body,mode)
             elif action == 'uid-inbox-read':
                 import uid_inbox_store
                 result = uid_inbox_store.read(body,mode)
@@ -333,16 +344,17 @@ class LocalHTTPServer(ThreadingHTTPServer):
     def prepare_stop(self):
         # HTTP admissions share lifecycle_lock. Scheduler admissions share the
         # collector lock. Never interrupt a collector, live session or sender.
-        with self.lifecycle_lock, collector.GUARD, live_monitor.GUARD, uid_inbox_sync.GUARD, intent_outreach.GUARD, clubops.LOCKS['live'], clubops.db() as c:
+        with self.lifecycle_lock, collector.GUARD, live_monitor.GUARD, uid_inbox_sync.GUARD, group_monitor.GUARD, intent_outreach.GUARD, clubops.LOCKS['live'], clubops.db() as c:
             active_plan = c.execute("SELECT 1 FROM collection_plans WHERE status='running' LIMIT 1").fetchone()
             active_model = c.execute("SELECT 1 FROM semantic_jobs WHERE status IN ('queued','running','cancelling') LIMIT 1").fetchone()
             if (self.active_writes != 1 or collector.ACTIVE or live_monitor.ACTIVE or
-                    uid_messaging.GUARD.locked() or uid_inbox_sync.ACTIVE is not None or semantic.GUARD.locked() or active_model or active_plan or login_recovery.busy()):
+                    uid_messaging.GUARD.locked() or group_monitor.ACTIVE or uid_inbox_sync.ACTIVE is not None or semantic.GUARD.locked() or active_model or active_plan or login_recovery.busy()):
                 raise ValueError('仍有运行任务或写入；请先停止任务，服务未关闭')
             self.stopping = True
             collection_scheduler.STOP.set()
             live_tracking.STOP.set()
             uid_inbox_sync.STOP.set()
+            group_monitor.STOP.set()
             intent_outreach.STOP.set()
 
     def server_bind(self):
@@ -372,6 +384,7 @@ def main():
             semantic_queue.start_service()
             live_tracking.start_service()
             uid_inbox_sync.start_service()
+            group_monitor.start_service()
             intent_outreach.start_service()
             team_access.start_service(httpd.server_address[1])
             print(f'ClubOps 已启动：http://{HOST}:{httpd.server_address[1]}/', flush=True)
@@ -382,6 +395,7 @@ def main():
             finally:
                 team_access.shutdown()
                 uid_inbox_sync.shutdown()
+                group_monitor.shutdown()
                 intent_outreach.shutdown()
                 live_tracking.shutdown()
                 live_monitor.shutdown()

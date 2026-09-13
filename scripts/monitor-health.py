@@ -98,6 +98,13 @@ def check(data_dir=BASE / 'data', port=8765):
                 FROM uid_inbox_sync ORDER BY id''')]
             report['inbox_sync'] = assess_inbox(rows, now)
             report['issues'].extend(report['inbox_sync']['issues'])
+            if connection.execute("SELECT 1 FROM sqlite_master WHERE name='monitored_groups'").fetchone():
+                groups=[dict(r) for r in connection.execute('SELECT id,enabled,status,failures,next_run_at,last_read_at FROM monitored_groups')]
+                report['groups']={'configured':len(groups),'enabled':sum(r['enabled'] for r in groups)}
+                for group in groups:
+                    if group['enabled'] and (group['failures']>=3 or overdue(group['next_run_at'],now,120)
+                            or group['last_read_at'] and overdue(group['last_read_at'],now,600)):
+                        report['issues'].append(f"groups:{group['id']}:{group['status']}")
     except Exception as error:
         # Do not serialize exceptions containing response bodies or account data.
         report['issues'].append('probe:' + type(error).__name__)

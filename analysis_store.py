@@ -22,13 +22,15 @@ def digest(value):
 
 
 def inputs(c, kind, record_id):
-    if kind not in ('comment', 'live') or type(record_id) is not int or not 0 < record_id < 2**63:
+    if kind not in ('comment', 'live', 'group') or type(record_id) is not int or not 0 < record_id < 2**63:
         raise ValueError('请选择有效的评论或弹幕记录')
     if kind == 'comment':
         row = c.execute('''SELECT x.*,v.title,(SELECT p.raw_text FROM comments p
           WHERE p.source_id=x.source_id AND p.video_id=x.video_id AND p.id!=x.id
           AND p.external_id=x.parent_external_id) AS parent_text
           FROM comments x JOIN videos v ON v.id=x.video_id WHERE x.id=?''', (record_id,)).fetchone()
+    elif kind == 'group':
+        row = c.execute('SELECT m.*,m.group_title AS title FROM group_messages m WHERE m.id=?', (record_id,)).fetchone()
     else:
         row = c.execute('''SELECT m.*,COALESCE(r.title,'') AS title FROM live_messages m
           JOIN live_sessions s ON s.id=m.session_id LEFT JOIN live_rooms r ON r.room_url=s.room_url
@@ -58,7 +60,7 @@ def capture_rule(c, kind, record_id):
 
 def migrate(c):
     c.executescript(SCHEMA)
-    for kind, table in (('comment', 'comments'), ('live', 'live_messages')):
+    for kind, table in (('comment', 'comments'), ('live', 'live_messages'), ('group', 'group_messages')):
         for row in c.execute(f"""SELECT x.id FROM {table} x WHERE analysis_method='rules'
             AND NOT EXISTS(SELECT 1 FROM intent_results r WHERE r.evidence_type=?
             AND r.record_id=x.id AND r.method='rules')""", (kind,)).fetchall():
@@ -77,6 +79,16 @@ def latest(c, kind, record_id, method, input_hash):
     return result
 
 
+def compatible_engine(recorded, current):
+    """The v7 alias extension retains v6 decisions for identical source inputs.
+
+    Other model, provider, schema or prompt changes still require a new result.
+    This never rewrites historical records or schedules another model request.
+    """
+    return bool(current and recorded and (recorded == current or
+        ':intent-prompt-v6:' in recorded and recorded.replace(':intent-prompt-v6:', ':intent-prompt-v7:') == current))
+
+
 def project(c, row, *, model_engine=None):
     kind = row.get('evidence_type', 'comment')
     source = dict(kind=kind, text=row['raw_text'], parent='', title='')
@@ -85,6 +97,7 @@ def project(c, row, *, model_engine=None):
         parent = row.get('parent_context', {})
         if parent.get('status') == 'available':
             source['parent'] = parent['raw_text']
+    elif kind=='group':source['title']=row['group_title']
     else:source['title']=row.get('room_title','')
     fingerprint = digest(source)
     row['analysis_input_hash'] = fingerprint
@@ -99,7 +112,7 @@ def project(c, row, *, model_engine=None):
         row.setdefault('rule_reason', '旧记录未独立保存规则分类与理由')
     model = latest(c, kind, row['id'], 'model', fingerprint)
     row['model_result'] = model
-    if model and model['status'] == 'completed' and model_engine == model['engine'] and row['analysis_method'] not in ('human', 'pending'):
+    if model and model['status'] == 'completed' and compatible_engine(model['engine'], model_engine) and row['analysis_method'] not in ('human', 'pending'):
         row.update(model['result'])
     if kind == 'comment':
         import asset_keywords

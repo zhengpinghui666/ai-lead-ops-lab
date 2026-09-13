@@ -19,7 +19,7 @@ const listeners=new Map(),posts=[];
 const removedElements=new Set(['#club-name','#breadcrumb','#mode-badge','#mode-toggle']);
 const document={querySelectorAll:()=>[],querySelector:key=>removedElements.has(key)?null:element(key),addEventListener(type,fn){listeners.set(type,fn);},createElement(){return {click(){}};},body:element('body')};
 class TestFormData {constructor(form){if(form.failFormData)throw Error('synthetic form read failure');this.values=form.values;} [Symbol.iterator](){return this.values[Symbol.iterator]();} getAll(name){return this.values.filter(([k])=>k===name).map(([,v])=>v);}}
-const context=vm.createContext({document,FormData:TestFormData,location:{hash:''},window:{lucide:{createIcons(){}},addEventListener(){},scrollTo(){}},fetch:async(url,options)=>{if(url.startsWith('/api/live-history'))return {ok:true,json:async()=>({rows:[],total:0,anchor_id:0,limit:25})};if(options?.method==='POST'){posts.push({url,body:JSON.parse(options.body)});return {ok:true,json:async()=>({result:{id:99}})};}return {ok:true,json:async()=>({...fixture.live,csrf:'test-only-token'})};},setTimeout,clearTimeout,crypto:globalThis.crypto,Blob,URL,URLSearchParams,console,fixtures:fixture});
+const context=vm.createContext({document,FormData:TestFormData,location:{hash:''},window:{lucide:{createIcons(){}},addEventListener(){},scrollTo(){}},fetch:async(url,options)=>{if(url.startsWith('/api/live-history'))return {ok:true,json:async()=>({rows:[],total:0,anchor_id:0,limit:25})};if(options?.method==='POST'){posts.push({url,body:JSON.parse(options.body)});return {ok:true,json:async()=>({result:{id:99}})};}return {ok:true,json:async()=>({...fixture.live,csrf:'test-only-token'})};},setTimeout,clearTimeout,crypto:globalThis.crypto,Blob,URL,URLSearchParams,AbortController,console,fixtures:fixture});
 const run=code=>vm.runInContext(code,context);
 vm.runInContext(fs.readFileSync(path.join(__dirname,'static/app.js'),'utf8'),context);
 function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('undefined'),'Undefined appears in UI');assert.ok(!html.includes('NaN'),'NaN appears in UI');for(const [,name] of html.matchAll(/data-lucide="([^"]+)"/g)){const key=name.replace(/(^|-)([a-z])/g,(_,sep,c)=>c.toUpperCase());assert.ok(lucide[key],`Missing icon ${name}`);}}
@@ -29,6 +29,14 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.equal(run('monitorResultFilter'),'valuable');
   assert.equal(run('liveFilter'),'valuable');
   assert.equal(run('liveScope'),'all');
+  run(`groupState={groups:[{id:1,name:'瓦搭子群',participants:156,enabled:1,member:1,status:'running',message_count:2,screened_count:1}],enabled:1,messages:[{id:1,uid:'12345',nickname:'<script>unsafe</script>',group_title:'瓦搭子群',raw_text:'<img src=x onerror=alert(1)>',filter_reason:'未通过初筛',category:'uncertain',analysis_method:'rules'},{id:2,uid:'12346',group_title:'瓦搭子群',raw_text:'找陪练',filter_reason:'',category:'buyer',analysis_method:'model',model_result:{status:'completed',result:{category:'buyer',reason:'合成结果'}},outreach:{status:'accepted',detail:'已提交'}}]};`);
+  const groupHtml=run('groupPage()');checkHtml(groupHtml);
+  assert.ok(groupHtml.includes('&lt;script&gt;unsafe'));
+  assert.ok(!groupHtml.includes('<img src=x'));
+  assert.ok(groupHtml.includes('服务端接受 · 未确认送达'));
+  assert.ok(groupHtml.includes('公开群搜索、自动加群尚未接通'));
+  assert.ok(!groupHtml.includes('data-action="group-send"'));
+  run('groupState=null;');
   for(const value of elements.values())value.classList.add=()=>{};
   for(const mode of ['live','demo']){
     for(const page of ['overview','monitor','monitor-settings','live','leads','recruit','roster','inbox','analytics','settings']){
@@ -124,7 +132,8 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.match(fs.readFileSync(path.join(__dirname,'static/app.js'),'utf8'), /mode='live'/);
   assert.match(appHtml,/<nav id="nav" aria-label="主导航">/);
   run("S=fixtures.demo;mode='demo';page='overview';render()");
-  assert.equal((element('#nav').innerHTML.match(/<a /g)||[]).length,7);
+  assert.equal((element('#nav').innerHTML.match(/<a /g)||[]).length,8);
+  assert.match(element('#nav').innerHTML,/#groups/);
   assert.ok(!element('#nav').innerHTML.includes('#roster'));
   assert.ok(!element('#nav').innerHTML.includes('#recruit'));
   assert.match(element('#nav').innerHTML,/私信导流/);

@@ -46,6 +46,11 @@ class OutreachTests(unittest.TestCase):
             outreach.tick()
             transport.assert_not_called()
 
+    def test_rule_only_buyer_never_sends(self):
+        with patch('monitoring.observation_analysis',return_value=dict(category='buyer',analysis_method='rules')),patch('uid_transport.send') as transport:
+            outreach.tick()
+            transport.assert_not_called()
+
     def test_live_intent_uses_its_own_evidence_and_same_user_dedupe(self):
         import json
         import live_monitor
@@ -54,6 +59,9 @@ class OutreachTests(unittest.TestCase):
             sid = c.execute('INSERT INTO live_sessions(request_id,room_url,room_id,config,status,detail,started_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
                 ('synthetic-live', config['room_url'], '12345', json.dumps(config), 'connecting', '', app.now(), app.now())).lastrowid
         live_monitor.receive(sid, {'type':'message','record':dict(room_id='12345',uid=fixtures.RECEIVER,message_id='123456789',nickname='合成',text='无畏契约找陪练，预算100元',published_at=app.now())})
+        with app.db() as c:
+            # A human-confirmed buyer is eligible; a keyword-only live record is not.
+            c.execute("UPDATE live_messages SET analysis_method='human'")
         self.analysis.stop()
         with patch('monitoring.observation_analysis', return_value=dict(category='noise', analysis_method='rules')), patch('uid_transport.send', wraps=self.accepted) as transport:
             outreach.tick()

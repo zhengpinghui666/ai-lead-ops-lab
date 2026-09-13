@@ -262,3 +262,9 @@ dialog.collection-modal .modal-actions{flex-wrap:wrap}
 
 /* Contact evidence can contain long message IDs and hashes. */
 .inbox-detail p{overflow-wrap:anywhere;}
+.group-layout{display:grid;grid-template-columns:minmax(270px,340px) minmax(0,1fr);gap:24px;align-items:start}
+.group-target+.group-target,.group-message+.group-message{border-top:1px solid var(--line);padding-top:20px;margin-top:20px}
+.group-message small,.group-target small{display:block;overflow-wrap:anywhere}
+.group-message .quote{margin:12px 0;overflow-wrap:anywhere}
+.group-list .card-foot{line-height:1.7}
+@media(max-width:1000px){.group-layout{grid-template-columns:1fr}}

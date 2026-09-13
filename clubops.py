@@ -22,7 +22,8 @@ LOCKS = {'live': threading.RLock(), 'demo': threading.RLock()}
 TARGET_GAME = '无畏契约'
 SERVICE_TYPES = ('娱乐开黑', '排位组队', '新手陪练', '对局复盘')
 REVIEW_FIELDS = ('game', 'service_type', 'region', 'rank_label', 'time', 'budget', 'party_size')
-GAMES = {'三角洲行动': ['三角洲', 'delta'], '无畏契约': ['无畏契约', '瓦罗兰特', 'valorant', '瓦陪玩', '瓦陪练'], '王者荣耀': ['王者荣耀', '王者'], '英雄联盟': ['英雄联盟', 'lol'], '和平精英': ['和平精英']}
+from game_scope import ALIASES as VALORANT_ALIASES
+GAMES = {'三角洲行动': ['三角洲', 'delta'], '无畏契约': list(VALORANT_ALIASES), '王者荣耀': ['王者荣耀', '王者'], '英雄联盟': ['英雄联盟', 'lol'], '和平精英': ['和平精英']}
 LABELS = {'buyer': '客户需求', 'seller': '陪玩接单', 'recruit': '招募需求', 'social': '免费组队', 'noise': '无关讨论', 'uncertain': '待判断'}
 
 
@@ -114,12 +115,13 @@ def init(mode='live'):
             keyword_sources_missing = 'comment_keyword_sources' not in known_tables
             paging_missing = 'collection_page_progress' not in known_tables
             inbox_missing = not {'uid_inbox_conversations','uid_inbox_messages','uid_inbox_reads','uid_reply_links','uid_inbox_sync'} <= known_tables
+            group_missing = not {'monitored_groups','group_messages','group_reads'} <= known_tables
             live_columns = {r[1] for r in source.execute('PRAGMA table_info(live_messages)')}
             collection_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_tasks)')}
             plan_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_plans)')}
             observation_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_observations)')}
             activity_index_missing = not source.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_observation_published_activity'").fetchone()
-            if not {'uid_message_attempts', 'live_sessions', 'live_links', 'live_judgments', 'live_reviews', 'intent_results', 'semantic_jobs', 'video_metadata', 'live_tracks', 'live_rooms', 'live_pool_checks', 'collection_candidates', 'collection_candidate_reads', 'discovery_authors', 'discovery_works', 'discovery_jobs', 'discovery_queries'} <= known_tables or not {'outer_message_id', 'game'} <= live_columns or 'transport' not in collection_columns or 'intent_version' not in plan_columns or 'ingest_disposition' not in observation_columns or activity_index_missing or verticality_missing or inbox_missing or keyword_sources_missing or paging_missing:
+            if not {'uid_message_attempts', 'live_sessions', 'live_links', 'live_judgments', 'live_reviews', 'intent_results', 'semantic_jobs', 'video_metadata', 'live_tracks', 'live_rooms', 'live_pool_checks', 'collection_candidates', 'collection_candidate_reads', 'discovery_authors', 'discovery_works', 'discovery_jobs', 'discovery_queries'} <= known_tables or not {'outer_message_id', 'game'} <= live_columns or 'transport' not in collection_columns or 'intent_version' not in plan_columns or 'ingest_disposition' not in observation_columns or activity_index_missing or verticality_missing or inbox_missing or keyword_sources_missing or paging_missing or group_missing:
                 backup_dir = DATA_DIR / 'backups'
                 backup_dir.mkdir(parents=True, exist_ok=True)
                 label = ('before-uid-http-' if 'uid_message_attempts' not in known_tables else
@@ -130,6 +132,7 @@ def init(mode='live'):
                 if label=='before-candidate-pool-' and inbox_missing:label='before-uid-inbox-'
                 if label=='before-candidate-pool-' and keyword_sources_missing:label='before-comment-keywords-'
                 if label=='before-candidate-pool-' and paging_missing:label='before-comment-paging-'
+                if label=='before-candidate-pool-' and group_missing:label='before-group-monitor-'
                 backup = sqlite3.connect(backup_dir / (filename + '.' + label + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f') + '.bak'))
                 try:
                     source.backup(backup)
@@ -148,6 +151,10 @@ def init(mode='live'):
         c.executescript(uid_inbox_store.SCHEMA)
         import uid_inbox_sync
         c.executescript(uid_inbox_sync.SCHEMA)
+        import group_monitor
+        c.executescript(group_monitor.SCHEMA)
+        import group_discovery
+        c.executescript(group_discovery.SCHEMA)
         import live_monitor
         c.executescript(live_monitor.SCHEMA)
         import live_tracking
@@ -222,6 +229,9 @@ def init(mode='live'):
             c.execute("INSERT INTO settings VALUES('comment_keyword_corpus_v1','true')")
         for query in asset_keywords.queries(c):
             c.execute('INSERT OR IGNORE INTO discovery_queries(keyword,next_check_at) VALUES(?,?)',(query,now()))
+        if not c.execute("SELECT 1 FROM settings WHERE key='valorant_alias_scope_v1'").fetchone():
+            discovery_tracking.refresh_game_scope(c)
+            c.execute("INSERT INTO settings VALUES('valorant_alias_scope_v1','true')")
         if not c.execute('SELECT 1 FROM asset_verticality LIMIT 1').fetchone() or c.execute("SELECT 1 FROM asset_verticality WHERE json_extract(result,'$.version')!=? LIMIT 1",(asset_verticality.VERSION,)).fetchone():
             asset_verticality.backfill(c)
         c.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_single_monitor ON collection_plans(continuous) WHERE continuous=1')
@@ -436,6 +446,11 @@ def state(mode='live'):
         live_messages, live_counts = live_workflow.latest_by_person(c)
         for row in live_messages:
             by_person[row['person_id']].append(row)
+        import group_monitor
+        group_counts=dict(c.execute('SELECT person_id,COUNT(*) FROM group_messages WHERE person_id IS NOT NULL GROUP BY person_id').fetchall())
+        group_messages=[group_monitor.project(c,r,engine=model_engine) for r in c.execute(group_monitor.SELECT+''' WHERE m.id IN
+          (SELECT MAX(id) FROM group_messages WHERE person_id IS NOT NULL GROUP BY person_id)''')]
+        for row in group_messages:by_person[row['person_id']].append(row)
         leads = [dict(r) for r in c.execute('SELECT l.*,p.nickname,p.external_id,p.contact_basis,p.contact_note,p.do_not_contact,s.kind AS source_kind FROM leads l JOIN people p ON p.id=l.person_id JOIN sources s ON s.id=p.source_id ORDER BY l.id DESC')]
         for lead in leads:
             related = by_person[lead['person_id']]
@@ -443,7 +458,8 @@ def state(mode='live'):
             latest = related[0] if related else {}
             comment_count = sum(r['evidence_type'] == 'comment' for r in related)
             live_count = live_counts.get(lead['person_id'], 0)
-            lead.update({'latest': latest, 'comment_count': comment_count, 'live_count': live_count, 'evidence_count': comment_count + live_count,
+            group_count=group_counts.get(lead['person_id'],0)
+            lead.update({'latest': latest, 'comment_count': comment_count, 'live_count': live_count, 'group_count':group_count, 'evidence_count': comment_count + live_count + group_count,
                          'category': latest.get('category', 'uncertain'), 'game': latest.get('game', '')})
         members = [dict(r) for r in c.execute('SELECT * FROM members ORDER BY available DESC,id')]
         for member in members:

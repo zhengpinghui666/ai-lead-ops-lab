@@ -64,6 +64,30 @@ class DiscoveryTrackingTests(unittest.TestCase):
             self.assertEqual(c.execute('SELECT enabled FROM discovery_works WHERE video_id=?', (VID,)).fetchone()[0], 0)
             self.assertEqual(c.execute('SELECT COUNT(*) FROM collection_observations WHERE task_id=?', (self.base,)).fetchone()[0], 2)
 
+    def test_alias_queries_are_scheduled_and_paused_work_stays_paused(self):
+        aliases=['瓦','打瓦 陪玩','瓦搭子','瓦开黑','瓦陪练','瓦 点陪']
+        result=self.save(keywords=aliases)
+        self.assertEqual({r['keyword'] for r in result['queries']},set(aliases))
+        row=work(2);row['video_title']='瓦搭子 陪玩接单'
+        self.record([row],source='search')
+        with app.db() as c:
+            found=c.execute('SELECT relevant FROM discovery_works WHERE video_id=?',(row['video_id'],)).fetchone()
+            self.assertEqual(found[0],1)
+            c.execute('UPDATE discovery_works SET enabled=0 WHERE video_id=?',(row['video_id'],))
+        self.record([row],source='search');self.save(keywords=aliases)
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT enabled FROM discovery_works WHERE video_id=?',(row['video_id'],)).fetchone()[0],0)
+
+    def test_existing_author_samples_gain_scope_without_losing_pause_or_provenance(self):
+        row=work(3,related=False);self.record([row])
+        with app.db() as c:
+            c.execute("UPDATE discovery_works SET title='瓦区 陪玩接单',enabled=0 WHERE video_id=?",(row['video_id'],))
+            before=dict(c.execute('SELECT * FROM discovery_works WHERE video_id=?',(row['video_id'],)).fetchone())
+            discovery.refresh_game_scope(c)
+            after=dict(c.execute('SELECT * FROM discovery_works WHERE video_id=?',(row['video_id'],)).fetchone())
+            self.assertEqual(after,{**before,'relevant':1})
+            self.assertEqual(c.execute('SELECT enabled FROM videos WHERE external_id=?',(row['video_id'],)).fetchone()[0],0)
+
     def test_recent_comment_keeps_priority_after_many_quiet_checks(self):
         self.save()
         for start in range(0,600,50):self.record([work(i) for i in range(start,start+50)])
@@ -176,13 +200,13 @@ class DiscoveryTrackingTests(unittest.TestCase):
         self.save();self.record([work(i) for i in range(10)])
         for turn,expected in [(0,'work'),(1,'author'),(2,'work'),(3,'search')]:
             self.assertEqual(self.choose(self.plan(run_count=turn))[1]['channel'],expected)
+        with app.db() as c:cfg=discovery.config(c)
         selected=[]
-        for i in range(6):
+        for i in range(len(cfg['keywords'])):
             _,job=self.choose(self.plan(run_count=3));selected.append(job['target'])
             with app.db() as c:c.execute('UPDATE discovery_queries SET last_checked_at=?,next_check_at=? WHERE keyword=?',
                 (NOW,discovery.future(NOW,300),job['key']))
-        self.assertEqual(len(set(selected)),6)
-        with app.db() as c:cfg=discovery.config(c)
+        self.assertEqual(len(set(selected)),len(cfg['keywords']))
         self.assertEqual(set(selected),set(cfg['keywords']))
 
     def test_initial_author_scan_and_focus_frequency(self):

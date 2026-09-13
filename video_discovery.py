@@ -10,7 +10,7 @@ import video_metadata
 from collector_http import ReadError, numeric
 from collector_http_session import ORIGIN
 
-GAME_PATTERN = re.compile(r'无畏契约|无畏契約|無畏契約|瓦罗兰特|瓦羅蘭特|valorant|瓦陪|陪瓦|打瓦|瓦手游|手瓦|瓦友|(?:^|[\s#＃])瓦(?=$|[\s#＃])', re.I)
+from game_scope import GAME_PATTERN
 
 PRIVATE_WORK_DETAIL = '平台明确返回该作品受作者隐私设置限制；已停止跟踪该作品，其他公开作品继续采集'
 

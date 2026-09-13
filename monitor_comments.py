@@ -56,7 +56,7 @@ def history(query, mode='live'):
         for accepted in c.execute("SELECT * FROM monitor_comment_scope WHERE filter_reason=''"):
             key = (accepted['video_url'],accepted['external_id'])
             current[key] = monitoring.observation_analysis(c,accepted['comment_id'],accepted['text'],engine)
-            if current[key].get('category') == 'buyer' and current[key].get('analysis_method') in ('rules','model','human'):
+            if current[key].get('category') == 'buyer' and current[key].get('analysis_method') in ('model','human'):
                 valuable.add(key)
         where = " WHERE (:state='all' OR (:state IN ('accepted','valuable') AND filter_reason='') OR (:state='filtered' AND filter_reason!='')) AND (:query='' OR instr(lower(text || ' ' || nickname || ' ' || COALESCE(user_identifier,'') || ' ' || external_id),lower(:query))>0)"
         total = c.execute('SELECT COUNT(*) FROM monitor_comment_scope'+where,params).fetchone()[0]

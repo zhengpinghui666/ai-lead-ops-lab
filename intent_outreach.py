@@ -114,17 +114,22 @@ def candidate(c, policy):
     eligible = """p.do_not_contact=0 AND p.external_id<>? AND NOT EXISTS
         (SELECT 1 FROM uid_message_attempts a WHERE a.sender_uid=? AND a.recipient_uid=p.external_id)"""
     args = (policy['sender_uid'], policy['sender_uid'])
+    import group_monitor
+    for raw in c.execute(group_monitor.SELECT + " JOIN people eligible_person ON eligible_person.id=m.person_id WHERE "
+            + eligible.replace('p.', 'eligible_person.') + ' ORDER BY m.id DESC', args):
+        if group_monitor.eligible(c,raw,engine,policy['sender_uid']):
+            return dict(raw,recipient_uid=raw['uid'],evidence_type='group')
     for row in c.execute('''SELECT x.*,p.external_id AS recipient_uid,l.id AS lead_id
             FROM comments x JOIN people p ON p.id=x.person_id JOIN leads l ON l.person_id=p.id
             JOIN sources s ON s.id=p.source_id WHERE s.kind='browser' AND ''' + eligible + ' ORDER BY x.id DESC', args):
         analysis = monitoring.observation_analysis(c, row['id'], row['raw_text'], engine)
-        if analysis.get('category') == 'buyer' and analysis.get('analysis_method') in ('rules', 'model', 'human'):
+        if analysis.get('category') == 'buyer' and analysis.get('analysis_method') in ('model', 'human'):
             return dict(row, evidence_type='comment')
     ids = [r[0] for r in c.execute('''SELECT m.id FROM live_messages m JOIN live_links k ON k.message_id=m.id
         JOIN people p ON p.id=k.person_id WHERE m.filter_reason='' AND ''' + eligible + ' ORDER BY m.id DESC', args)]
     for rid in ids:
         row = live_workflow.project(c, c.execute(live_workflow.SELECT + ' WHERE m.id=?', (rid,)).fetchone(), history=False, model_engine=engine)
-        if row['category'] == 'buyer' and row['analysis_method'] in ('rules', 'model', 'human'):
+        if row['category'] == 'buyer' and row['analysis_method'] in ('model', 'human'):
             return dict(row, recipient_uid=row['uid'], evidence_type='live')
     return None
 

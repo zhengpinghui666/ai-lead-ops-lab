@@ -128,8 +128,9 @@ def authorized_outreach(c, authorization, job, person, settings):
     import semantic
     fields = {'job_id', 'sender_uid', 'recipient_uid', 'content_sha256', 'granted_at', 'instruction'}
     comment_fields, live_fields = {'comment_id', 'comment_sha256'}, {'live_id', 'live_sha256'}
+    group_fields = {'group_id','group_sha256'}
     keys = set(authorization) - {'policy_revision'} if isinstance(authorization, dict) else set()
-    if not isinstance(authorization, dict) or keys not in (fields | comment_fields, fields | live_fields):
+    if not isinstance(authorization, dict) or keys not in (fields | comment_fields, fields | live_fields, fields | group_fields):
         raise ValueError('本次操作授权格式无效；未发送')
     if 'policy_revision' in authorization:
         import intent_outreach
@@ -146,6 +147,14 @@ def authorized_outreach(c, authorization, job, person, settings):
             or not isinstance(authorization['granted_at'], str)
             or not authorization['granted_at'].strip()):
         raise ValueError('本次操作授权与任务、账号、收件人或文案不符；未发送')
+    if 'group_id' in authorization:
+        import group_monitor
+        raw=c.execute(group_monitor.SELECT+' WHERE m.id=?',(authorization['group_id'],)).fetchone()
+        if (not raw or raw['person_id']!=person['id']
+                or authorization['group_sha256']!=hashlib.sha256(raw['raw_text'].encode()).hexdigest()
+                or not group_monitor.eligible(c,raw,semantic.state()['engine'],settings['sender_uid'])):
+            raise ValueError('群消息未通过初筛和当前模型确认，或群监控授权已失效；未发送')
+        return
     if 'live_id' in authorization:
         import live_workflow
         raw = c.execute(live_workflow.SELECT + ' WHERE m.id=?', (authorization['live_id'],)).fetchone()

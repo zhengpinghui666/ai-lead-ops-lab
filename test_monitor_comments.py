@@ -1,11 +1,14 @@
 """Isolated cross-batch reads; never contacts Douyin or the model."""
 import tempfile
+import json
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 import clubops as app
 import collector
 import monitor_comments as comments
+import analysis_store
+import semantic
 
 VIDEO='7600000000000000001'
 OTHER='7600000000000000002'
@@ -39,6 +42,16 @@ class CommentHistoryTests(unittest.TestCase):
         collector.update(task,status='completed',finished_at=NOW)
         collector.ACTIVE.clear()
         return task
+
+    def confirm_models(self):
+        semantic.state.return_value={'engine':'synthetic:model:intent-schema-v1:intent-prompt-v7:format','can_analyze':True}
+        with app.db() as c:
+            for row in c.execute("SELECT * FROM comments WHERE category='buyer'").fetchall():
+                source,_=analysis_store.inputs(c,'comment',row['id'])
+                result=dict(category='buyer',analysis_method='model',game=app.TARGET_GAME,reason='合成模型确认',facts={})
+                c.execute("""INSERT INTO intent_results(evidence_type,record_id,method,engine,request_id,input_hash,input_json,status,result_json,started_at,finished_at)
+                  VALUES('comment',?,'model','synthetic:model:intent-schema-v1:intent-prompt-v6:format','synthetic-confirm',?,?,'completed',?,?,?)""",
+                  (row['id'],analysis_store.digest(source),json.dumps(source),json.dumps(result),NOW,NOW))
 
     def test_cross_batch_work_filter_dedupe_and_counts(self):
         self.batch(VIDEO,[('7600000000000000011','找陪练'),('7600000000000000012','接单')],excluded='接单')
@@ -100,6 +113,8 @@ class CommentHistoryTests(unittest.TestCase):
         self.batch(VIDEO,records,excluded='屏蔽样本')
         with app.db() as c: ids=[r[0] for r in c.execute('SELECT id FROM comments')]
         app.analyze(comment_ids=ids)
+        self.assertEqual(comments.history({'filter':'valuable'})['total'],0,'Rule matches are not confirmed intent')
+        self.confirm_models()
         first=comments.history({'filter':'valuable'})
         second=comments.history({'filter':'valuable','page':'2'})
         self.assertEqual((first['total'],first['valuable_count'],len(first['rows']),len(second['rows'])),(28,28,25,3))
@@ -119,6 +134,7 @@ class CommentHistoryTests(unittest.TestCase):
         first=self.batch(VIDEO,[(cid,'找陪练')])
         with app.db() as c: ident=c.execute('SELECT id FROM comments WHERE external_id=?',(cid,)).fetchone()[0]
         app.analyze(comment_ids=[ident])
+        self.confirm_models()
         with patch('clubops.now',return_value='2026-09-11T05:00:00+00:00'):
             later=self.batch(VIDEO,[(cid,'找陪练')])
         # Same source text was accepted earlier; a later monitoring window is narrower.

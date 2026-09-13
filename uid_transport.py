@@ -24,6 +24,7 @@ ENDPOINTS = {
     'stranger_conversations': ('imapi.douyin.com', '/v1/stranger/get_conversation_list', 'POST'),
     'messages': ('imapi.douyin.com', '/v1/message/get_by_conversation', 'POST'),
     'stranger_messages': ('imapi.douyin.com', '/v1/stranger/get_messages', 'POST'),
+    'group_join': ('imapi.douyin.com', '/v1/conversation/add_participants', 'POST'),
 }
 
 IDENTITY_REASONS = frozenset({'preparation_failed', 'response_unavailable', 'http_status_rejected',

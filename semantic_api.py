@@ -39,8 +39,7 @@ class ChatAPIAdapter(semantic.OllamaAdapter):
         source = {field: source[field] for field in ('kind', 'text', 'parent', 'title')}
         response = self.request('/chat/completions',dict(model=self.settings['model'],stream=False,
             temperature=0,max_tokens=2048,response_format={'type':'json_object'},
-            messages=[{'role':'system','content':semantic.PROMPT+
-                       '\n游戏字段的证据必须包含以下对应词之一（忽略英文字母大小写），除此以外不得推断游戏，缺少时 game.value 和 game.quote 留空：'+json.dumps(app.GAMES,ensure_ascii=False)+
+            messages=[{'role':'system','content':semantic.PROMPT+semantic.game_prompt(source)+
                        '\n未知游戏固定写为 {"value":"","quote":"","source":"text"}。返回 JSON 必须符合此结构：'+json.dumps(semantic.ollama_schema(),ensure_ascii=False)},
                       {'role':'user','content':json.dumps(source,ensure_ascii=False)}]))
         choices = response.get('choices')

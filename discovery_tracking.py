@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS discovery_jobs (
 CREATE TABLE IF NOT EXISTS discovery_queries (keyword TEXT PRIMARY KEY,last_checked_at TEXT,next_check_at TEXT);
 CREATE INDEX IF NOT EXISTS idx_discovery_author ON discovery_works(author_sec_uid,author_sample);
 '''
-DEFAULT = dict(enabled=False,keywords=['无畏契约陪玩','无畏契约陪练','瓦陪玩','无畏契约开黑','无畏契约复盘','VALORANT陪玩'],
+DEFAULT = dict(enabled=False,keywords=['无畏契约陪玩','无畏契约陪练','瓦陪玩','无畏契约开黑','无畏契约复盘','VALORANT陪玩',
+    '瓦','打瓦 陪玩','瓦搭子','瓦开黑','瓦陪练','瓦 点陪'],
     seed_videos=[],search_interval=300,author_interval=600,focus_interval=90,work_interval=60,
     focus_min_related=8,focus_ratio=80,initial_author_pages=3)
 
@@ -51,6 +52,19 @@ RECENT_ACTIVITY = '''SELECT page_url,
 def config(c):
     row=c.execute("SELECT value FROM settings WHERE key='discovery_tracking'").fetchone()
     return {**DEFAULT,**(json.loads(row[0]) if row else {})}
+
+
+def refresh_game_scope(c):
+    """Reclassify saved author samples without inventing a new observation or unpausing."""
+    source=c.execute("SELECT id FROM sources WHERE kind='browser' ORDER BY id LIMIT 1").fetchone()
+    for row in c.execute('SELECT * FROM discovery_works').fetchall():
+        relevant=bool(GAME_PATTERN.search(row['title']))
+        if relevant==bool(row['relevant']):continue
+        c.execute('UPDATE discovery_works SET relevant=? WHERE video_id=?',(int(relevant),row['video_id']))
+        if relevant and source:
+            c.execute('''INSERT INTO videos(source_id,external_id,title,url,game,enabled,created_at) VALUES(?,?,?,?,?,?,?)
+              ON CONFLICT(source_id,external_id) DO NOTHING''',(source[0],row['video_id'],row['title'][:300],
+              'https://www.douyin.com/video/'+row['video_id'],app.TARGET_GAME,row['enabled'],row['first_seen_at']))
 
 
 def future(stamp,seconds):
@@ -290,7 +304,8 @@ def choose(c,plan,instant):
                 jobs['author']=dict(kind='author',target=seed,transport='http',key='seed:'+seed,channel='author',author_pages=cfg['initial_author_pages']);break
     import asset_references
     _,reference_queries=asset_references.discovery_assets(c)
-    search_terms=set(cfg['keywords'])|set(reference_queries)
+    import group_discovery
+    search_terms=set(cfg['keywords'])|set(reference_queries)|set(group_discovery.search_terms(c))
     query=next((dict(r) for r in c.execute('SELECT * FROM discovery_queries ORDER BY COALESCE(last_checked_at,\'\'),keyword') if r['keyword'] in search_terms and due(r['next_check_at'])),None)
     latest_search=c.execute("SELECT t.* FROM discovery_jobs j JOIN collection_tasks t ON t.id=j.task_id WHERE j.kind='search' ORDER BY t.id DESC LIMIT 1").fetchone()
     search_wait=empty_search_wait(c,latest_search)

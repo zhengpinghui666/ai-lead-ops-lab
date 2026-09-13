@@ -29,7 +29,7 @@ class DiagnosticTests(unittest.TestCase):
 
     def run_queue(self, connection):
         semantic.save(dict(self.settings, auto_analyze=True))
-        app.ingest({'records':[dict(comment_id='diagnostic-1',video_id='v1',user_id='12345',text=fixtures.SOURCE['text'])]})
+        app.ingest({'records':[dict(comment_id='diagnostic-1',video_id='v1',video_title='无畏契约陪练服务',user_id='12345',text=fixtures.SOURCE['text'])]})
         app.analyze()
         with patch.object(semantic_api.ChatAPIAdapter, 'connection', return_value=connection):
             self.assertTrue(queue.run_one())

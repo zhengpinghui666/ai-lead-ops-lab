@@ -13,7 +13,7 @@ import clubops as app
 import analysis_store as store
 
 VERSION = 'intent-schema-v1'
-PROMPT_VERSION = 'intent-prompt-v6'
+PROMPT_VERSION = 'intent-prompt-v7'
 MODEL_FORMAT_VERSION = 'ollama-fields-v1'
 API_FORMAT_VERSION = 'chat-fields-v1'
 CONFIG_FILE = 'semantic.json'
@@ -148,7 +148,7 @@ def concurrency(settings):
 
 def effective_config(settings, kind):
     value = {**DEFAULTS, **settings}
-    if kind == 'comment':
+    if kind in ('comment','group'):
         value.pop('live_model_enabled')
     return value
 
@@ -324,6 +324,17 @@ reason 写简短可审查理由，不给概率、不声称已经同意联系或�
 示例只演示字段与证据格式。实际证据必须来自本次输入；“新手求带”等含糊表达仍需待判断，不套用示例分类。'''
 
 
+def game_terms(source):
+    return {**app.GAMES,app.TARGET_GAME:[*app.GAMES[app.TARGET_GAME],'瓦']}
+
+
+def game_prompt(source):
+    return ('\n游戏字段的证据必须包含以下对应词之一（忽略英文字母大小写），缺少时游戏和游戏引用留空：'+
+            json.dumps(game_terms(source),ensure_ascii=False)+
+            '\n游戏简称必须引用完整词（如“打瓦”“瓦搭子”）。单字“瓦”只在原文中独立出现或作为 #瓦 标签时可用；不能从“瓦片”“瓦工”或完整简称中截取。'+
+            ('\n本条来自群聊，title 是实际群名。普通找人玩仍是 uncertain，群名不能替作者证明购买意愿。' if source.get('kind')=='group' else ''))
+
+
 def validate_result(value, source):
     if not isinstance(value, dict) or set(value) != set(output_schema()['properties']):
         raise ValueError()
@@ -361,8 +372,11 @@ def validate_result(value, source):
             raise ValueError()
         if val and field not in ('game', 'service_type') and not any(val == e['text'] for e in matches):
             raise ValueError()
-        if val and field == 'game' and not any(any(term.lower() in e['text'].lower() for term in app.GAMES[val]) for e in matches):
-            raise ValueError()
+        if val and field == 'game':
+            from game_scope import game_quote
+            if not any(game_quote(e['text'],source[{'comment':'text','video':'title','parent':'parent'}[e['source']]]) if val==app.TARGET_GAME else
+                       any(term.lower() in e['text'].lower() for term in app.GAMES[val]) for e in matches):
+                raise ValueError()
     facts = dict(facts, evidence=checked, model_schema=VERSION, model_prompt=PROMPT_VERSION)
     return dict(category=value['category'] if value['certainty'] == 'clear' else 'uncertain',
                 proposed_category=value['category'], certainty=value['certainty'], confidence=None,
@@ -500,7 +514,7 @@ class OllamaAdapter:
         response = self.request('/api/chat', dict(model=self.settings['model'], stream=False, think=False,
             truncate=False, shift=False, keep_alive=0, format=ollama_schema(),
             options={'temperature': 0, 'num_predict': 2048, 'num_ctx': 16384},
-            messages=[{'role': 'system', 'content': PROMPT}, {'role': 'user', 'content': json.dumps(source, ensure_ascii=False)}]))
+            messages=[{'role': 'system', 'content': PROMPT+game_prompt(source)}, {'role': 'user', 'content': json.dumps(source, ensure_ascii=False)}]))
         if response.get('done') is not True or response.get('done_reason') != 'stop' or response.get('remote_host') or response.get('remote_model'):
             raise ModelError('invalid_result')
         message = response.get('message', {})
@@ -517,7 +531,7 @@ def analyze_one(body, mode='live', *, adapter_factory=None, cancel_event=None, e
     kind, record_id, request_id = body['evidence_type'], body['id'], body['request_id']
     if not isinstance(request_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{8,80}', request_id):
         raise ValueError('分析请求编号无效')
-    if kind not in ('comment', 'live') or type(record_id) is not int or record_id <= 0:
+    if kind not in ('comment', 'live', 'group') or type(record_id) is not int or record_id <= 0:
         raise ValueError('模型分析原文类型或 ID 无效')
     settings, issues = config()
     if kind == 'live' and not settings['live_model_enabled']:
