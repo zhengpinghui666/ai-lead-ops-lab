@@ -268,3 +268,8 @@ dialog.collection-modal .modal-actions{flex-wrap:wrap}
 .group-message .quote{margin:12px 0;overflow-wrap:anywhere}
 .group-list .card-foot{line-height:1.7}
 @media(max-width:1000px){.group-layout{grid-template-columns:1fr}}
+/* Immediate page structure; placeholders never stand in for zero business data. */
+.frame-actions span{display:block;width:96px;height:34px;border:1px solid var(--line);border-radius:6px;background:#f8fafb}
+.frame-monitor-summary{margin-bottom:22px}.frame-monitor-summary .card-head{min-height:75px}.frame-monitor-summary .card-foot{min-height:40px}.frame-discovery{min-height:89px;margin-bottom:20px}.frame-discovery .card-head{min-height:87px}
+.frame-status{font-size:.875rem;color:var(--muted);margin:0 0 16px}.frame-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:16px;margin-bottom:22px}.frame-metric{padding:22px;min-height:113px}.skeleton-line{display:block;height:12px;width:72%;background:#e7edef;border-radius:3px}.skeleton-value{height:27px;width:40%;margin-top:17px}.frame-lines{min-height:280px;display:flex;flex-direction:column;gap:27px}.frame-lines .skeleton-line{width:92%}.frame-lines .skeleton-line:nth-child(2n){width:64%}.frame-columns{display:grid;gap:22px}.frame-columns-two{grid-template-columns:minmax(250px,.65fr) minmax(0,1.35fr)}
+@media(max-width:1000px){.frame-columns-two{grid-template-columns:1fr}.frame-lines{min-height:200px}}@media(max-width:700px){.frame-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.frame-metric{padding:16px}}

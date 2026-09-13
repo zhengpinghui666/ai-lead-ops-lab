@@ -1,4 +1,8 @@
 'use strict';
+// Read-only performance evidence, kept on this page without sending telemetry.
+if(typeof PerformanceObserver==='function'){
+  try{new PerformanceObserver(list=>{for(const entry of list.getEntries())if(entry.name==='first-contentful-paint')document.documentElement.dataset.appFirstContentfulPaintMs=String(Math.round(entry.startTime));}).observe({type:'paint',buffered:true});}catch{}
+}
 const $ = (s, root=document) => root.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const icon = name => `<i data-lucide="${name}"></i>`;
@@ -93,22 +97,42 @@ function icons(){window.lucide?.createIcons();}
 let loadSequence=0,collectionPollTimer,collectionPolling=false,collectionReloadPending=false,collectionPanelPending=false;
 function renderNavigation(){
   if(!pages[page])page='overview';
-  $('#nav').innerHTML=navPages.map(k=>[k,pages[k]]).map(([k,[name,ico]])=>`<a href="#${k}" class="${(page===k||k==='monitor'&&page==='monitor-settings')?'active':''}" ${(page===k||k==='monitor'&&page==='monitor-settings')?'aria-current="page"':''}>${icon(ico)}${name}</a>`).join('')+(mode==='live'?`<a href="/login">${icon('key-round')}账号登录</a>`:'');
+  const key=mode+':'+page;
+  if(renderNavigation.key!==key){$('#nav').innerHTML=navPages.map(k=>[k,pages[k]]).map(([k,[name,ico]])=>`<a href="#${k}" class="${(page===k||k==='monitor'&&page==='monitor-settings')?'active':''}" ${(page===k||k==='monitor'&&page==='monitor-settings')?'aria-current="page"':''}>${icon(ico)}${name}</a>`).join('')+(mode==='live'?`<a href="/login">${icon('key-round')}账号登录</a>`:'');renderNavigation.key=key;icons();}
   document.title=`${pages[page][0]} · ClubOps`;
 }
+function loadingFrame(target){
+  const sections={overview:['获客进展','最近需求'],monitor:['作品库','有意向的评论'],live:['实时弹幕与需求初筛'],groups:['监控群聊','群消息与筛选结果'],leads:['需求筛选结果'],inbox:['会话列表','私信记录'],analytics:['导流情况'],settings:['数据与设置'],'monitor-settings':['监控设置']};
+  const lines='<div class="card-body frame-lines" aria-hidden="true">'+Array(4).fill('<span class="skeleton-line"></span>').join('')+'</div>';
+  const metrics=['overview','monitor','analytics'].includes(target)?'<div class="frame-metrics" aria-hidden="true">'+Array(target==='monitor'?5:4).fill('<div class="card frame-metric"><span class="skeleton-line"></span><span class="skeleton-line skeleton-value"></span></div>').join('')+'</div>':'';
+  const columns=sections[target]||['正在读取'];
+  const status=target==='monitor'?`<section class="card frame-monitor-summary"><div class="card-head"><h2>评论监控</h2></div><div class="card-foot" role="status">正在加载监控中心数据…</div></section>`:`<p class="frame-status" role="status">正在加载${esc(pages[target][0])}数据…</p>`;
+  const discovery=target==='monitor'?'<section class="card frame-discovery"><div class="card-head"><h2>作品与作者持续发现</h2></div></section>':'';
+  const actions=target==='monitor'?'<div class="actions frame-actions" aria-hidden="true"><span></span><span></span><span></span></div>':'';
+  return `<div class="page-head"><h1>${esc(pages[target][0])}</h1>${actions}</div><div class="page-loading-frame" aria-busy="true">${status}${metrics}${discovery}<div class="frame-columns ${columns.length>1?'frame-columns-two':''} ${target==='monitor'?'monitor-workspace':''}">${columns.map(title=>`<section class="card"><div class="card-head"><h2>${title}</h2></div>${lines}</section>`).join('')}</div></div>`;
+}
+function loadingClock(){return typeof performance==='object'&&performance.now?performance.now():0;}
+function recordLoadTiming(name,started,sequence){
+  const data=document.documentElement?.dataset;if(!data||!started)return;
+  data[name]=String(Math.round(loadingClock()-started));
+  if(name==='appDataReadyMs'&&!data.appInitialDataReadyAtMs)data.appInitialDataReadyAtMs=String(Math.round(loadingClock()));
+  if(name==='appFrameMountedMs'&&typeof requestAnimationFrame==='function')requestAnimationFrame(()=>requestAnimationFrame(()=>{if(sequence===loadSequence)data.appFramePaintMs=String(Math.round(loadingClock()-started));}));
+}
 async function load(){
-  const requestedMode=mode,requestedPage=pages[page]?page:'overview',sequence=++loadSequence;
+  const requestedMode=mode,requestedPage=pages[page]?page:'overview',sequence=++loadSequence,started=loadingClock();
   renderNavigation();
-  if(!S||S.view&&S.view!==requestedPage){$('#main').innerHTML=`<div class="page-head"><h1>${esc(pages[requestedPage][0])}</h1></div><div class="loading" role="status">正在加载${esc(pages[requestedPage][0])}…</div>`;icons();}
+  if(!S||S.view&&S.view!==requestedPage){$('#main').innerHTML=loadingFrame(requestedPage);icons();recordLoadTiming('appFrameMountedMs',started,sequence);}
   const controller=typeof AbortController==='function'?new AbortController():null;
   const timeout=controller?setTimeout(()=>controller.abort(),20000):null;
   const prefetchHistory=requestedPage==='monitor';
   if(prefetchHistory)void refreshMonitorHistory();
   try{
     const r=await fetch(`/api/state?mode=${requestedMode}&view=${encodeURIComponent(requestedPage)}`,controller?{signal:controller.signal}:undefined);
-    const v=await r.json();if(!r.ok)throw Error(v.error||'读取失败');
+    const responseAt=loadingClock(),v=await r.json(),parsedAt=loadingClock();if(!r.ok)throw Error(v.error||'读取失败');
     if(requestedMode!==mode||sequence!==loadSequence||requestedPage!==page)return;
-    S=v;render(!prefetchHistory);queueCollectionPoll();
+    const timing=document.documentElement?.dataset;if(timing&&!timing.appInitialDataReadyAtMs){timing.appInitialResponseMs=String(Math.round(responseAt-started));timing.appInitialJsonMs=String(Math.round(parsedAt-responseAt));timing.appInitialRequestStartedAtMs=String(Math.round(started));}
+    S=v;render(!prefetchHistory);recordLoadTiming('appDataReadyMs',started,sequence);queueCollectionPoll();
+    if(timing&&!timing.appInitialRenderMs)timing.appInitialRenderMs=String(Math.round(loadingClock()-parsedAt));
   }catch(error){
     if(requestedMode===mode&&sequence===loadSequence&&requestedPage===page)throw error;
   }finally{if(timeout!==null)clearTimeout(timeout);}
@@ -153,6 +177,7 @@ function render(refreshHistory=true){
   if(mode==='live'&&(page==='settings'||(page==='monitor'&&loginAttention)))$('.page-head').insertAdjacentHTML('afterend',loginSummary());
   if(mode==='live'&&page==='monitor')$('.page-head .actions').insertAdjacentHTML('beforeend',`<a class="button small" href="/login">${icon('key-round')}账号登录</a>`);
   restorePanelIds(opened);syncCollectionForms();icons();if(page==='monitor'&&refreshHistory)void refreshMonitorHistory();if(page==='live')void refreshLiveArchive();if(openMonitorSettings)monitorSettingsDialog();
+  recordMonitorVisibleTiming();
   if(page==='groups'&&!groupState&&!groupLoading)void refreshGroups();
 }
 
@@ -711,6 +736,11 @@ function redrawMonitorResults(){
   const next=$('.result-table-scroll');if(next){next.scrollTop=top;next.scrollLeft=left;}
   if(focused)document.getElementById?.(focused)?.querySelector('summary')?.focus({preventScroll:true});
   icons();
+  recordMonitorVisibleTiming();
+}
+function recordMonitorVisibleTiming(){
+  const data=document.documentElement?.dataset;
+  if(data&&page==='monitor'&&monitorHistory&&monitorHistoryKey===historyKey()&&$('#monitor-result-panel')&&!data.appFirstCommentsVisibleAtMs)data.appFirstCommentsVisibleAtMs=String(Math.round(loadingClock()));
 }
 function monitorControls(){
   const m=monitorConfig(),active=m.enabled||m.active_task_id,disabled=mode!=='live',b=m.last_batch;

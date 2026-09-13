@@ -13,8 +13,8 @@
     },
     {
       "name": "ACCESS_PERFORMANCE.md",
-      "sha256": "538437b57767d0ef997fd4d0937809f2b332407bcdd8b622d6ea882b2ea2430d",
-      "bytes": 7861
+      "sha256": "385a33dd8d7804a5252619aa8237d5c4e3eb13dc4ce39b5700cde08fc075b0d6",
+      "bytes": 9610
     },
     {
       "name": "ASSET_VERTICALITY.md",
@@ -138,8 +138,8 @@
     },
     {
       "name": "REQUIREMENTS_DISCUSSION.md",
-      "sha256": "66fddfdd56301d79d9c6a82780a106344ccf83b2aa1c9a0459be7168b9934a7f",
-      "bytes": 3296
+      "sha256": "fd7d9452026dbb63c4a4bbc1fbec194bc8430f3b8c5ad54ae00e52d33f7ba903",
+      "bytes": 4340
     },
     {
       "name": "RULES.md",
@@ -158,8 +158,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "c67d201a4aa2f97df7b7e9df0e4f04538aa89a7cda7f9212d7b383165dfe4247",
-      "bytes": 35896
+      "sha256": "89ed232d331784d1e35911e63fb6e47f965c8242c01253790259838cde0445e9",
+      "bytes": 37244
     },
     {
       "name": "UID_HTTP.md",
@@ -637,6 +637,11 @@
       "bytes": 15422
     },
     {
+      "name": "research/DOUYIN_DM_RESEARCH_20260913.md",
+      "sha256": "9f04e24e98db0f76350c9e2e7399fc9b649c8fe62275d1fe12a0b41a2313dc68",
+      "bytes": 26005
+    },
+    {
       "name": "research/DOUYIN_LOGIN_RECOVERY_20260910.md",
       "sha256": "d8bc9b8e455a6fe32e34dbe2377c4d14ec180116dae27635fad98f800a3e0140",
       "bytes": 7704
@@ -793,8 +798,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "89e8f8dce355bff22889b2f29c97ea7f8f2f6366d5f2934ceb8484e1279a42ac",
-      "bytes": 8002
+      "sha256": "38818934fa6a54c305313098d8cd56a78b5747b57f26f8c9addb81da42ff2e26",
+      "bytes": 8048
     },
     {
       "name": "start.ps1",
@@ -803,18 +808,18 @@
     },
     {
       "name": "static/app.css",
-      "sha256": "1b635d00c48f2983d6a29043d912ced601c2d24fb4ecdde77e69c58ab8124ae1",
-      "bytes": 60594
+      "sha256": "3797ef96856bdaa089b5fa9e801c41daf06023a5a0976e800c54965d307211d4",
+      "bytes": 61911
     },
     {
       "name": "static/app.html",
-      "sha256": "f7bd6c70d4cf66775c3a857edbd783bf1b9be0c1f8bbcb1757d77544859d6f33",
-      "bytes": 1659
+      "sha256": "f5244a8e9170be7b9850eed0ad5f639a16336543b85d650115e290a4f899b2be",
+      "bytes": 3193
     },
     {
       "name": "static/app.js",
-      "sha256": "55b0e81edebcf153397cd38059b3d27f0c57484ebcf320103a56b86e2842ee09",
-      "bytes": 189363
+      "sha256": "5a1ee1afa4f622c6b25f7828ff0753f62dd577766893114e17ca298fff9fb0a2",
+      "bytes": 193185
     },
     {
       "name": "static/clubops-iphone.js",
@@ -983,8 +988,8 @@
     },
     {
       "name": "test_frontend_loading.cjs",
-      "sha256": "80f9f81d4bdac488cd4ed2e4ed52637515901c27e95e67063bacd1457da95dea",
-      "bytes": 2259
+      "sha256": "02e4ed07a3f43956d21449f77d774723f9f5ab919f5ae16258dde778cc1332b2",
+      "bytes": 2876
     },
     {
       "name": "test_frontend_monitor_history.cjs",

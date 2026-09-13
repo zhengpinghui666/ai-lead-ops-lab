@@ -14,6 +14,9 @@ run(source.slice(source.indexOf('function renderNavigation()'),source.indexOf('a
   const first=run('load()');
   assert.match(node('#nav').innerHTML,/需求筛选/,'Navigation exists before the API responds');
   assert.match(node('#main').innerHTML,/正在加载监控中心/);
+  assert.match(node('#main').innerHTML,/作品库/,'The content structure is present while the data request is unresolved');
+  assert.match(node('#main').innerHTML,/有意向的评论/);
+  assert.match(node('#main').innerHTML,/aria-busy="true"/);
   assert.match(requests[0].url,/view=monitor/);
   assert.equal(historyReads,1,'Comment history starts alongside the initial state read');
   assert.ok(requests[0].options.signal,'A stalled initial read is bounded');
@@ -25,5 +28,9 @@ run(source.slice(source.indexOf('function renderNavigation()'),source.indexOf('a
   requests[3].resolve({ok:true,json:async()=>({view:'monitor',marker:'monitor-now'})});await newest;
   requests[2].resolve({ok:true,json:async()=>({view:'leads',marker:'stale'})});await old;
   assert.equal(run('S.marker'),'monitor-now','An old-page result cannot overwrite current records');
+  const html=fs.readFileSync('static/app.html','utf8');
+  const nav=html.match(/<nav id="nav"[^>]*>([\s\S]*?)<\/nav>/)[1];
+  assert.equal((nav.match(/<a /g)||[]).length,9,'All primary links exist in the HTML even before application JavaScript loads');
+  assert.match(html,/<main[^>]*>[\s\S]*?page-loading-frame/,'The server-delivered HTML already contains the layout');
   console.log('PASS: immediate navigation, scoped requests, bounded fetch and page result/error races. Synthetic only.');
 })().catch(error=>{console.error(error);process.exitCode=1;});
