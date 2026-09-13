@@ -110,7 +110,7 @@ class MonitorTests(unittest.TestCase):
     def raw(self,c):return c.execute(monitor.SELECT+' WHERE m.filter_reason=\'\' ORDER BY m.id LIMIT 1').fetchone()
 
     def test_scope_time_self_and_keywords_precede_model(self):
-        ids=self.add([msg(),msg(11,'今天天气不错'),msg(12,uid=SENDER),msg(13,age=3700),msg(14,age=-60)])
+        ids=self.add([msg(),msg(11,'今天天气不错'),msg(12,uid=SENDER),msg(13,age=86401),msg(14,age=-60)])
         self.assertEqual(len(ids),1)
         self.assertEqual(queue.enqueue('group',ids)['queued'],1)
         with self.assertRaisesRegex(ValueError,'符合范围'):monitor.control(dict(id=2,enabled=True))
@@ -129,6 +129,32 @@ class MonitorTests(unittest.TestCase):
         value['evidence'][-1]['text']='瓦搭子'
         self.assertEqual(semantic.validate_result(value,source)['category'],'uncertain')
         self.assertEqual(semantic.validate_result(value,dict(source,kind='comment'))['category'],'uncertain')
+
+    def test_missed_group_demand_within_day_reaches_model_and_older_stays_history(self):
+        ids = self.add([msg(age=23*3600), msg(11, age=86401)])
+        self.assertEqual(len(ids), 1)
+        self.assertEqual(queue.enqueue('group', ids)['queued'], 1)
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM group_messages').fetchone()[0], 2)
+            self.assertFalse(monitor.routing(c, 2)['model_allowed'])
+            self.assertIn('超过一天', c.execute('SELECT filter_reason FROM group_messages WHERE id=2').fetchone()[0])
+
+    def test_legacy_hour_filter_is_reconsidered_once_with_old_evidence_preserved(self):
+        self.add([msg(age=7200), msg(11, age=86401), msg(12, '今天天气不错', age=7200)])
+        with app.db() as c:
+            c.execute("UPDATE group_messages SET filter_reason='时间缺失或消息超过 1 小时',person_id=NULL")
+            before = [tuple(r) for r in c.execute('SELECT id,raw_text,published_at,observed_at,category,reason,facts FROM group_messages ORDER BY id')]
+        self.assertEqual(monitor.reconsider_legacy_time_filters(), [1, 3])
+        self.assertEqual(monitor.reconsider_legacy_time_filters(), [])
+        with app.db() as c:
+            after = [tuple(r) for r in c.execute('SELECT id,raw_text,published_at,observed_at,category,reason,facts FROM group_messages ORDER BY id')]
+            self.assertEqual(before, after)
+            self.assertEqual(c.execute('SELECT filter_reason FROM group_messages WHERE id=1').fetchone()[0], '')
+            self.assertEqual(c.execute('SELECT filter_reason FROM group_messages WHERE id=3').fetchone()[0], '未通过陪玩需求初筛')
+            self.assertEqual(c.execute("SELECT COUNT(*) FROM group_reads WHERE operation='rescreen'").fetchone()[0], 2)
+            history = json.loads(c.execute("SELECT detail FROM group_reads WHERE operation='rescreen' ORDER BY id LIMIT 1").fetchone()[0])
+            self.assertEqual(history['previous_filter_reason'], '时间缺失或消息超过 1 小时')
+            self.assertIsNotNone(c.execute('SELECT person_id FROM group_messages WHERE id=1').fetchone()[0])
 
     def test_model_completed_buyer_required_and_disabled_or_stale_blocks(self):
         ids=self.add([msg()]);queue.enqueue('group',ids)

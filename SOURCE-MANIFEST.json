@@ -38,8 +38,8 @@
     },
     {
       "name": "COLLECTION_FRESHNESS.md",
-      "sha256": "7a2ded7f3131db4c7287cfef139d68e462ee3ec9c816600a08f8e38920ab1cb7",
-      "bytes": 24256
+      "sha256": "253aae89bbbe5869e0122f30915647a7344db850da61595ee31d074ad90f33f4",
+      "bytes": 26443
     },
     {
       "name": "COLLECTION_HTTP.md",
@@ -78,8 +78,8 @@
     },
     {
       "name": "GROUP_MONITOR.md",
-      "sha256": "4d8ab3af1bf133efc6875acef355780c8f670c7ea778d741779c637aa23fbef1",
-      "bytes": 3784
+      "sha256": "836df0006a98637bb6c4d48d95eb87d67cd8f7027f99dec97a4830a3dcf9680a",
+      "bytes": 4082
     },
     {
       "name": "INFORMATION_ARCHITECTURE.md",
@@ -148,8 +148,8 @@
     },
     {
       "name": "REQUIREMENTS_DISCUSSION.md",
-      "sha256": "650a5ac47ef5ffd8a6f4fd02f0e2b1531938058e7a0de974320b2ae8cea4f9db",
-      "bytes": 11411
+      "sha256": "edc253cd1afdc8f8ce9ce5330e17afaef1703bf4db505c14eb73a26c4b8b79d8",
+      "bytes": 12332
     },
     {
       "name": "RULES.md",
@@ -168,8 +168,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "f6f6fbbcb92af575b35ab3645a613f2a5f94eda460950d1ce0daa2dd02000ab4",
-      "bytes": 56251
+      "sha256": "e67cbbbcdf86a91e40732c82e33aa2fad561f01bb3736200f344eff964339f43",
+      "bytes": 58111
     },
     {
       "name": "UID_HTTP.md",
@@ -382,6 +382,11 @@
       "bytes": 9071
     },
     {
+      "name": "demand_freshness.py",
+      "sha256": "7b7e23f46da0864bbf6bcd596d0d56f4d171b7e426fc9e865a80e6daa7ea2224",
+      "bytes": 3088
+    },
+    {
       "name": "design-qa.md",
       "sha256": "f65bfa84a9c83a11dd4ec031edad2f0178d05a1a0d89f606340d3c1782ef348f",
       "bytes": 33970
@@ -433,8 +438,8 @@
     },
     {
       "name": "group_monitor.py",
-      "sha256": "c0bd1208633a143553d4cd501b5584d1e294b9d61e0d671b76b943197c42490f",
-      "bytes": 18022
+      "sha256": "b63d0818065e8995cec5f6c9f1c6e7a49e90eea31807bea8b378a87908df310b",
+      "bytes": 20283
     },
     {
       "name": "group_public.py",
@@ -543,8 +548,8 @@
     },
     {
       "name": "intent_outreach.py",
-      "sha256": "48dc910c1ddd274a73bceafe6471b0d79ee62baf172987234cad4b8f58d13757",
-      "bytes": 10379
+      "sha256": "0574e8a387485685cf8c3e8e1b87fb28c2413832cc7eb4b0e2930c904a6d0dff",
+      "bytes": 11204
     },
     {
       "name": "intent_rules.py",
@@ -813,8 +818,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "3bf6269770ddb357ce86ad1b2b188d964c86d52bd6bf51a467587e557ce7e753",
-      "bytes": 8285
+      "sha256": "a082d1d22507678c668d70da38b9d79956a8e6c55601e9e54409313c4e3003ea",
+      "bytes": 8338
     },
     {
       "name": "start.ps1",
@@ -833,8 +838,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "a9e2fde564a42c24e37b6114753aca4429c6cea6eac38d19823a9988919e666d",
-      "bytes": 213558
+      "sha256": "efa9a74dbed39a8e3427f3779265f409bbdcd0fdd0da9210da3373190778d96b",
+      "bytes": 213958
     },
     {
       "name": "static/clubops-iphone.js",
@@ -987,6 +992,11 @@
       "bytes": 5328
     },
     {
+      "name": "test_demand_freshness.py",
+      "sha256": "732d6d2815a319f9abeb545b1fdf47df491b347b37bc2764b7ce77f13667dfc3",
+      "bytes": 10642
+    },
+    {
       "name": "test_discovery_tracking.py",
       "sha256": "f4bd725811329a00892f1ab77ab7da07145894db2afccd457ba05ab5fbdaf88d",
       "bytes": 47321
@@ -998,8 +1008,8 @@
     },
     {
       "name": "test_frontend.cjs",
-      "sha256": "3d1d114d697f29b4bb387f991f42c111fe0eeb8ad65d87f32a2516a84d348d98",
-      "bytes": 47832
+      "sha256": "b65bf9878fe9006134f5271e32227c6545e37cededfc3a9ad0a9cdc4d0c03fc2",
+      "bytes": 48243
     },
     {
       "name": "test_frontend_live_history.cjs",
@@ -1038,8 +1048,8 @@
     },
     {
       "name": "test_group_monitor.py",
-      "sha256": "100180ac62425ed7bcb3130a937637fb9edba7b1b5cdae8e70f5d634a80c8170",
-      "bytes": 12318
+      "sha256": "68060a0bafe0045f258b2c668f79ca4919bdde27d68ba96970e91d7db497fdee",
+      "bytes": 14469
     },
     {
       "name": "test_group_public.py",
@@ -1278,8 +1288,8 @@
     },
     {
       "name": "test_uid_messaging.py",
-      "sha256": "cef5af0d409fd51daf2cdd2486b578427d37f4497c33ce40e118fc1e8575f12c",
-      "bytes": 40193
+      "sha256": "4e7cef4f464c843c6d17beb0fcae6e67a9f7b8c267a506aafd1ebfcef846fc69",
+      "bytes": 40219
     },
     {
       "name": "test_uid_session.cjs",
@@ -1373,8 +1383,8 @@
     },
     {
       "name": "uid_messaging.py",
-      "sha256": "4c7a497748127a2cb2bc8dc59e5b42bc39ba5667c99b72fe27525356c6ed43c4",
-      "bytes": 25162
+      "sha256": "12ee30e009f8cf1683f04fc7134026bb92070bab70f8efc0fb2a3e2d41cbf771",
+      "bytes": 26329
     },
     {
       "name": "uid_protocol.py",

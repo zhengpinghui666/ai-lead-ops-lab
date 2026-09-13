@@ -295,7 +295,7 @@ class QueueTests(unittest.TestCase):
             person = c.execute('SELECT * FROM people').fetchone()
             c.execute("UPDATE people SET contact_basis='',contact_note=''")
             video = c.execute("INSERT INTO videos(source_id,external_id,title,created_at) VALUES(?,'synthetic','合成',?)", (person['source_id'], app.now())).lastrowid
-            comment = c.execute("INSERT INTO comments(source_id,external_id,video_id,person_id,raw_text,discovered_at) VALUES(?,'synthetic',?,?,'找陪玩',?)", (person['source_id'], video, person['id'], app.now())).lastrowid
+            comment = c.execute("INSERT INTO comments(source_id,external_id,video_id,person_id,raw_text,published_at,discovered_at) VALUES(?,'synthetic',?,?,'找陪玩',?,?)", (person['source_id'], video, person['id'], app.now(), app.now())).lastrowid
         return dict(job_id=self.job['id'], sender_uid=SENDER, recipient_uid=RECEIVER,
                     content_sha256=hashlib.sha256(self.job['content'].encode()).hexdigest(),
                     comment_id=comment, comment_sha256=hashlib.sha256('找陪玩'.encode()).hexdigest(),

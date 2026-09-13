@@ -1,5 +1,6 @@
 """Durable, own-account group observation. Group traffic is exclusively reads."""
 import json
+import demand_freshness
 import re
 import threading
 from datetime import datetime, timezone, timedelta
@@ -139,9 +140,9 @@ def routing(c,rid):
     relevance=json.loads(row['relevance'])
     excluded=record_exclusion(c,'group',rid)
     allowed=bool(not row['filter_reason'] and relevance['passed'] and row['enabled'] and row['member']
-                 and row['matched'] and fresh(row['checked_at']) and fresh(row['published_at'],3600)
+                 and row['matched'] and fresh(row['checked_at']) and demand_freshness.assess(row['published_at'])['eligible']
                  and row['account_uid']==uid_inbox_store._account())
-    reason='已加入的对口群消息通过初筛，进入模型。' if allowed else row['filter_reason'] or '群监控已关闭、成员身份待更新或消息已超过 1 小时。'
+    reason='已加入的对口群消息通过初筛，进入模型。' if allowed else row['filter_reason'] or '群监控已关闭、成员身份待更新或消息不在一天内。'
     if excluded:allowed=False;reason=excluded
     return dict(version='group-pc-v1',model_allowed=allowed,route='model' if allowed else 'keywords',reason=reason,
                 asset_kind='group',asset_key=str(row['group_id']),keyword_match=relevance,learned_keywords=[])
@@ -164,7 +165,7 @@ def ingest(c,group,result):
         if int(message['index'])<=int(group['watermark']):continue
         published=uid_inbox_store.message_timestamp(message['created_at_raw'])
         text=message['raw_text'];title=group['name'];relevance=asset_keywords.message_relevance(c,text,title)
-        filtered=('自己发送的消息' if message['uid']==group['account_uid'] else '时间缺失或消息超过 1 小时' if not fresh(published,3600)
+        filtered=('自己发送的消息' if message['uid']==group['account_uid'] else demand_freshness.assess(published)['detail'] if not demand_freshness.assess(published)['eligible']
                   else '未通过陪玩需求初筛' if not relevance['passed'] else '')
         classification=app.classify(text,title)
         pid=attach(c,message['uid'],app.now()) if not filtered else None
@@ -223,7 +224,7 @@ def tick(*,reader=None,catalog_reader=None):
             result=reader(group['account_uid'],dict(group,inbox=0),cursor=int(group['cursor']))
             cursor=int(result['next_cursor']);head=max(int(group['cycle_head']),int(result['maximum_index'] or 0))
             # Stop at the saved index, exhausted history, or an entirely expired text page.
-            old_page=bool(result['messages']) and all(not fresh(uid_inbox_store.message_timestamp(m['created_at_raw']),3600) for m in result['messages'])
+            old_page=bool(result['messages']) and all(demand_freshness.assess(uid_inbox_store.message_timestamp(m['created_at_raw']))['status']=='expired' for m in result['messages'])
             done=not result['has_more'] or result['minimum_index'] is not None and int(result['minimum_index'])<=int(group['watermark']) or old_page
             with app.LOCKS['live'],app.db() as c:
                 ingest(c,group,result)
@@ -253,9 +254,41 @@ def tick(*,reader=None,catalog_reader=None):
 
 def replenish():
     import semantic_queue
+    reconsider_legacy_time_filters()
     with app.db() as c:
-        ids=[r[0] for r in c.execute("SELECT id FROM group_messages WHERE filter_reason='' AND published_at>=? ORDER BY id DESC LIMIT 200",(stamp_after(-3600),))]
+        ids=[r[0] for r in c.execute("SELECT id FROM group_messages WHERE filter_reason='' AND published_at>=? ORDER BY id DESC LIMIT 200",(stamp_after(-demand_freshness.MAX_AGE_SECONDS),))]
     if ids:semantic_queue.enqueue('group',ids)
+
+
+def reconsider_legacy_time_filters():
+    """Apply the confirmed one-day rule without erasing the old filter evidence."""
+    import asset_keywords
+    account = uid_inbox_store._account()
+    changed = []
+    with GUARD, app.LOCKS['live'], app.db() as c:
+        rows = c.execute('''SELECT m.*,g.account_uid,g.checked_at FROM group_messages m
+            JOIN monitored_groups g ON g.id=m.group_id
+            WHERE m.filter_reason='时间缺失或消息超过 1 小时'
+            AND g.account_uid=? AND g.enabled=1 AND g.member=1 AND g.matched=1''', (account,)).fetchall()
+        for row in rows:
+            timing = demand_freshness.assess(row['published_at'])
+            if not fresh(row['checked_at']) or not timing['eligible']:
+                continue
+            relevance = asset_keywords.message_relevance(c, row['raw_text'], row['group_title'])
+            excluded = record_exclusion(c, 'group', row['id'])
+            filtered = ('自己发送的消息' if row['uid'] == account else excluded or
+                        ('未通过陪玩需求初筛' if not relevance['passed'] else ''))
+            person_id = attach(c, row['uid'], row['observed_at']) if not filtered else row['person_id']
+            detail = dict(record_id=row['id'], policy='demand-window-24h-v1',
+                          previous_filter_reason=row['filter_reason'], previous_relevance=json.loads(row['relevance']),
+                          filter_reason=filtered, relevance=relevance, timing=timing,
+                          raw_text_preserved=True, classification_preserved=True)
+            c.execute('INSERT INTO group_reads(group_id,account_uid,operation,status,detail,created_at) VALUES(?,?,?,?,?,?)',
+                      (row['group_id'], account, 'rescreen', 'completed', json.dumps(detail, ensure_ascii=False), app.now()))
+            c.execute('UPDATE group_messages SET filter_reason=?,relevance=?,person_id=? WHERE id=?',
+                      (filtered, json.dumps(relevance, ensure_ascii=False), person_id, row['id']))
+            changed.append(row['id'])
+    return changed
 
 
 def state(mode='live',before=0):

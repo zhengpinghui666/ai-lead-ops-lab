@@ -10,6 +10,7 @@ from pathlib import Path
 import clubops as app
 import uid_protocol
 import uid_transport
+import demand_freshness
 
 CONFIG_FILE = 'uid-http.json'
 GUARD = threading.Lock()
@@ -149,6 +150,7 @@ def authorized_outreach(c, authorization, job, person, settings):
             or not authorization['granted_at'].strip()):
         raise ValueError('本次操作授权与任务、账号、收件人或文案不符；未发送')
     if 'group_id' in authorization:
+        demand_freshness.require(c, 'group', authorization['group_id'])
         import group_monitor
         raw=c.execute(group_monitor.SELECT+' WHERE m.id=?',(authorization['group_id'],)).fetchone()
         if (not raw or raw['person_id']!=person['id']
@@ -160,6 +162,7 @@ def authorized_outreach(c, authorization, job, person, settings):
     kind='live' if 'live_id' in authorization else 'comment'
     excluded=record_exclusion(c,kind,authorization[kind+'_id'])
     if excluded:raise ValueError(excluded+' 未发送')
+    demand_freshness.require(c, kind, authorization[kind+'_id'])
     if 'live_id' in authorization:
         import live_workflow
         raw = c.execute(live_workflow.SELECT + ' WHERE m.id=?', (authorization['live_id'],)).fetchone()
@@ -316,21 +319,32 @@ def _send_one(job_id, transport, resume_note=None, authorization=None, retry_not
         c.execute("UPDATE message_jobs SET status='submitting',detail='HTTP 处理中；请勿重复提交',updated_at=? WHERE id=?", (app.now(), job_id))
 
     submission_reserved = False
+    submission_checked = False
+    freshness_block = None
+    timing_at_submit = None
 
     def before_submit():
-        nonlocal submission_reserved
-        if submission_reserved:
+        nonlocal submission_reserved, submission_checked, freshness_block, timing_at_submit
+        if submission_checked:
             raise ValueError('本次消息已保留提交次数；不会再次提交')
-        submission_reserved = True
+        submission_checked = True
         current, current_issues = config(authorized_recipient=authorized_uid)
         if current_issues or current != settings:
             raise ValueError('配置已改变，停止发送')
         with app.LOCKS['live'], app.db() as c:
             updated_job, updated_person, updated_source = snapshot(c, job_id)
-            conditions(updated_job, updated_person, updated_source, current, authorization=authorization, connection=c)
+            try:
+                conditions(updated_job, updated_person, updated_source, current, authorization=authorization, connection=c)
+                if authorization is not None:
+                    kind = 'group' if 'group_id' in authorization else 'live' if 'live_id' in authorization else 'comment'
+                    timing_at_submit = demand_freshness.require(c, kind, authorization[kind + '_id'])
+            except demand_freshness.FreshnessError as exc:
+                freshness_block = exc.evidence
+                raise
             if updated_person != person or updated_job['content'] != job['content'] or updated_job['status'] != 'submitting':
                 raise ValueError('发送对象、联系依据或内容已变化')
             c.execute("UPDATE uid_message_attempts SET phase='send',updated_at=? WHERE job_id=?", (app.now(), job_id))
+        submission_reserved = True
 
     try:
         result = transport(settings, receiver, job['content'], client_id, before_submit)
@@ -340,6 +354,8 @@ def _send_one(job_id, transport, resume_note=None, authorization=None, retry_not
             raise ValueError()
     except Exception:
         result = {'status': 'unknown', 'detail': '提交结果不确定；请核对会话，不会自动重发', 'phase': 'unknown'}
+    if freshness_block is not None and not submission_reserved:
+        result = dict(status='failed', phase='prepare_send')
     # Store only this allowlist, not credentials, raw responses, arbitrary errors.
     evidence = {key: result[key] for key in ('phase', 'http_status', 'response_sha256', 'server_message_id', 'conversation_id', 'conversation_short_id', 'platform_code', 'send_status', 'check_code', 'platform_message', 'platform_reason_code', 'transport_phase', 'transport_error', 'response_bytes') if key in result}
     if result.get('identity_reason') in ('preparation_failed', 'response_unavailable', 'http_status_rejected',
@@ -347,6 +363,10 @@ def _send_one(job_id, transport, resume_note=None, authorization=None, retry_not
             'sender_mismatch', 'transport_failed'):
         evidence['identity_reason'] = result['identity_reason']
     evidence['submission_reserved'] = submission_reserved or result['status'] != 'failed' or result.get('phase') not in ('identity', 'create', 'ticket', 'prepare_send')
+    if freshness_block is not None:
+        evidence['demand_freshness'] = freshness_block
+    if timing_at_submit is not None:
+        evidence['demand_time_check'] = timing_at_submit
     if authorization is not None:
         evidence['operator_authorization'] = authorization
     if history:
@@ -360,6 +380,8 @@ def _send_one(job_id, transport, resume_note=None, authorization=None, retry_not
                 'ticket': '会话凭据准备失败，消息尚未提交', 'prepare_send': '发送准备未完成，消息尚未提交'}[result['phase']]
         else:
             detail = ('平台拒绝：'+evidence['platform_message']) if evidence.get('platform_message') else '发送未成功；请查看返回阶段与回执'
+        if freshness_block is not None:
+            detail = freshness_block['detail'] + '；消息尚未提交'
     with app.LOCKS['live'], app.db() as c:
         c.execute('UPDATE uid_message_attempts SET status=?,phase=?,detail=?,evidence=?,updated_at=? WHERE job_id=?', (result['status'], result.get('phase', 'unknown'), detail, json.dumps(evidence), app.now(), job_id))
         c.execute('UPDATE message_jobs SET status=?,detail=?,updated_at=? WHERE id=?', (result['status'], detail, app.now(), job_id))

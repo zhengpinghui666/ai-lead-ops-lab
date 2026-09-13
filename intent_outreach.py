@@ -6,6 +6,7 @@ import uuid
 
 import clubops as app
 import uid_messaging
+import demand_freshness
 from game_scope import record_exclusion
 
 POLICY_KEY = 'intent_outreach_policy'
@@ -124,6 +125,7 @@ def candidate(c, policy):
             FROM comments x JOIN people p ON p.id=x.person_id JOIN leads l ON l.person_id=p.id
             JOIN sources s ON s.id=p.source_id WHERE s.kind='browser' AND ''' + eligible + ' ORDER BY x.id DESC', args):
         if record_exclusion(c,'comment',row['id']):continue
+        if not demand_freshness.assess(row['published_at'])['eligible']:continue
         analysis = monitoring.observation_analysis(c, row['id'], row['raw_text'], engine)
         if analysis.get('category') == 'buyer' and analysis.get('analysis_method') in ('model', 'human'):
             return dict(row, evidence_type='comment')
@@ -131,6 +133,7 @@ def candidate(c, policy):
         JOIN people p ON p.id=k.person_id WHERE m.filter_reason='' AND ''' + eligible + ' ORDER BY m.id DESC', args)]
     for rid in ids:
         if record_exclusion(c,'live',rid):continue
+        if not demand_freshness.record(c,'live',rid)['eligible']:continue
         row = live_workflow.project(c, c.execute(live_workflow.SELECT + ' WHERE m.id=?', (rid,)).fetchone(), history=False, model_engine=engine)
         if row['category'] == 'buyer' and row['analysis_method'] in ('model', 'human'):
             return dict(row, recipient_uid=row['uid'], evidence_type='live')
@@ -166,10 +169,19 @@ def tick():
                 granted_at=policy['granted_at'], instruction=policy['instruction'], policy_revision=policy['revision'])
             grant[kind+'_id'] = row['id']
             grant[kind+'_sha256'] = hashlib.sha256(row['raw_text'].encode()).hexdigest()
-        result = uid_messaging.send_one(job['id'], operator_authorization=grant,
-            retry_note=policy['retry_instruction'] if retry else None)
+        try:
+            result = uid_messaging.send_one(job['id'], operator_authorization=grant,
+                retry_note=policy['retry_instruction'] if retry else None)
+        except demand_freshness.FreshnessError as exc:
+            # The source can expire between selection and preparation. This is
+            # a per-lead stop, not a channel failure or permission to use old text.
+            with app.LOCKS['live'], app.db() as c:
+                c.execute("UPDATE message_jobs SET status='blocked',detail=?,updated_at=? WHERE id=? AND status='draft'",
+                    (str(exc), app.now(), job['id']))
+                write(c, RUNTIME_KEY, dict(status='waiting', checked_at=app.now(), last_job_id=job['id'], detail=str(exc)))
+            return
         evidence = result.get('evidence', {})
-        attention = (result['status'] in ('unknown', 'not_connected')
+        attention = not evidence.get('demand_freshness') and (result['status'] in ('unknown', 'not_connected')
             or evidence.get('http_status') in (401, 403)
             or evidence.get('http_status')==429 and (not policy.get('retry_rejected') or len(evidence.get('delivery_history',[]))>=2)
             or result['status'] == 'failed' and evidence.get('phase') != 'send')

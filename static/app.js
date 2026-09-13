@@ -449,6 +449,8 @@ function messageFailureDetail(job){
   const evidence=job.uid_http?.evidence||{},phase=job.uid_http?.phase||evidence.phase;
   if(job.status==='unknown')return '尚未取得确定回执，请先核对会话。';
   const preparation={identity:'账号认证未通过，消息尚未提交。',create:'会话建立未完成，消息尚未提交。',ticket:'会话凭据准备失败，消息尚未提交。',prepare_send:'发送准备未完成，消息尚未提交。'};
+  const timing={expired:'需求已超过一天，消息尚未提交。',unknown:'需求时间无法核对，消息尚未提交。',future:'需求时间异常，消息尚未提交。',missing:'需求原文已无法核对，消息尚未提交。'};
+  if(evidence.submission_reserved===false&&preparation[phase]&&timing[evidence.demand_freshness?.status])return timing[evidence.demand_freshness.status];
   if(evidence.submission_reserved===false&&preparation[phase])return preparation[phase];
   return evidence.platform_message||'发送未成功，具体原因请查看发送记录。';
 }
