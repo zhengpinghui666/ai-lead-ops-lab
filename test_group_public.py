@@ -17,9 +17,31 @@ GID='7657809277079257637'
 SEC='synthetic_public_author'
 CANDIDATE=dict(group_id=GID,owner_sec_uid=SEC,name='瓦开黑群',description='瓦搭子群',participants=24,list_status=2)
 VERIFIED=dict(CANDIDATE,code=7602,category='2',question='',entry_limit=[],join_allowance='-1',ticket='synthetic-ticket-secret',inviter=RECEIVER)
+FOLLOW_GATE=dict(status=0,task_name='关注群主',entry_limit_ext=dict(entry_type=1,entry_detail_template=[dict(extra=dict(group_owner_uid=RECEIVER,follow_type='0',follow_days='1'))]))
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_only_verified_free_owner_follow_can_be_automated(self):
+        self.assertEqual(public.follow_requirement(dict(VERIFIED,entry_limit=[FOLLOW_GATE]))['uid'],RECEIVER)
+        for limit in [[dict(status=0,task_name='点亮灯牌')],[FOLLOW_GATE,dict(status=0,task_name='购买会员')]]:
+            self.assertIsNone(public.follow_requirement(dict(VERIFIED,entry_limit=limit)))
+        self.assertIsNone(public.follow_requirement(dict(VERIFIED,entry_limit=[FOLLOW_GATE],inviter=SENDER)))
+
+    def test_follow_transport_is_owner_bound_and_contains_no_message(self):
+        import io
+        response=io.BytesIO(b'{"status_code":0}');response.status=200;response.headers={'Content-Type':'application/json'}
+        csrf=io.BytesIO(b'');csrf.status=200;csrf.headers={'x-ware-csrf-token':'0,synthetic-csrf-secret,1000,ok,1'}
+        opener=Mock(open=Mock(side_effect=[csrf,response]));client=self.client(opener=opener)
+        with patch('group_profiles.profiles',return_value={'profiles':[dict(uid=RECEIVER,sec_uid=SEC,nickname='合成群主')]}):
+            result=client.follow_owner(dict(VERIFIED,entry_limit=[FOLLOW_GATE]),browser=False)
+        self.assertEqual(result['status'],'accepted')
+        request=opener.open.call_args.args[0]
+        self.assertIn('/commit/follow/user/',request.full_url)
+        self.assertEqual(request.data.decode(),'user_id='+RECEIVER+'&type=1')
+        self.assertEqual(opener.open.call_args_list[0].args[0].method,'HEAD')
+        self.assertNotIn('synthetic-csrf-secret',json.dumps(result))
+        self.assertTrue(result['proof']['submission_started'])
+
     def client(self,**kwargs):
         with patch('uid_inbox._identity'):
             return public.Client(SENDER,provider=uid_session.Provider(memory=data()),**kwargs)
@@ -240,8 +262,97 @@ class DiscoveryTests(unittest.TestCase):
     def test_daily_submission_budget_and_search_scope(self):
         with app.db() as c:
             self.assertEqual(discovery.search_terms(c),discovery.QUERIES)
-            for n in range(4):c.execute('INSERT INTO public_group_attempts VALUES(?,?,?,?,?,?)',(SENDER,str(9000+n),app.now(),app.now(),'rejected','{}'))
+            for n in range(discovery.DAILY_JOIN_LIMIT):c.execute('INSERT INTO public_group_attempts VALUES(?,?,?,?,?,?)',(SENDER,str(9000+n),app.now(),app.now(),'rejected','{}'))
         self.tick();self.assertNotIn('join',self.calls)
+
+    def test_non_group_titled_relevant_work_is_now_a_group_source(self):
+        with app.db() as c:c.execute("UPDATE discovery_works SET title='今晚打瓦找搭子'")
+        self.tick();self.assertIn('catalog',self.calls);self.assertEqual(self.calls.count('join'),1)
+
+    def test_author_catalog_error_does_not_starve_other_authors(self):
+        import discovery_tracking
+        with app.db() as c:
+            discovery_tracking.record(c,[dict(video_id='7684133774791075799',video_title='国服瓦开黑',author_sec_uid='synthetic_another_author')],source='search',target='瓦搭子群')
+        factory=self.client
+        def client(account):
+            obj=factory(account);old=obj.catalog
+            def catalog(sec):
+                if sec==SEC:raise ValueError('synthetic error')
+                return old(sec)
+            obj.catalog=catalog;return obj
+        discovery.tick(client_factory=client,catalog_reader=self.catalog)
+        with app.db() as c:self.assertEqual(c.execute('SELECT status FROM public_group_owners WHERE sec_uid=?',(SEC,)).fetchone()[0],'retrying')
+        self.assertEqual(self.calls.count('join'),1)
+
+    def test_current_pending_verification_is_not_a_fresh_join(self):
+        self.verification=dict(VERIFIED,code=7601)
+        self.tick();self.assertNotIn('join',self.calls)
+        self.assertEqual(discovery.state()['candidates'][0]['status'],'pending')
+
+    def test_free_follow_is_recorded_once_then_conditions_are_rechecked(self):
+        self.verification=dict(VERIFIED,entry_limit=[FOLLOW_GATE],join_allowance='0')
+        factory=self.client
+        def client(account):
+            obj=factory(account)
+            def follow(value):
+                self.calls.append('follow')
+                with app.db() as c:self.assertEqual(c.execute('SELECT status FROM public_group_follows').fetchone()[0],'uncertain')
+                self.verification=VERIFIED
+                return dict(status='accepted',proof={'platform_code':0})
+            obj.follow_owner=follow;return obj
+        discovery.tick(client_factory=client,catalog_reader=self.catalog)
+        self.assertEqual(self.calls.count('follow'),1);self.assertEqual(self.calls.count('join'),1)
+        with app.db() as c:
+            self.assertIsNone(discovery.prepare_follow(c,SENDER,dict(VERIFIED,entry_limit=[FOLLOW_GATE])))
+
+    def test_follow_does_not_fabricate_elapsed_days_or_bypass_paid_gate(self):
+        self.verification=dict(VERIFIED,entry_limit=[FOLLOW_GATE],join_allowance='0')
+        factory=self.client
+        def client(account):
+            obj=factory(account);obj.follow_owner=lambda value:dict(status='accepted',proof={});return obj
+        discovery.tick(client_factory=client,catalog_reader=self.catalog)
+        self.assertNotIn('join',self.calls)
+        self.assertEqual(discovery.state()['candidates'][0]['status'],'follow_wait')
+        with app.db() as c:
+            c.execute('DELETE FROM public_group_candidates');c.execute('DELETE FROM public_group_owners')
+        self.verification=dict(VERIFIED,entry_limit=[dict(status=0,task_name='需要点亮灯牌')],join_allowance='0')
+        self.tick();self.assertNotIn('join',self.calls)
+        self.assertEqual(discovery.state()['candidates'][0]['status'],'paid')
+
+    def test_transport_upgrade_requires_fresh_unfollowed_state_and_is_reserved_once(self):
+        value=dict(VERIFIED,entry_limit=[FOLLOW_GATE])
+        with app.db() as c:
+            c.execute('INSERT INTO public_group_follows VALUES(?,?,?,?,?,?)',(SENDER,RECEIVER,SEC,monitor.stamp_after(-600),'uncertain','{"submission_started":true}'))
+            self.assertIsNone(discovery.prepare_follow(c,SENDER,value))
+            self.assertIsNone(discovery.prepare_follow(c,SENDER,value,dict(follow_status=1)))
+            fresh=dict(follow_status=0,checked_at=app.now())
+            self.assertIsNotNone(discovery.prepare_follow(c,SENDER,value,fresh))
+            c.execute('UPDATE public_group_follows SET created_at=?',(monitor.stamp_after(-600),))
+            self.assertIsNone(discovery.prepare_follow(c,SENDER,value,fresh))
+            c.execute('UPDATE public_group_follows SET status=?,proof=?',('deferred','{"browser_attempted":true,"submission_started":false}'))
+            self.assertIsNotNone(discovery.prepare_follow(c,SENDER,value,fresh))
+
+    def test_browser_busy_defers_without_starting_any_browser_or_follow(self):
+        import group_follow_browser as browser
+        with patch.object(browser.collector,'GUARD') as guard,patch.object(browser.subprocess,'run') as run:
+            guard.acquire.return_value=False
+            result=browser.follow(SENDER,dict(uid=RECEIVER,sec_uid=SEC))
+        self.assertEqual(result['status'],'deferred')
+        self.assertFalse(result['proof']['submission_started'])
+        run.assert_not_called();guard.release.assert_not_called()
+
+    def test_unmet_candidate_does_not_delay_next_eligible_group_a_full_round(self):
+        self.rows=[dict(CANDIDATE,group_id='6999999999999999999'),CANDIDATE]
+        factory=self.client
+        def client(account):
+            obj=factory(account)
+            def verify(row):
+                self.calls.append('verify')
+                return dict(VERIFIED,group_id=row['group_id'],entry_limit=[] if row['group_id']==GID else [{'status':0}])
+            obj.verify=verify;return obj
+        discovery.tick(client_factory=client,catalog_reader=self.catalog)
+        self.assertEqual(self.calls.count('verify'),2);self.assertEqual(self.calls.count('join'),1)
+        with app.db() as c:self.assertEqual(c.execute('SELECT group_id FROM public_group_attempts').fetchone()[0],GID)
 
     def test_old_unconfirmed_applications_do_not_create_a_total_group_cap(self):
         with app.db() as c:

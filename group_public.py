@@ -8,6 +8,8 @@ import json
 import re
 import urllib.parse
 import urllib.request
+import urllib.error
+from http.cookies import SimpleCookie
 
 import uid_inbox
 import uid_protocol as wire
@@ -22,6 +24,27 @@ def owner(value):
     if not isinstance(value,str) or not re.fullmatch(r'[A-Za-z0-9_-]{10,200}',value):
         raise ValueError('公开群作者标识无效')
     return value
+
+
+def follow_requirement(value):
+    """Only an explicit free follow of this group's verified owner qualifies."""
+    missing=[r for r in value.get('entry_limit',[]) if isinstance(r,dict) and r.get('status')!=1]
+    if not missing or str(value.get('category'))!='2' or value.get('code') not in (0,7602):return None
+    targets=set();days=[]
+    for row in missing:
+        ext=row.get('entry_limit_ext') or {}
+        if ext.get('entry_type')!=1:return None
+        parts=ext.get('entry_detail_template') or []
+        if len(parts)!=1:return None
+        extra=parts[0].get('extra') or {}
+        uid=str(extra.get('group_owner_uid') or '')
+        if uid!=value.get('inviter') or extra.get('follow_type')!='0':return None
+        try:wire.numeric_uid(uid);day=int(extra.get('follow_days','0'))
+        except (ValueError,TypeError):return None
+        if not 0<=day<=30:return None
+        targets.add(uid);days.append(day)
+    if len(targets)!=1:return None
+    return dict(uid=targets.pop(),sec_uid=value['owner_sec_uid'],days=max(days))
 
 
 def join_body(group_id,sender,ticket,inviter,answer=''):
@@ -124,6 +147,57 @@ class Client:
         if type(result['code']) is not int or type(result['participants']) is not int or not isinstance(result['entry_limit'],list):
             raise ValueError('公开群核验状态无效')
         return result
+
+    def follow_owner(self,verification,*,browser=True):
+        """Meet a verified public-group free-follow requirement; no paid actions."""
+        from group_profiles import profiles
+        target=follow_requirement(verification)
+        self.follow_evidence=dict(submission_started=False)
+        if not target or target['uid']==self.sender:raise ValueError('没有可自动处理的免费关注条件')
+        result=profiles(self.sender,[target],client=self)
+        if len(result['profiles'])!=1:raise ValueError('群主身份未核对')
+        if browser:
+            from group_follow_browser import follow
+            return follow(self.sender,target)
+        session=self.provider.current()
+        if session['sender_uid']!=self.sender:raise ValueError('账号已经改变')
+        # Match the official secsdk 1.2.22 CSRF handshake for authenticated POSTs.
+        # Tokens stay in memory, are never logged, and no downgrade is used.
+        headers={'Cookie':session['identity_cookie'],'User-Agent':session['headers']['user-agent'],
+                 'Referer':'https://www.douyin.com/user/'+target['sec_uid'],'Origin':'https://www.douyin.com'}
+        handshake=urllib.request.Request('https://www.douyin.com/aweme/v1/web/commit/follow/user/',method='HEAD',
+            headers=dict(headers,**{'x-secsdk-csrf-request':'1','x-secsdk-csrf-version':'1.2.22'}))
+        with self.opener.open(handshake,timeout=10) as response:
+            parts=response.headers.get('x-ware-csrf-token','').split(',')
+            if response.status!=200 or len(parts)<2 or parts[0]!='0' or not parts[1] or len(parts[1])>4096 or any(ord(c)<32 for c in parts[1]):
+                raise ValueError('关注请求验证未完成，尚未提交')
+            headers['x-secsdk-csrf-token']=parts[1]
+            for raw_cookie in response.headers.get_all('Set-Cookie',[]) if hasattr(response.headers,'get_all') else []:
+                cookies=SimpleCookie();cookies.load(raw_cookie)
+                if 'csrf_session_id' in cookies:
+                    value=cookies['csrf_session_id'].value
+                    if not value or len(value)>4096 or any(ord(c)<32 or c==';' for c in value):raise ValueError('请求验证会话无效')
+                    kept=[p.strip() for p in headers['Cookie'].split(';') if p.strip() and p.strip().split('=',1)[0]!='csrf_session_id']
+                    headers['Cookie']='; '.join(kept+['csrf_session_id='+value])
+        headers.update({'x-secsdk-csrf-version':'1.2.22','Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'})
+        request=urllib.request.Request('https://www.douyin.com/aweme/v1/web/commit/follow/user/?aid=6383',
+            data=urllib.parse.urlencode(dict(user_id=target['uid'],type=1)).encode(),headers=headers)
+        self.follow_evidence['submission_started']=True
+        try:response=self.opener.open(request,timeout=15)
+        except urllib.error.HTTPError as exc:
+            self.follow_evidence['http_status']=exc.code
+            exc.close()
+            if 400<=exc.code<500:return dict(status='rejected',proof=dict(self.follow_evidence))
+            raise ValueError('关注响应尚未确认') from None
+        with response:
+            raw=response.read(1048577)
+            self.follow_evidence.update(http_status=response.status,response_bytes=len(raw),response_sha256=hashlib.sha256(raw).hexdigest())
+            if response.status!=200 or len(raw)>1048576 or 'json' not in response.headers.get('Content-Type',''):
+                raise ValueError('关注结果尚未确认')
+        value=json.loads(raw)
+        if not isinstance(value,dict) or type(value.get('status_code')) is not int:raise ValueError('关注响应无效')
+        self.follow_evidence['platform_code']=value['status_code']
+        return dict(status='accepted' if value['status_code']==0 else 'rejected',proof=dict(self.follow_evidence))
 
     def join(self,verification):
         self.join_evidence = dict(phase='conditions', submission_started=False)

@@ -42,9 +42,10 @@ CREATE TABLE IF NOT EXISTS group_reads (
  operation TEXT NOT NULL, status TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL
 );
 '''
-SELECT = '''SELECT m.*,g.name AS current_group_name,g.account_uid,p.nickname,l.id AS lead_id
+SELECT = '''SELECT m.*,g.name AS current_group_name,g.account_uid,COALESCE(NULLIF(p.nickname,'未提供昵称'),NULLIF(gp.nickname,''),p.nickname) AS nickname,l.id AS lead_id
  FROM group_messages m JOIN monitored_groups g ON g.id=m.group_id
- LEFT JOIN people p ON p.id=m.person_id LEFT JOIN leads l ON l.person_id=m.person_id'''
+ LEFT JOIN people p ON p.id=m.person_id LEFT JOIN leads l ON l.person_id=m.person_id
+ LEFT JOIN group_profiles gp ON gp.account_uid=g.account_uid AND gp.uid=m.uid'''
 
 
 def stamp_after(seconds):
@@ -151,6 +152,13 @@ def attach(c,uid,observed):
     sid=source[0] if source else c.execute("INSERT INTO sources(name,kind,status,notes) VALUES('抖音 · 数字 UID','browser','unverified','群消息与评论、弹幕分别保留原文')").lastrowid
     c.execute('INSERT OR IGNORE INTO people(source_id,external_id,nickname) VALUES(?,?,?)',(sid,uid,'未提供昵称'))
     pid=c.execute('SELECT id FROM people WHERE source_id=? AND external_id=?',(sid,uid)).fetchone()[0]
+    profile=c.execute("SELECT nickname,gender,checked_at FROM group_profiles WHERE uid=? AND nickname!='' ORDER BY checked_at DESC LIMIT 1",(uid,)).fetchone()
+    if profile:
+        c.execute("UPDATE people SET nickname=? WHERE id=? AND nickname IN('','未提供昵称','昵称未知')",(profile['nickname'],pid))
+        if profile['gender'] is not None:
+            c.execute('''UPDATE people SET profile_gender=?,profile_gender_observed_at=?
+                WHERE id=? AND COALESCE(profile_gender_observed_at,'')<?''',
+                (profile['gender'],profile['checked_at'],pid,profile['checked_at']))
     c.execute('INSERT OR IGNORE INTO leads(person_id,updated_at) VALUES(?,?)',(pid,observed))
     return pid
 
@@ -175,8 +183,10 @@ def read_cadence(c,group):
 def ingest(c,group,result):
     import asset_keywords
     import analysis_store
+    import group_profiles
     inserted=[]
     for message in result['messages']:
+        group_profiles.remember(c,group['account_uid'],message['uid'],message.get('sec_uid',''))
         if int(message['index'])<=int(group['watermark']):continue
         published=uid_inbox_store.message_timestamp(message['created_at_raw'])
         text=message['raw_text'];title=group['name'];relevance=asset_keywords.message_relevance(c,text,title)
@@ -230,7 +240,10 @@ def tick(*,reader=None,catalog_reader=None):
         acquired=uid_messaging.GUARD.acquire(blocking=False)
         if not acquired:return
         ACTIVE=True
-        discover(reader=catalog_reader)
+        # Reuse a recent membership check across group reads; the catalog is
+        # account-wide and need not be downloaded again for every group.
+        if catalog_reader is not None or not fresh(group['checked_at'],60):
+            discover(reader=catalog_reader)
         with app.db() as c:group=dict(c.execute('SELECT * FROM monitored_groups WHERE id=?',(group['id'],)).fetchone())
         if not group['enabled'] or group['account_uid']!=uid_inbox_store._account():return
         reader=reader or group_inbox.messages
@@ -346,6 +359,7 @@ def reconsider_keyword_filters():
 def state(mode='live',before=0):
     import semantic
     import group_discovery
+    import group_profiles
     if mode!='live':return dict(groups=[],messages=[],enabled=0)
     before=uid_inbox_store._integer(before,0)
     try:account=uid_inbox_store._account()
@@ -367,10 +381,11 @@ def state(mode='live',before=0):
         for row in messages:
             attempt=c.execute('SELECT job_id,status,detail FROM uid_message_attempts WHERE sender_uid=? AND recipient_uid=? ORDER BY job_id DESC LIMIT 1',(account,row['uid'])).fetchone()
             row['outreach']=dict(attempt) if attempt else None
+        profiles=group_profiles.state(c,account)
     return dict(account_uid=account,groups=groups,messages=messages,enabled=sum(g['enabled'] for g in groups),
                 has_more=len(rows)>50,next_before=messages[-1]['id'] if len(rows)>50 else None,
                 group_speaking=False,discovery_scope='public_and_joined',public_join_available=True,
-                discovery=group_discovery.state())
+                discovery=group_discovery.state(),profiles=profiles)
 
 
 def start_service():
@@ -380,12 +395,16 @@ def start_service():
     import group_answers
     group_answers.start_service()
     def loop():
-        while not STOP.wait(10):
+        while not STOP.wait(1):
             try:tick()
             except Exception:pass  # Read failures are durable; isolate this loop from comments/live.
             try:
                 import group_discovery
                 group_discovery.tick()
+            except Exception:pass
+            try:
+                import group_profiles
+                group_profiles.tick()
             except Exception:pass
     THREAD=threading.Thread(target=loop,name='group-monitor',daemon=True);THREAD.start()
 

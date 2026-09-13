@@ -59,10 +59,37 @@ def messages(account,group,*,cursor=0,limit=20,provider=None,exchange=None):
             if not isinstance(text,str) or not text.strip() or len(text)>5000:raise ValueError()
         except (ValueError,TypeError):
             skipped+=1;continue
+        sec=wire.text(row,14)
         output.append(dict(message_id=mid,uid=uid,raw_text=text,index=str(index),
+                           sec_uid=sec if re.fullmatch(r'[A-Za-z0-9_-]{10,200}',sec) else '',
                            created_at_raw=str(inbox._number(wire.one(row,10,0,0)))))
     more=inbox._flag(info,3);next_cursor=inbox._number(wire.one(info,2,0,0))
     if more and (not next_cursor or cursor and next_cursor>=cursor):raise inbox.ReadError('nonadvancing_cursor')
     return dict(messages=output,skipped=skipped,has_more=more,next_cursor=str(next_cursor),
                 minimum_index=str(min(indices)) if indices else None,maximum_index=str(max(indices)) if indices else None,
                 evidence=evidence,group_sent=False,read_marker_requested=False)
+
+
+def members(account,group,*,cursor=0,limit=100,provider=None,exchange=None):
+    """One verified member page; official command 605, no invitations or markers."""
+    inbox._number(cursor);inbox._number(limit,1,100)
+    if not group.get('member') or group.get('inbox')!=0:raise ValueError('只能读取已加入群的成员资料')
+    cid=group['conversation_id'];short=int(wire.numeric_uid(group['conversation_short_id']))
+    if not re.fullmatch(r'[A-Za-z0-9:_-]{5,100}',cid):raise ValueError('群会话标识无效')
+    provider=provider or uid_session.Provider();exchange=exchange or uid_transport.request
+    evidence=[];inbox._identity(account,provider,exchange,evidence)
+    body=wire.field(605,wire.field(1,cid)+wire.field(2,short)+wire.field(3,2)+wire.field(4,cursor)+wire.field(5,limit))
+    info=inbox._read('group_members',body,account,provider,exchange,evidence)
+    page=wire.decode(wire.one(info,1,2));rows=[]
+    # Observed PCIM returns a whole member list despite limit=100 (163 rows).
+    # Keep an independent response bound and preserve the real has_more flag.
+    for row in inbox._items(page,1,1000):
+        uid=str(inbox._number(wire.one(row,1,0),1));wire.numeric_uid(uid)
+        sec=wire.text(row,5)
+        if sec and not re.fullmatch(r'[A-Za-z0-9_-]{10,200}',sec):raise ValueError('成员资料标识无效')
+        rows.append(dict(uid=uid,sec_uid=sec))
+    if len({r['uid'] for r in rows})!=len(rows):raise ValueError('成员页存在重复身份')
+    more=inbox._flag(page,2);raw_cursor=wire.one(page,3,0,0)
+    next_cursor=0 if not more and raw_cursor==2**64-1 else inbox._number(raw_cursor)
+    if more and next_cursor<=cursor:raise inbox.ReadError('nonadvancing_cursor')
+    return dict(members=rows,has_more=more,next_cursor=next_cursor,evidence=evidence)

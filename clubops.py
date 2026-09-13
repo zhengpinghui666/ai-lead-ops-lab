@@ -115,7 +115,7 @@ def init(mode='live'):
             keyword_sources_missing = 'comment_keyword_sources' not in known_tables
             paging_missing = 'collection_page_progress' not in known_tables
             inbox_missing = not {'uid_inbox_conversations','uid_inbox_messages','uid_inbox_reads','uid_reply_links','uid_inbox_sync'} <= known_tables
-            group_missing = not {'monitored_groups','group_messages','group_reads'} <= known_tables
+            group_missing = not {'monitored_groups','group_messages','group_reads','group_profiles','group_profile_scans','public_group_follows'} <= known_tables
             profile_missing = not {'profile_gender','profile_gender_observed_at'} <= {r[1] for r in source.execute('PRAGMA table_info(people)')}
             live_columns = {r[1] for r in source.execute('PRAGMA table_info(live_messages)')}
             collection_columns = {r[1] for r in source.execute('PRAGMA table_info(collection_tasks)')}
@@ -160,6 +160,8 @@ def init(mode='live'):
         c.executescript(uid_inbox_sync.SCHEMA)
         import group_monitor
         c.executescript(group_monitor.SCHEMA)
+        import group_profiles
+        c.executescript(group_profiles.SCHEMA)
         import group_discovery
         c.executescript(group_discovery.SCHEMA)
         import live_monitor

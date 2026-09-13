@@ -50,6 +50,17 @@ class DiscoveryTrackingTests(unittest.TestCase):
               VALUES(?,'comment',?,?,?,?,?,?,?)''',
               (self.base,'activity-'+vid+suffix,'https://www.douyin.com/video/'+vid,observed,'synthetic',text,published,reason))
 
+    def test_group_search_gets_a_turn_despite_unseen_general_keywords(self):
+        self.save(keywords=['无畏契约合成新词'])
+        with patch('uid_inbox_store._account',return_value='123456789'):
+            with app.db() as c:
+                c.execute('INSERT OR REPLACE INTO settings VALUES(?,?)',('public_group_discovery',json.dumps(dict(enabled=True,account_uid='123456789'))))
+                c.execute('INSERT OR REPLACE INTO discovery_queries VALUES(?,?,?)',('瓦搭子群','2026-09-11T00:00:00+00:00','2026-09-11T00:00:00+00:00'))
+            _,result=self.choose(self.plan(run_count=3))
+        self.assertEqual(result['kind'],'search')
+        import group_discovery
+        self.assertIn(result['key'],group_discovery.QUERIES)
+
     def test_private_checkpoint_retires_only_its_work_and_replaces_author_seed(self):
         self.save(); self.record([work(), work(1)])
         task = col.start(dict(kind='video',target=VID,transport='http',request_id='private-work'))['id']

@@ -14,7 +14,7 @@ import uid_session
 import uid_transport
 
 OPERATIONS = {'conversations': (2006, 2006), 'stranger_conversations': (1001, 1000),
-              'messages': (301, 301), 'stranger_messages': (1002, 1001)}
+              'messages': (301, 301), 'stranger_messages': (1002, 1001), 'group_members': (605,605)}
 
 
 class ReadError(ValueError):

@@ -200,7 +200,7 @@ class Provider:
     def prepare(self, operation, business_body, metadata):
         commands = {'create': 609, 'send': 100, 'im_check': 1001, 'group_join': 650,
                     'conversations': 2006, 'stranger_conversations': 1001,
-                    'messages': 301, 'stranger_messages': 1002}
+                    'messages': 301, 'stranger_messages': 1002, 'group_members': 605}
         if operation != 'identity' and operation not in commands:
             raise ValueError('不支持的 HTTP 操作')
         if not isinstance(business_body, bytes):
@@ -234,7 +234,7 @@ class Provider:
             # The captured stranger-list request uses inbox 1. Current web
             # one-to-one create/send calls use the conversation's inbox 0.
             # Inbox is request routing, not reusable authentication material.
-            if operation in ('create', 'send', 'conversations', 'messages', 'group_join'):
+            if operation in ('create', 'send', 'conversations', 'messages', 'group_join', 'group_members'):
                 context[6] = [(0, 0)]
             elif operation in ('stranger_conversations', 'stranger_messages'):
                 context[6] = [(0, 1)]

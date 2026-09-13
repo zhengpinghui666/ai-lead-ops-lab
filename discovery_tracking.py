@@ -308,9 +308,17 @@ def choose(c,plan,instant):
     import asset_references
     _,reference_queries=asset_references.discovery_assets(c)
     import group_discovery
-    search_terms=set(cfg['keywords'])|set(reference_queries)|set(group_discovery.search_terms(c))
+    group_terms=set(group_discovery.search_terms(c))
+    search_terms=set(cfg['keywords'])|set(reference_queries)|group_terms
     search_terms={term for term in search_terms if in_pc_scope(term)}
     query=next((dict(r) for r in c.execute('SELECT * FROM discovery_queries ORDER BY COALESCE(last_checked_at,\'\'),keyword') if r['keyword'] in search_terms and due(r['next_check_at'])),None)
+    # Reserve every third search for group coverage so a growing keyword pool
+    # cannot postpone previously searched group terms indefinitely.
+    search_turn=c.execute("SELECT COUNT(*) FROM discovery_jobs WHERE kind='search'").fetchone()[0]
+    if group_terms and search_turn%3==0:
+        group_query=next((dict(r) for r in c.execute('SELECT * FROM discovery_queries ORDER BY COALESCE(last_checked_at,\'\'),keyword')
+                          if r['keyword'] in group_terms and r['keyword'] in search_terms and due(r['next_check_at'])),None)
+        query=group_query or query
     latest_search=c.execute("SELECT t.* FROM discovery_jobs j JOIN collection_tasks t ON t.id=j.task_id WHERE j.kind='search' ORDER BY t.id DESC LIMIT 1").fetchone()
     search_wait=empty_search_wait(c,latest_search)
     # A valid empty result delays only its keyword; other searches remain eligible.
