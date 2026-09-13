@@ -23,6 +23,7 @@ test('public entry, authenticated outbound connection, unchanged content and bou
   assert.equal((await mf.dispatchFetch(origin+'/_access/connect',{headers:{Upgrade:'websocket',Authorization:'Bearer '+secret}})).status,409);
   const requests=[];
   ws.addEventListener('message',event=>{if(event.data==='pong')return;const req=JSON.parse(event.data);requests.push(req);
+    if(new URL(req.path,origin).searchParams.has('hang'))return;
     const codec=new URL(req.path,origin).searchParams.get('codec');
     if(codec){const raw=Buffer.from(codec==='large'?'x'.repeat(64*1024*1024+1):codec==='archive'?'x'.repeat(26*1024*1024):'压缩后的相同工作台内容'.repeat(1000));
       ws.send(JSON.stringify({id:req.id,status:200,content_type:'text/plain; charset=utf-8',body_encoding:codec==='unknown'?'br':'gzip',body:(codec==='invalid'?Buffer.from('invalid gzip'):gzipSync(raw)).toString('base64')}));return;}
@@ -44,4 +45,14 @@ test('public entry, authenticated outbound connection, unchanged content and bou
   assert.ok(!JSON.stringify(requests).includes(secret));
   // A normal browser needs no gateway session or login cookie.
   assert.deepEqual(await (await mf.dispatchFetch(origin+'/_access/status')).json(),{online:true,access:'public',login_required:false});
+  // An open but nonresponsive old connection must not hold the only computer
+  // slot forever. A timed-out write stays unknown and is never replayed.
+  const count=requests.length;
+  const hanging=await mf.dispatchFetch(origin+'/api/monitor-stop?hang=1',{method:'POST',headers:{Origin:origin},body:'{}'});
+  assert.equal(hanging.status,504);assert.match((await hanging.json()).error,/不要重复提交/);
+  assert.equal(requests.length,count+1);
+  assert.equal((await (await mf.dispatchFetch(origin+'/_access/status')).json()).online,false);
+  const replacement=await mf.dispatchFetch(origin+'/_access/connect',{headers:{Upgrade:'websocket',Authorization:'Bearer '+secret}});
+  assert.equal(replacement.status,101);replacement.webSocket.accept();t.after(()=>replacement.webSocket.close());
+  assert.equal(requests.length,count+1,'Reconnection must not replay the timed-out write');
 });

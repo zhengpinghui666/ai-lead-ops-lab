@@ -24,6 +24,10 @@
 
 本机证据：`artifacts/group-monitor-20260913/performance/` 与 `performance-final/`，包括接口测量、数据库备份、维护回执和后续真实批次。这些含业务信息的运行产物不进入源码备份。下方为早期公网优化记录，数据规模和测量条件不同。
 
+最终健康检查还复现公网旧连接占位：本机 connector disconnected，实际 WebSocket 握手返回 409，网关 status 却 online=true，GET 等待 20 秒返回 504。已在网关加入应用请求超时后的失效连接清理：整个请求期间没有收到其他响应才释放；连接断开只结算属于它的待定请求，超时写操作保持结果未知且不重放。原连接认证、单连接限制及路径授权保持不变。workerd 集成测试实际等待超时，确认旧连接释放、原凭据可以重连、写请求只有一次。部署版本 `5c0497f5-ccfe-4677-a021-feb6bf2e47b8`；公网恢复结果见本机最终健康回执。
+
+Cloudflare 当前兼容日期会自动回应关闭帧，因此没有把缺少 close 调用当作已证明根因；现场证据证明的是旧连接占位和请求无响应。连接语义依据 [Cloudflare Durable Object WebSocket 文档](https://developers.cloudflare.com/durable-objects/api/base/)，修复结果以实际握手和 HTTP 请求为准。
+
 2026-09-11，用户反馈“正在连接本地工作区”较慢。工作台从 Pages 经已连接的 Cloudflare 网关回到电脑，原先首屏状态及静态资源全部以未压缩的 Base64 负载经过电脑上行，页面再等待 `/api/state` 完整返回。
 
 ## 本次测量与修改

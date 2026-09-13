@@ -34,6 +34,7 @@ export default {async fetch(request,env){
 }};
 export class TeamGateway {
   constructor(state,env){this.state=state;this.env=env;this.pending=new Map();
+    this.replies=new WeakMap();
     this.state.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping','pong'));
   }
   sockets(){return this.state.getWebSockets('computer').filter(s=>s.readyState===1);}
@@ -55,9 +56,18 @@ export class TeamGateway {
     if(!socket)return reply({error:'电脑工作台离线，请确认电脑已开机并运行 ClubOps'},503);
     if(this.pending.size>=12)return reply({error:'工作台繁忙，请稍后重试'},503);
     let body='';try{if(request.method==='POST')body=await boundedBody(request,262144);}catch{return reply({error:'请求内容过大'},413);}
-    const id=crypto.randomUUID();let resolve;const promise=new Promise(r=>resolve=r);
-    const timer=setTimeout(()=>{this.pending.delete(id);resolve(reply({error:request.method==='POST'?'操作结果尚未确认，请查看记录；不要重复提交。':'电脑响应超时，请稍后查看。'},504));},20000);
-    this.pending.set(id,{resolve,timer});
+    const id=crypto.randomUUID(),replyVersion=this.replies.get(socket)||0;let resolve;const promise=new Promise(r=>resolve=r);
+    const timer=setTimeout(()=>{
+      this.pending.delete(id);resolve(reply({error:request.method==='POST'?'操作结果尚未确认，请查看记录；不要重复提交。':'电脑响应超时，请稍后查看。'},504));
+      // A protocol-level open socket can outlive the computer process. If no
+      // response arrived during this entire request, release it so the existing
+      // authenticated connector can reconnect. Never replay pending operations.
+      if((this.replies.get(socket)||0)===replyVersion){
+        try{socket.close(1011,'computer response timeout');}catch{}
+        this.webSocketClose(socket);
+      }
+    },20000);
+    this.pending.set(id,{resolve,timer,socket});
     try{socket.send(JSON.stringify({id,method:request.method,path:path+u.search,body,headers:{'content-type':request.headers.get('Content-Type')||'', 'x-clubops-token':request.headers.get('X-ClubOps-Token')||''}}));}
     catch{clearTimeout(timer);this.pending.delete(id);return reply({error:'电脑连接已断开'},503);}
     return await promise;
@@ -65,7 +75,8 @@ export class TeamGateway {
   async webSocketMessage(socket,message){
     if(typeof message!=='string'||message.length>LIMIT){socket.close(1009,'size');return;}
     let value;try{value=JSON.parse(message);}catch{return;}
-    const pending=this.pending.get(value.id);if(!pending)return;
+    const pending=this.pending.get(value.id);if(!pending||pending.socket!==socket)return;
+    this.replies.set(socket,(this.replies.get(socket)||0)+1);
     this.pending.delete(value.id);clearTimeout(pending.timer);
     try{
       if(!Number.isInteger(value.status)||value.status<200||value.status>599||typeof value.body!=='string')throw Error('invalid');
@@ -73,6 +84,9 @@ export class TeamGateway {
       pending.resolve(new Response([204,205,304].includes(value.status)?null:bytes,{status:value.status,headers:{...headers,'content-type':mime}}));
     }catch{pending.resolve(reply({error:'电脑响应格式不正确'},502));}
   }
-  webSocketClose(){for(const p of this.pending.values()){clearTimeout(p.timer);p.resolve(reply({error:'电脑连接中断；若刚提交操作，请核对记录。'},503));}this.pending.clear();}
-  webSocketError(){this.webSocketClose();}
+  webSocketClose(socket){
+    try{socket.close(1000,'connection closed');}catch{}
+    for(const [id,p] of this.pending){if(p.socket!==socket)continue;clearTimeout(p.timer);p.resolve(reply({error:'电脑连接中断；若刚提交操作，请核对记录。'},503));this.pending.delete(id);}
+  }
+  webSocketError(socket){this.webSocketClose(socket);}
 }

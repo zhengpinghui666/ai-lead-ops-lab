@@ -13,8 +13,8 @@
     },
     {
       "name": "ACCESS_PERFORMANCE.md",
-      "sha256": "9ec4bc0a6affc3b0346caa41dea9078496f575f99048d2cd23e197ae674d9ffc",
-      "bytes": 6088
+      "sha256": "6657659b662d25b1d1ee7413c67a4e39be554459cf1effd62a149f788709c92a",
+      "bytes": 7116
     },
     {
       "name": "ASSET_VERTICALITY.md",
@@ -158,8 +158,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "2b39e4696192f4f3a765b2520fb8b138ca72640ba2b9d05e1338e8d6f86b8fba",
-      "bytes": 34829
+      "sha256": "3b1dcdfed8e59f1072519ed127ddfa5802aa20e45c454276b5c9d1591b5edc9a",
+      "bytes": 35224
     },
     {
       "name": "UID_HTTP.md",
@@ -498,13 +498,13 @@
     },
     {
       "name": "integrations/team-access/gateway.mjs",
-      "sha256": "ce3c6ef3c3bb30fb676ba9de93d1d879179737f22de4e03628f1fe44283c3a56",
-      "bytes": 6724
+      "sha256": "672457e50e8ca6352422f099026b9b017caae30efe13c8453a4fadb49bec4985",
+      "bytes": 7423
     },
     {
       "name": "integrations/team-access/gateway.test.mjs",
-      "sha256": "0ec79609fe28b5d2c2a5e61fb19ac21ac2944c84310c95d77b3d86e790669534",
-      "bytes": 4690
+      "sha256": "123e6d49457685b128aeb0f8ff541eb1426b56cef13a1dd2a03e15a8572c156a",
+      "bytes": 5638
     },
     {
       "name": "integrations/team-access/pages/public/_worker.js",
