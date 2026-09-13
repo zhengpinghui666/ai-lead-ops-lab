@@ -6,7 +6,15 @@ const vid='7600000000000000001';
 let verified=false;
 let searchKeyword='';
 process.stdin.on('data',chunk=>{if(String(chunk).includes('"command":"resume"'))verified=true;});
-const response=(url,body)=>{if(url.includes('/search/')&&!url.includes('?'))url+='?keyword='+encodeURIComponent(searchKeyword);return {url:()=>url,status:()=>200,headers:()=>({'content-type':'application/json'}),body:async()=>Buffer.from(JSON.stringify(body))};};
+const response=(url,body)=>{
+  if(url.includes('/search/')&&!url.includes('?'))url+='?keyword='+encodeURIComponent(searchKeyword);
+  if(scenario.startsWith('alternate-'))url=url.replace('www.douyin.com','www-hj.douyin.com');
+  if(scenario==='alternate-wrong-video'&&url.includes('/comment/'))url=url.replace(vid,'7600000000000000009');
+  const blocked=scenario==='alternate-forbidden'&&url.includes('/comment/');
+  const limited=scenario==='alternate-limited'&&url.includes('/comment/');
+  if(scenario==='alternate-schema'&&url.includes('/comment/'))body={status_code:0,unknown:[]};
+  return {url:()=>url,status:()=>blocked?403:limited?429:200,headers:()=>({'content-type':'application/json'}),body:async()=>Buffer.from(JSON.stringify(body))};
+};
 class Context extends EventEmitter {
   constructor(){super();this.closed=false;this.page=new Page(this);}
   pages(){return [this.page];}

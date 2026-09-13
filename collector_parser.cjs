@@ -105,7 +105,9 @@ function comments(body, expectedVideo, context={}) {
 }
 function responseKind(url, expectedVideo='', expectedKeyword='') {
   let u;try{u=new URL(url);}catch{return '';}
-  if(u.origin!=='https://www.douyin.com')return '';
+  // Observed after account switch (task 1932): the normal www page routes API
+  // responses through www-hj. Content-page and per-request scope checks remain.
+  if(!['https://www.douyin.com','https://www-hj.douyin.com'].includes(u.origin)||u.username||u.password)return '';
   if(/^\/aweme\/v\d+\/web\/(?:general\/search|search\/item)\//.test(u.pathname))return !expectedKeyword||u.searchParams.get('keyword')===expectedKeyword?'search':'';
   if(/^\/aweme\/v\d+\/web\/comment\/list\//.test(u.pathname)&&id(expectedVideo)&&u.searchParams.get('aweme_id')===expectedVideo)return 'comment';
   return '';

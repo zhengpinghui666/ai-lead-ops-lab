@@ -163,7 +163,18 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.match(element('#main').innerHTML,/今日运营/);
   assert.match(element('#main').innerHTML,/验证码确认通过率/);
   assert.match(element('#main').innerHTML,/未尝试/);
-  assert.match(element('#main').innerHTML,/查看分时数值/);
+  assert.match(element('#main').innerHTML,/所选时段暂无记录/);
+  assert.ok(!element('#main').innerHTML.includes('按小时累计'));
+  for(const days of [7,90]){
+    run(`trendDays=${days};render();`);
+    assert.match(element('#main').innerHTML,/所选时段暂无记录/);
+  }
+  run('trendDays=30;render();');
+  const trimmedChart=run(`dailyChart({granularity:'day',date:'2026-09-13',labels:['2026-09-10','2026-09-11','2026-09-12','2026-09-13'],series:{intent_users:[0,2,0,3],dm_accepted:[0,0,0,1]}},...trendGroups.demand)`);
+  assert.ok(!trimmedChart.includes('2026-09-10'));
+  assert.match(trimmedChart,/从 2026-09-11 开始/);
+  assert.match(trimmedChart,/2026-09-12 · 当日 0/,'Quiet days between real activity must remain');
+  assert.equal((trimmedChart.match(/<circle /g)||[]).length,6);
   const demandDetail=run('leadDetail(S.leads[0])');
   assert.ok(!demandDetail.includes('俱乐部候选人员'));
   assert.ok(!demandDetail.includes('暂无符合已知条件的可用人员'));

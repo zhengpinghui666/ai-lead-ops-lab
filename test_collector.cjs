@@ -59,6 +59,15 @@ const url=`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}&irr
 assert.equal(p.responseKind(url,vid),'comment');
 assert.equal(p.responseKind(url,'7600000000000000009'),'');
 assert.equal(p.responseKind(url.replace('www.douyin.com','evil.example'),vid),'');
+assert.equal(p.responseKind(url.replace('www.douyin.com','www-hj.douyin.com'),vid),'comment');
+assert.equal(p.responseKind(url.replace('www.douyin.com','www-hj.douyin.com'),'7600000000000000009'),'');
+for(const origin of ['http://www-hj.douyin.com','https://www-hj.douyin.com:444','https://www-hj.douyin.com.evil.example',
+    'https://other.douyin.com','https://spoof@www-hj.douyin.com']){
+  assert.equal(p.responseKind(url.replace('https://www.douyin.com',origin),vid),'');
+}
+assert.equal(p.contentPageKind(`https://www-hj.douyin.com/video/${vid}`,vid),'');
+assert.equal(p.responseKind('https://www-hj.douyin.com/aweme/v1/web/general/search/single/?keyword=test','','test'),'search');
+assert.equal(p.responseKind('https://www-hj.douyin.com/aweme/v1/web/general/search/single/?keyword=other','','test'),'');
 assert.equal(p.responseKind('https://www.douyin.com/aweme/v1/web/general/search/single/?keyword=test'),'search');
 assert.equal(p.responseKind('https://www.douyin.com/aweme/v1/web/general/search/single/?keyword=test','','test'),'search');
 for(const url of ['https://www.douyin.com/aweme/v1/web/general/search/single/','https://www.douyin.com/aweme/v1/web/general/search/single/?keyword=other','https://www.douyin.com:444/aweme/v1/web/general/search/single/?keyword=test'])assert.equal(p.responseKind(url,'','test'),'');

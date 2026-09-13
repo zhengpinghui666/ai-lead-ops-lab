@@ -148,8 +148,8 @@
     },
     {
       "name": "REQUIREMENTS_DISCUSSION.md",
-      "sha256": "a330a71724c2dad9cd16b6f8b4c1b073883ed49454f177278a5e769c7521eeb7",
-      "bytes": 17003
+      "sha256": "0df792a43c0a0d908553898c3c2999124b5ee7b36955cfe60665e52209ae04b3",
+      "bytes": 18310
     },
     {
       "name": "RULES.md",
@@ -168,8 +168,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "3c7910138b4706f85259b690da3bc54a0b6006efb87832e5553402dd67cc416e",
-      "bytes": 65092
+      "sha256": "46ef0b0ba73c0892027c7fe83c15d619f23d65eb97a2b11f332b5c52538e8ced",
+      "bytes": 68664
     },
     {
       "name": "UID_HTTP.md",
@@ -308,8 +308,8 @@
     },
     {
       "name": "collector_parser.cjs",
-      "sha256": "d868e63ef6d61645db872adf6f0699539fd2a5dbcf626b6ff820555ffe5a5c30",
-      "bytes": 9055
+      "sha256": "0520b83b3171860571902be5c5cc4d322fdcc749ec8743bd1a43e1abcac8becc",
+      "bytes": 9278
     },
     {
       "name": "collector_pool.cjs",
@@ -378,8 +378,8 @@
     },
     {
       "name": "daily_dashboard.py",
-      "sha256": "7bd0e128111a3a8d8fba5f0ce46975a58ed841a448d7ba783465820bc5146a00",
-      "bytes": 9071
+      "sha256": "3c8c7def694aaec9e5a906c85af93947990bcd24dc7954ef685075f5695776d2",
+      "bytes": 9289
     },
     {
       "name": "demand_freshness.py",
@@ -838,8 +838,8 @@
     },
     {
       "name": "static/app.css",
-      "sha256": "2e39790b690572bc237c35b5100022f8eda4577bd47f76632f3218de84b55b38",
-      "bytes": 85007
+      "sha256": "4df2f4fd4ac62c652241e6b3de596790d23357bbd26766d6af7f0afd3f4a8c6d",
+      "bytes": 85310
     },
     {
       "name": "static/app.html",
@@ -848,8 +848,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "2e6599494bda3ac9508cc0a94cb2b0dc962a45ec3b8046e3a39f9ee76e13a4c8",
-      "bytes": 215381
+      "sha256": "6c72f17a25d1757c3ade82788225c26267d55b195501af3f5e8151b675de7159",
+      "bytes": 217229
     },
     {
       "name": "static/clubops-iphone.js",
@@ -873,8 +873,8 @@
     },
     {
       "name": "static/login.js",
-      "sha256": "153eab003f2bed93a073dbf3efb043f949938b0dddc0be747a18858faa9b8b55",
-      "bytes": 14653
+      "sha256": "b5cd51dfd4cda00ff08c71f0f6fbf35919a5c718e1f05a9a5caf4c1d8f607c0b",
+      "bytes": 15329
     },
     {
       "name": "static/vendor/lucide.LICENSE.txt",
@@ -968,8 +968,8 @@
     },
     {
       "name": "test_collector.cjs",
-      "sha256": "06c73696ebea6ec59860fa82c84b08c1053653d2203d6882e9126aa9f13f85c7",
-      "bytes": 9562
+      "sha256": "5ac83eba0790b5a0490c68e3ec5fd4d05c61408660b6edee406f3a03a2af9d18",
+      "bytes": 10371
     },
     {
       "name": "test_collector.py",
@@ -998,8 +998,8 @@
     },
     {
       "name": "test_daily_dashboard.py",
-      "sha256": "527437e5c644cf730c8014847218633b36fbbb05ba775efbfeeac210412d9c50",
-      "bytes": 5328
+      "sha256": "63d4369fb826e9224ebb758e2681d1248569d8b4303031eb717dc0c52952dd3d",
+      "bytes": 6725
     },
     {
       "name": "test_demand_freshness.py",
@@ -1018,8 +1018,8 @@
     },
     {
       "name": "test_frontend.cjs",
-      "sha256": "a686344d99cc6d80cfcf3fc6ee5399b0aa7ec69a6ae9c5c68cad24a131066379",
-      "bytes": 48551
+      "sha256": "398c27e9c7267c3a70671778fad7eb8cef33bab686ff61013566a5250dd73516",
+      "bytes": 49292
     },
     {
       "name": "test_frontend_live_history.cjs",
@@ -1343,8 +1343,8 @@
     },
     {
       "name": "test_worker.cjs",
-      "sha256": "e37ebb96c2883a3f5509132d1195cc639c55542b5cc3355fef2b1ff253de9389",
-      "bytes": 15624
+      "sha256": "1dbadb13354a1c500649768b71283798d13c05c9979e51dde4de2e41d2780797",
+      "bytes": 16431
     },
     {
       "name": "tests/fixtures/captcha/background.png",
@@ -1363,8 +1363,8 @@
     },
     {
       "name": "tests/fixtures/playwright_fixture.cjs",
-      "sha256": "75379ef4dc2b8d543e7a32876e515f63ff23875481a422476d292016463caae7",
-      "bytes": 11036
+      "sha256": "1f29afeb47748272a6d03eeea16109775ac2c7f39ed43c9ec05e95d2dea53486",
+      "bytes": 11518
     },
     {
       "name": "tests/fixtures/playwright_parallel_fixture.cjs",

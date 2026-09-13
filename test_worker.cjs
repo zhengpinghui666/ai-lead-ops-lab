@@ -18,6 +18,15 @@ function run(scenario,{interactive=false,onStatus,kind='search',candidatePolicy=
 }
 const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
 (async()=>{
+  const alternate=await Promise.all(['alternate-success','alternate-wrong-video','alternate-forbidden','alternate-limited','alternate-schema'].map(s=>run(s)));
+  assert.equal(terminal(alternate[0]),'completed');
+  assert.equal(alternate[0].filter(m=>m.type==='comment').length,1);
+  assert.equal(alternate[0].find(m=>m.type==='comment').record.video_id,'7600000000000000001');
+  for(const [index,status] of [[1,'needs_interaction'],[2,'access_denied'],[3,'rate_limited'],[4,'schema_changed']]){
+    assert.equal(terminal(alternate[index]),status);
+    assert.equal(alternate[index].filter(m=>m.type==='comment').length,0);
+  }
+  if(process.env.CLUBOPS_TEST_ALTERNATE_ONLY==='1'){console.log('PASS: alternate API domain, wrong target, access denial, rate limit and invalid schema. Synthetic only.');return;}
   for(const scenario of ['mobile-video','foreign-video']){
     const scoped=await run(scenario,{kind:'video'});
     assert.equal(terminal(scoped),'completed');

@@ -34,7 +34,7 @@ const monitorHistoryCache=new Map(),monitorHistoryCounts=new Map();
 let publishedFilter='all',publishedFrom='',publishedUntil='',leadSort='published';
 const publicationWindows={all:'全部发布时间',hour:'近 1 小时',day:'近 24 小时',week:'近 7 天',month:'近 30 天',custom:'指定日期（北京时间）',unknown:'发布时间未知',future:'未来时间 · 待核对'};
 let S, mode='live', page=location.hash.slice(1).split('/')[0] || 'overview', selected=null, conversation=null, tab='buyer', query='', gameFilter='', draftText='', draftKey='', toastTimer, busy=false;
-let section=location.hash.slice(1).split('/').slice(1).join('/'),dailyTrend='demand';
+let section=location.hash.slice(1).split('/').slice(1).join('/'),dailyTrend='demand',trendDays=30;
 const sectionSets={overview:['metrics'],monitor:['sources','runs'],live:['sources','runs'],groups:['sources'],leads:['detail'],inbox:['contact'],analytics:['quality'],settings:['connections']};
 const sectionLink=(path,label,cls='')=>`<a class="button small ${cls}" href="#${esc(path)}">${esc(label)}</a>`;
 function workspaceNav(items){
@@ -236,23 +236,28 @@ function groupPage(){
 }
 
 function dailyChart(d,title,description,lines){
+  if(d.granularity!=='day')return notice('每日趋势正在更新，请稍后刷新。');
+  const windowLabels=d.labels.slice(-trendDays),windowSeries=Object.fromEntries(lines.map(([key])=>[key,(d.series[key]||d.labels.map(()=>0)).slice(-trendDays)]));
+  const first=windowLabels.findIndex((_,i)=>lines.some(([key])=>windowSeries[key][i]>0));
+  const labels=first<0?[]:windowLabels.slice(first),series=Object.fromEntries(lines.map(([key])=>[key,first<0?[]:windowSeries[key].slice(first)]));
+  const rangeControls=`<div class="trend-range" role="group" aria-label="趋势时间范围">${[7,30,90].map(days=>button(`近 ${days} 天`,'trend-range',`small ${trendDays===days?'primary':''}`,`data-days="${days}" aria-pressed="${trendDays===days}"`)).join('')}</div>`;
+  if(!labels.length)return `<section class="card daily-chart"><div class="card-head"><h2>${esc(title)}</h2>${rangeControls}</div><div class="daily-chart-body">${empty('所选时段暂无记录','有数据后，从首次有记录的日期开始显示每日趋势。','','')}</div></section>`;
   const width=520,height=210,left=48,right=20,top=16,bottom=30,plotWidth=width-left-right,plotHeight=height-top-bottom;
-  const ceiling=Math.max(1,...lines.flatMap(([key])=>d.series[key]||[]));
+  const ceiling=Math.max(1,...Object.values(series).flat());
   const max=ceiling<=5?Math.ceil(ceiling):Math.ceil(ceiling/5)*5;
-  const hours=d.elapsed_hours||d.labels.map((_,i)=>i),last=Math.max(hours.at(-1)||0,1/60);
-  const px=i=>left+hours[i]/last*plotWidth,py=n=>top+plotHeight-(n/max)*plotHeight;
+  const px=i=>left+(labels.length===1?.5:i/(labels.length-1))*plotWidth,py=n=>top+plotHeight-(n/max)*plotHeight;
   const axes=[...new Set([0,Math.floor(max/2),max])].map(n=>`<line x1="${left}" x2="${width-right}" y1="${py(n)}" y2="${py(n)}" class="daily-gridline"/><text x="${left-8}" y="${py(n)+4}" text-anchor="end">${fmt(n)}</text>`).join('');
-  const ticks=[...new Set([0,Math.floor((d.labels.length-1)/2),d.labels.length-1])];
+  const ticks=[...new Set([0,Math.floor((labels.length-1)/2),labels.length-1])];
   const paths=lines.map(([key,name,color],lineIndex)=>{
-    const values=d.series[key]||d.labels.map(()=>0);
-    return `<polyline fill="none" stroke="${color}" stroke-width="2.5" ${lineIndex?'stroke-dasharray="'+(lineIndex===1?'6 3':'2 3')+'"':''} points="${values.map((n,i)=>`${px(i)},${py(n)}`).join(' ')}"/>`+values.map((n,i)=>`<circle cx="${px(i)}" cy="${py(n)}" r="3" fill="${color}"><title>${esc(name)} · ${esc(d.labels[i])} · 累计 ${fmt(n)}</title></circle>`).join('');
+    const values=series[key];
+    return `<polyline fill="none" stroke="${color}" stroke-width="2.5" ${lineIndex?'stroke-dasharray="'+(lineIndex===1?'6 3':'2 3')+'"':''} points="${values.map((n,i)=>`${px(i)},${py(n)}`).join(' ')}"/>`+values.map((n,i)=>`<circle cx="${px(i)}" cy="${py(n)}" r="${trendDays>30?2:3}" fill="${color}"><title>${esc(name)} · ${esc(labels[i])} · 当日 ${fmt(n)}${labels[i]===d.date?'（截至当前）':''}</title></circle>`).join('');
   });
-  return `<section class="card daily-chart"><div class="card-head"><div><h2>${esc(title)}</h2><small>${esc(description)}</small></div></div><div class="daily-chart-body"><div class="daily-legend">${lines.map(([key,name,color])=>`<span><i style="background:${color}"></i>${esc(name)}<b>${fmt(d.series[key]?.at(-1))}</b></span>`).join('')}</div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(title)}，今日按小时累计；下方可展开数值表"><g>${axes}${ticks.map(i=>`<text x="${px(i)}" y="${height-7}" text-anchor="${i===0?'start':i===d.labels.length-1?'end':'middle'}">${esc(d.labels[i])}</text>`).join('')}${paths.join('')}</g></svg><details id="daily-table-${lines[0][0]}" class="daily-data-table"><summary>查看分时数值</summary><div class="table-scroll"><table><thead><tr><th>北京时间</th>${lines.map(([,name])=>`<th>${esc(name)}</th>`).join('')}</tr></thead><tbody>${d.labels.map((label,i)=>`<tr><td>${esc(label)}</td>${lines.map(([key])=>`<td>${fmt(d.series[key]?.[i])}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div></section>`;
+  return `<section class="card daily-chart"><div class="card-head"><div><h2>${esc(title)}</h2><small>${esc(description)} · 今日截至当前</small></div>${rangeControls}</div><div class="daily-chart-body"><div class="daily-legend">${lines.map(([key,name,color])=>`<span><i style="background:${color}"></i>${esc(name)}<b>${fmt(series[key].reduce((sum,n)=>sum+n,0))}</b></span>`).join('')}<small>所选时段合计</small></div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(title)}，最近 ${trendDays} 天，按日统计；从 ${esc(labels[0])} 开始，今日尚未结束，下方可展开每日数值表"><g>${axes}${ticks.map(i=>`<text x="${px(i)}" y="${height-7}" text-anchor="${labels.length===1?'middle':i===0?'start':i===labels.length-1?'end':'middle'}">${esc(labels[i].slice(5))}</text>`).join('')}${paths.join('')}</g></svg><details id="daily-table-${lines[0][0]}" class="daily-data-table"><summary>查看每日数值</summary><div class="table-scroll"><table><thead><tr><th>日期（北京时间）</th>${lines.map(([,name])=>`<th>${esc(name)}</th>`).join('')}</tr></thead><tbody>${labels.map((label,i)=>`<tr><td>${esc(label)}${label===d.date?' · 截至当前':''}</td>${lines.map(([key])=>`<td>${fmt(series[key][i])}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div></section>`;
 }
 
 const trendGroups={
   demand:['需求与触达增长','首次模型识别人数与服务端接受条数',[['intent_users','新增意向','#087f77'],['dm_accepted','私信接受','#507cba']]],
-  collection:['采集增长','今日首次观察 / 入库的累计条数',[['comments','评论','#087f77'],['live','弹幕','#507cba'],['groups','群消息','#b27736']]],
+  collection:['每日采集趋势','每天首次观察 / 入库的条数',[['comments','评论','#087f77'],['live','弹幕','#507cba'],['groups','群消息','#b27736']]],
   analysis:['作品与分析增长','新增作品、初筛通过及首次模型分析成功',[['works','作品','#b27736'],['screened','初筛通过','#507cba'],['modeled','模型分析','#087f77']]],
   captcha:['验证码处理增长','按提交时间归日；确认结果随证据更新',[['captcha_submitted','实际提交','#b27736'],['captcha_passed','确认通过','#087f77']]],
 };
@@ -559,6 +564,7 @@ case 'uid-settings':uidSettingsDialog();break;
 case 'add-video': videoDialog();break;
 case 'collector-new': collectorDialog();break;
 case 'daily-trend': if(trendGroups[el.dataset.key]){dailyTrend=el.dataset.key;render(false);document.querySelector(`[data-action="daily-trend"][data-key="${dailyTrend}"]`)?.focus({preventScroll:true});}break;
+case 'trend-range': if([7,30,90].includes(Number(el.dataset.days))){trendDays=Number(el.dataset.days);render(false);document.querySelector(`[data-action="trend-range"][data-days="${trendDays}"]`)?.focus({preventScroll:true});}break;
 case 'group-message-detail': {const m=groupState?.messages.find(x=>x.id===id);if(m)showModal('群消息详情',groupMessageDetail(m));break;}
 case 'work-filter': workFilter=el.dataset.filter;workPage=1;redrawWorkPool();break;
 case 'work-page': workPage+=Number(el.dataset.step)||0;redrawWorkPool();break;
@@ -678,7 +684,11 @@ window.addEventListener('hashchange',()=>{
   if(same&&S){render();queueCollectionPoll();}else void load().catch(loadError);
   window.scrollTo({top:0});$('#main')?.focus?.({preventScroll:true});
 });
-$('#modal').addEventListener('click',e=>{if(e.target===$('#modal')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)closeModal();}});
+function modalBackdrop(event){const d=$('#modal'),r=d.getBoundingClientRect();return event.target===d&&(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom);}
+let modalBackdropDown=false;
+$('#modal').addEventListener('pointerdown',event=>{modalBackdropDown=event.button===0&&modalBackdrop(event);});
+$('#modal').addEventListener('pointercancel',()=>{modalBackdropDown=false;});
+$('#modal').addEventListener('click',event=>{const dismiss=modalBackdropDown&&modalBackdrop(event);modalBackdropDown=false;if(dismiss)closeModal();});
 load().catch(loadError);
 
 const collectionLabels={queued:'等待启动',running:'正在读取',cancelling:'正在停止',needs_login:'等待登录',needs_verification:'等待人工验证',needs_interaction:'等待页面操作',completed:'本批读取完成',partial:'部分读取',failed:'执行失败',cancelled:'已停止',interrupted:'会话中断',rate_limited:'访问频繁 · 已停止',access_denied:'访问被拒绝',no_data:'未取得可识别数据',dependency_missing:'缺少运行依赖',session_expired:'会话已过期',network_error:'连接失败',schema_changed:'响应结构需适配',timeout:'运行超时',resource_limited:'读取预算已达上限',empty_response:'空响应 · 未取得数据',identity_failed:'身份核对未通过',upstream_rejected:'平台业务响应未通过'};

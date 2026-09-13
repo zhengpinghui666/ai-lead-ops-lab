@@ -20,7 +20,7 @@ def parsed(value):
         return None
 
 
-def captcha_summary(c, start, end):
+def captcha_summary(c, start, end, event_start=None):
     batches = {}
     for row in c.execute("SELECT task_id,created_at,snapshot FROM collection_diagnostics WHERE stage='captcha_workflow' ORDER BY id"):
         stamp = parsed(row['created_at'])
@@ -55,30 +55,32 @@ def captcha_summary(c, start, end):
     today = summarize(start)
     today['all_time'] = summarize(datetime.min.replace(tzinfo=timezone.utc))
     events = [(b['submitted_at'], b['passed']) for b in batches.values()
-              if b['submitted_at'] and start <= b['submitted_at'] <= end]
+              if b['submitted_at'] and (event_start or start) <= b['submitted_at'] <= end]
     return today, events
 
 
 def snapshot(mode='live', reference=None):
     end = (reference or datetime.now(timezone.utc)).astimezone(BEIJING)
     start = end.replace(hour=0, minute=0, second=0, microsecond=0)
-    boundaries = [start + timedelta(hours=h) for h in range(1, end.hour+1)] + [end]
+    history_start = start - timedelta(days=89)
+    dates = [(history_start + timedelta(days=i)).date().isoformat() for i in range(90)]
     series = {}
     totals = {}
     with app.db(mode) as c:
         c.execute('PRAGMA query_only=ON')
         c.execute('PRAGMA temp_store=MEMORY')
         c.execute('BEGIN')  # One WAL read snapshot, without taking the collector's writer lock.
-        args = dict(start=start.isoformat(), end=end.isoformat())
+        args = dict(start=start.isoformat(), end=end.isoformat(), history_start=history_start.isoformat())
 
         def measure(key, source):
-            # Only hour/count pairs leave SQLite. SQL normalizes UTC and +08:00 dates.
-            rows = c.execute(f"""SELECT strftime('%H',stamp,'+8 hours') AS hour,COUNT(*) AS n
-                FROM ({source}) WHERE julianday(stamp)>=julianday(:start)
-                AND julianday(stamp)<=julianday(:end) GROUP BY hour""", args).fetchall()
-            hours = {int(r['hour']):r['n'] for r in rows if r['hour'] is not None}
-            totals[key] = sum(hours.values())
-            series[key] = [0] + [sum(n for h,n in hours.items() if h < edge.hour or edge == end and h == edge.hour) for edge in boundaries]
+            # Group first events by Beijing calendar day, then fill quiet days.
+            # Daily values are not running totals and today's card stays today-only.
+            rows = c.execute(f"""SELECT date(stamp,'+8 hours') AS day,COUNT(*) AS n
+                FROM ({source}) WHERE julianday(stamp)>=julianday(:history_start)
+                AND julianday(stamp)<=julianday(:end) GROUP BY day""", args).fetchall()
+            days = {r['day']:r['n'] for r in rows if r['day'] is not None}
+            totals[key] = days.get(dates[-1], 0)
+            series[key] = [days.get(day, 0) for day in dates]
 
         measure('works', 'SELECT created_at AS stamp FROM videos')
         measure('comments', """SELECT MIN(julianday(stamp)) AS stamp FROM (
@@ -116,17 +118,22 @@ def snapshot(mode='live', reference=None):
         measure('batches_partial', "SELECT finished_at AS stamp FROM collection_tasks WHERE status='partial'")
         measure('batches_error', """SELECT finished_at AS stamp FROM collection_tasks
             WHERE status NOT IN ('completed','partial','cancelled') AND finished_at IS NOT NULL""")
-        captcha, captcha_events = captcha_summary(c, start, end)
+        captcha, captcha_events = captcha_summary(c, start, end, history_start)
         for key, passed_only in [('captcha_submitted',False),('captcha_passed',True)]:
-            series[key] = [0] + [sum(stamp <= edge and (passed or not passed_only) for stamp,passed in captcha_events) for edge in boundaries]
+            days = {}
+            for stamp, passed in captcha_events:
+                if passed_only and not passed:
+                    continue
+                day = stamp.astimezone(BEIJING).date().isoformat()
+                days[day] = days.get(day, 0) + 1
+            series[key] = [days.get(day, 0) for day in dates]
         plan = c.execute('SELECT status,next_run_at,last_task_id FROM collection_plans WHERE continuous=1').fetchone()
         last = c.execute('SELECT id,status,detail,created_at,finished_at FROM collection_tasks ORDER BY id DESC LIMIT 1').fetchone()
         queued = c.execute("SELECT COUNT(*) FROM semantic_jobs WHERE status IN ('queued','running','cancelling')").fetchone()[0]
         policy = c.execute("SELECT value FROM settings WHERE key='intent_outreach_policy'").fetchone()
         outreach = bool(json.loads(policy[0]).get('enabled')) if policy else False
     return dict(date=start.date().isoformat(), timezone='Asia/Shanghai', as_of=end.isoformat(),
-                labels=['00:00']+[v.strftime('%H:%M') for v in boundaries],
-                elapsed_hours=[0]+[(v-start).total_seconds()/3600 for v in boundaries],
+                labels=dates, granularity='day', history_days=90,
                 totals=totals, series=series, captcha=captcha, dm=dm,
                 runtime=dict(monitor=dict(plan) if plan else None, latest_batch=dict(last) if last else None,
                              model_pending=queued, outreach_enabled=outreach),

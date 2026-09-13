@@ -120,3 +120,8 @@ window.matchMedia?.('(max-width:700px)').addEventListener('change',event=>{if(!e
 
 
 $('#login-settings-dialog').addEventListener('close',()=>{hidePhone();dirty=false;originDirty=false;render();});
+function settingsBackdrop(event){const d=$('#login-settings-dialog'),r=d.getBoundingClientRect();return event.target===d&&(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom);}
+let settingsBackdropDown=false;
+$('#login-settings-dialog').addEventListener('pointerdown',event=>{settingsBackdropDown=event.button===0&&settingsBackdrop(event);});
+$('#login-settings-dialog').addEventListener('pointercancel',()=>{settingsBackdropDown=false;});
+$('#login-settings-dialog').addEventListener('click',event=>{const dismiss=settingsBackdropDown&&settingsBackdrop(event);settingsBackdropDown=false;if(dismiss)$('#login-settings-dialog').close();});

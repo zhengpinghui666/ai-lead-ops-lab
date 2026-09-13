@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 import clubops as app
 import daily_dashboard as dashboard
@@ -30,11 +30,13 @@ class DailyDashboardTests(unittest.TestCase):
         c.execute("INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,'captcha_workflow',?,?)",
                   (task,json.dumps({'verification':dict(phase=phase,attempt_id='new-id-on-every-phase',submissions=submissions,**extra)}),stamp))
 
-    def test_empty_is_no_attempt_not_zero_percent_and_no_future_hours(self):
+    def test_empty_is_no_attempt_and_calendar_days_end_today(self):
         value = dashboard.snapshot(reference=NOON)
         self.assertIsNone(value['captcha']['pass_rate'])
-        self.assertEqual(value['labels'][-1], '12:30')
-        self.assertEqual(len(value['labels']),14)
+        self.assertEqual(value['labels'][-1], '2026-09-13')
+        self.assertEqual(value['labels'][0], '2026-06-16')
+        self.assertEqual(len(value['labels']),90)
+        self.assertEqual(value['granularity'],'day')
         self.assertIsNone(value['conversions']['orders'])
         self.assertTrue(all(n == 0 for n in value['totals'].values()))
 
@@ -54,6 +56,7 @@ class DailyDashboardTests(unittest.TestCase):
         self.assertEqual(r['legacy_accepted'],1)
         self.assertEqual(r['all_time']['submitted'],4)
         self.assertEqual(v['series']['captcha_passed'][-1],1)
+        self.assertEqual(v['series']['captcha_submitted'][-2:],[1,3])
 
     def test_first_observation_and_first_buyer_survive_repeated_reads_and_reanalysis(self):
         with app.db() as c:
@@ -74,8 +77,26 @@ class DailyDashboardTests(unittest.TestCase):
         self.assertEqual(v['totals']['comments'],1)
         self.assertEqual(v['totals']['modeled'],1)
         self.assertEqual(v['totals']['intent_users'],0,'Already a buyer yesterday, not newly identified today')
-        self.assertEqual(v['series']['comments'][1],1,'UTC midnight boundary belongs to Beijing today')
+        self.assertEqual(v['series']['comments'][-2:], [1,1],'Separate days, not cumulative totals')
         self.assertEqual(v['series']['comments'][-1],1)
+        self.assertEqual(v['series']['modeled'][-2:], [1,1])
+        self.assertEqual(v['series']['intent_users'][-2:], [1,0])
+
+    def test_range_boundary_quiet_days_and_today_do_not_include_future(self):
+        start=NOON.replace(hour=0,minute=0)
+        stamps=[start-timedelta(days=90),start-timedelta(days=89),start-timedelta(days=2),
+                start-timedelta(days=2)+timedelta(hours=4),start,NOON+timedelta(minutes=1)]
+        with app.db() as c:
+            source=c.execute("INSERT INTO sources(name,kind) VALUES('fixture','browser')").lastrowid
+            for i,stamp in enumerate(stamps):
+                c.execute('INSERT INTO videos(source_id,external_id,title,url,created_at) VALUES(?,?,?,?,?)',
+                          (source,str(i),'fixture','https://example.test/'+str(i),stamp.isoformat()))
+        v=dashboard.snapshot(reference=NOON)
+        self.assertEqual(v['series']['works'][0],1)
+        self.assertEqual(v['series']['works'][-3:],[2,0,1])
+        self.assertEqual(sum(v['series']['works']),4)
+        self.assertEqual(v['totals']['works'],1,'Today KPI is not the 90-day total')
+        self.assertTrue(all(len(values)==len(v['labels']) for values in v['series'].values()))
 
     def test_home_does_not_build_full_state_or_collect_network_state(self):
         with patch('clubops.state',side_effect=AssertionError('full state')),patch('server.collection_state',side_effect=AssertionError('collector state')):
