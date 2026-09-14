@@ -406,18 +406,20 @@ def empty_search_wait(c, task):
     The historical function name is retained for callers and old records.
     """
     from urllib.parse import urlsplit,unquote
-    if not task or task['status'] not in ('completed','no_data','network_error') or task['kind']!='search' or task['transport']!='local_browser' or not task['finished_at']:
+    if not task or task['status'] not in ('completed','no_data','network_error','partial') or task['kind']!='search' or task['transport']!='local_browser' or not task['finished_at']:
         return 0
     frozen=worker_config(c,task['id'])
     if not frozen or frozen.get('channel')!='search' or frozen.get('target')!=task['target']:
         return 0
-    if task['status']=='network_error':
+    if task['status'] in ('network_error','partial'):
         import collection_scheduler
-        requested=collection_scheduler.transient_http_wait(c,task)
+        requested=(collection_scheduler.transient_browser_body_wait(c,task,resource_missing_only=True) if task['status']=='partial'
+                   else collection_scheduler.transient_http_wait(c,task))
         if requested is None:return 0
         # A different, recently verified HTTP channel must actually have worked.
         baseline=c.execute("SELECT * FROM collection_tasks WHERE transport='http' AND id<? ORDER BY id DESC LIMIT 1",(task['id'],)).fetchone()
         if not baseline or baseline['status']!='completed' or not baseline['finished_at']:return 0
+        if sum(baseline[k] for k in ('comments','filtered_old','filtered_unknown','filtered_future','filtered_keyword','filtered_blocked'))<=0:return 0
         age=(datetime.fromisoformat(task['finished_at'])-datetime.fromisoformat(baseline['finished_at'])).total_seconds()
         if not 0<=age<=1800:return 0
         if c.execute("SELECT 1 FROM collection_tasks WHERE id>? AND status IN ('needs_login','needs_verification','rate_limited','access_denied','session_expired','identity_failed') LIMIT 1",(baseline['id'],)).fetchone():return 0

@@ -1,5 +1,19 @@
 # ClubOps 接续说明
 
+## 2026-09-14 11:18 搜索正文丢失隔离、原IM会话更新
+
+10:58群修复验收后，评论2511再次partial进入attention。实据为浏览器comment-read HTTP200 JSON响应中body_unavailable/resource_missing，两个作品各一条；其余评论响应业务码0、无invalid_records。浏览器先收到请求响应、但Playwright无法取正文，不是JSON结构已变或平台无评论。旧策略最多对单一正文丢失重试3次，重复冻结同一搜索后停全局。
+
+collection_scheduler.transient_browser_body_wait新增默认false的resource_missing_only选项：仅为搜索隔离允许多个确证resource_missing，所有其他导航/HTTP/结构/未知失败仍不通过；原普通重试仍只允许一个。discovery_tracking.empty_search_wait沿用已有浏览器故障隔离入口，仅partial/search/local_browser且具冻结发现任务、完整逐页质量证据、最近30分钟独立HTTP已完成且实读、期间无登录/验证/限流失败时延后搜索300秒，已有HTTP作品/作者按原轮换继续。原任务partial和断点均不改为completed；这是故障隔离，未修复Chrome缓存正文丢失本身。127项发现/调度/监控回归通过，含多正文丢失、其他错误拒绝、过期或无实读HTTP拒绝、手动暂停保留。
+
+第二轮维护保留包含群修复的源码和双库，正常停260388、原Windows任务启动270536，恢复19群和原业务开关。2512将同3个作品以现有HTTP通道补读：7秒completed，10条一天内评论、60条过旧。恢复后2513搜索partial得以保留并继续HTTP；2514 HTTP会话本地到期后由既有恢复链处理，2515/2516/2517均completed（作品/作者/作品），旧session_expired记录保留。
+
+11:09 IM原认证到本地12小时续验点，身份HTTP通过但IM返回业务码409、sender_matches=false，续验attention并撤销IM可用性。该码的具体平台含义未确定，不放宽验收、不增加自动重试。使用当前34575459517原data/browser-profile、既有bootstrap只读流程更新认证：首次headless默认UA未取得预期响应，第二次沿用collector Desktop Chrome UA后，浏览器响应、关闭浏览器后的身份/IM独立HTTP均通过，DPAPI保存session_ready。没有短信、重新登录、新账号、新配置文件、消息测试或旧联系补发；也不据此单独断言UA是失败原因。恢复原19群，11:17全部running/failures0。
+
+会话准备期间在自然边界暂停评论，再启用时因为历史2514门禁证据仍阻止旧浏览器搜索健康判定，未强行改库。2518对已观察的7609643574329707822做浏览器原profile单作品基线，13秒completed/30条过旧；随后原24h评论计划正常start。最终运行后续结果见artifact。artifacts/search-body-isolation-20260914保存维护、2512/2518基线、会话刷新与最终恢复证据；上一轮群修复源码备份b402d0ca81b0de88ca96ac1e9c87c69bdb38845a已成功，包含本节的后续源码备份以data/github-backup/last-run.json为准。
+
+仍需后续关注：新补入7条普通作品模型任务中3完成（1social、2noise）、4超时；初筛入口已修正，不等于所有模型服务问题已解决。未改变模型超时或自动重试政策。群33的10:41截图原文及10:46:44更新已真实返回；截至11:17共75条，不推断期间一定无人发新消息。常规不应重跑维护脚本或再发测试私信。
+
 ## 2026-09-14 10:58 群公告否定句误排除及需求入口漏筛已修复上线
 
 用户报告群消息只到早上7点，并提供10:42手机截图：瓦搭子群2有Apollo“兄弟们还有办法挽救吗”。不能用已启用群last_read_at更新证明所有已加入群被覆盖。真实当前账号群32–36（瓦搭子群1–5）member=1但matched=0/available/enabled=0；原因是公告“仅面向PC端无畏契约，手游手瓦玩家请勿加入，群内不交流手游相关内容，混入手游玩家直接移出”被严格字面手游排除。读取群33最新页确有02:41:53.972Z同文，普通已启用群18/20并非截图的2群。

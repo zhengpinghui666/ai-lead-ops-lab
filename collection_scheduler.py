@@ -189,7 +189,7 @@ def transient_data_wait(connection, task):
         return None
 
 
-def transient_browser_body_wait(connection, task):
+def transient_browser_body_wait(connection, task, *, resource_missing_only=False):
     """One failed body transfer amid verified pages; preserve partial and retry."""
     if not task or task['transport']!='local_browser' or task['status'] not in ('partial','schema_changed') or not task['finished_at']:
         return None
@@ -216,7 +216,9 @@ def transient_browser_body_wait(connection, task):
             failures=0;successes=0
             for item in responses:
                 if item.get('kind')!='comment' or item.get('status')!=200 or item.get('content_kind')!='json':return None
-                if item.get('body_error') in ('body_timeout','body_unavailable'):failures+=1
+                if item.get('body_error') in ('body_timeout','body_unavailable'):
+                    if resource_missing_only and (item.get('body_error')!='body_unavailable' or item.get('body_failure_reason')!='resource_missing'):return None
+                    failures+=1
                 elif item.get('body_error') or type(item.get('status_code')) is not int or item['status_code']!=0 or item.get('invalid_records')!=0:return None
                 elif item.get('comments_type')=='array' and type(item.get('comments_count')) is int and item['comments_count']>=0:successes+=1
                 elif item.get('comments_type')=='null' and type(item.get('total')) is int and item['total']==0 and type(item.get('has_more')) is int and item['has_more']==0:successes+=1
@@ -225,7 +227,8 @@ def transient_browser_body_wait(connection, task):
             if failures and checkpoints[page]!='partial':return None
             quality[page]=failures;skipped+=info['skipped']
             count+=failures
-        return 0 if count==1 and set(quality)==expected and skipped==task['skipped'] else None
+        acceptable=count>0 if resource_missing_only else count==1
+        return 0 if acceptable and set(quality)==expected and skipped==task['skipped'] else None
     except (ValueError,TypeError,AttributeError):return None
 
 
@@ -528,7 +531,8 @@ def tick(instant=None):
                     detail = p['detail']
                 elif p['continuous'] and p['status']=='running' and discovery_tracking.empty_search_wait(c,task):
                     due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=p['interval_seconds'])).astimezone(timezone.utc).isoformat(timespec='seconds')
-                    detail=('浏览器发现暂时连接失败，保留失败记录并延后搜索；已验证的 HTTP 作品评论继续轮询' if task['status']=='network_error' else '本次搜索未取得合适作品，保留本批记录并延后搜索；已有作品评论继续轮询')
+                    detail=('浏览器评论响应正文丢失，保留部分结果与断点并延后搜索；已验证的 HTTP 作品评论继续轮询' if task['status']=='partial' else
+                            '浏览器发现暂时连接失败，保留失败记录并延后搜索；已验证的 HTTP 作品评论继续轮询' if task['status']=='network_error' else '本次搜索未取得合适作品，保留本批记录并延后搜索；已有作品评论继续轮询')
                 elif p['continuous'] and p['status']=='running' and verification_retry_seconds(c,task):
                     due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=300)).astimezone(timezone.utc).isoformat(timespec='seconds')
                     detail='验证码未通过，样本已记录；暂停 5 分钟后在后台重新加载原监控目标。可随时关闭监控。'

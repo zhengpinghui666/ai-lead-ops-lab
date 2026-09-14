@@ -168,8 +168,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "9796f59afb144a715e9ab7d2ff9b251fb9b805dea836e90b92e52b157699b5fc",
-      "bytes": 93479
+      "sha256": "4ab457383e5dcffa0b129d4fb091cef539ebcbc5d2533015e068e5ad8c3890f4",
+      "bytes": 96917
     },
     {
       "name": "UID_HTTP.md",
@@ -283,8 +283,8 @@
     },
     {
       "name": "collection_scheduler.py",
-      "sha256": "593878685662a9aa1591af86511e20bf1aaa03b8257e8f8f3d69a5a0ca6d8744",
-      "bytes": 42065
+      "sha256": "2ee6ade1d457eec0aa15f4442412204cb12a34afa061a30b11cd25de219885c0",
+      "bytes": 42535
     },
     {
       "name": "collector.py",
@@ -393,8 +393,8 @@
     },
     {
       "name": "discovery_tracking.py",
-      "sha256": "7f3f9a47a77bf47d4585143c260b9d492ee2d28bde6cd75c91d06c2465bfb5b2",
-      "bytes": 35404
+      "sha256": "0f322e7f449fa28efc5659aea0d798c991f61841c1f40db8945726fa4d54346c",
+      "bytes": 35719
     },
     {
       "name": "evaluation/intent-development-v1.json",
@@ -1023,8 +1023,8 @@
     },
     {
       "name": "test_discovery_tracking.py",
-      "sha256": "c7196db4539bc18d425f7a85b9e4073b4748db6aec6ef2d95b3f87480dcc75b6",
-      "bytes": 53680
+      "sha256": "f570054c8511a692266fe68b9ccabb44144355bae451cd28b560d1de214a31c1",
+      "bytes": 58590
     },
     {
       "name": "test_freshness_audit.py",

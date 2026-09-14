@@ -557,6 +557,67 @@ class DiscoveryTrackingTests(unittest.TestCase):
             self.assertEqual(discovery.empty_search_wait(c,row),0)
             self.assertEqual(discovery.choose(c,self.plan(last_task_id=task),NOW)[1],job)
 
+    def missing_browser_bodies(self):
+        task,job=self.empty_search()
+        col.update(task,status='partial',comments=2,finished_at=NOW)
+        snapshots=[]
+        with app.db() as c:
+            c.execute('DELETE FROM collection_diagnostics WHERE task_id=?',(task,))
+            for n in range(2):
+                vid=work(n)['video_id'];url='https://www.douyin.com/video/'+vid
+                c.execute('''INSERT INTO collection_checkpoints(task_id,video_id,video_title,video_url,status,updated_at)
+                    VALUES(?,?,'synthetic',?,'partial',?)''',(task,vid,url,NOW))
+                snapshot=dict(page_url=url,navigation_error='',navigation_http_status=200,
+                    processing=dict(version='comment-quality-v1',recognized=True,invalid_records=0,skipped=0,non_text_skipped=0,parse_errors=1),
+                    responses=[dict(kind='comment',status=200,content_kind='json',body_error='body_unavailable',body_failure_reason='resource_missing'),
+                               dict(kind='comment',status=200,content_kind='json',status_code=0,invalid_records=0,comments_type='array',comments_count=1)])
+                snapshots.append(snapshot)
+                c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                          (task,'comment-read',json.dumps(snapshot),NOW))
+        return task,job,snapshots
+
+    def test_missing_browser_bodies_defer_only_search_and_preserve_partial_records(self):
+        task,job,_=self.missing_browser_bodies()
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            self.assertIsNone(scheduler.transient_browser_body_wait(c,row),'Do not broaden the ordinary retry rule')
+            self.assertEqual(discovery.empty_search_wait(c,row),300)
+            discovery.settle(c,row)
+            self.assertEqual(tuple(c.execute('SELECT status,comments FROM collection_tasks WHERE id=?',(task,)).fetchone()),('partial',2))
+            self.assertEqual([r[0] for r in c.execute('SELECT status FROM collection_checkpoints WHERE task_id=?',(task,))],['partial','partial'])
+            self.assertEqual(discovery.choose(c,self.plan(run_count=3,last_task_id=task),discovery.future(NOW,30))[1]['channel'],'work')
+            self.assertEqual(c.execute('SELECT next_check_at FROM discovery_queries WHERE keyword=?',(job['target'],)).fetchone()[0],discovery.future(NOW,300))
+
+    def test_browser_body_isolation_rejects_unknown_failures_or_unproven_http(self):
+        task,job,snapshots=self.missing_browser_bodies()
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            for change in (dict(body_failure_reason='unknown'),dict(body_error='invalid_json'),dict(status=429),dict(status=403)):
+                altered=json.loads(json.dumps(snapshots[0]));altered['responses'][0].update(change)
+                c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE task_id=? AND id=(SELECT MIN(id) FROM collection_diagnostics WHERE task_id=?)',(json.dumps(altered),task,task))
+                self.assertEqual(discovery.empty_search_wait(c,row),0,change)
+                self.assertEqual(discovery.choose(c,self.plan(last_task_id=task),NOW)[1],job)
+            c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE task_id=? AND id=(SELECT MIN(id) FROM collection_diagnostics WHERE task_id=?)',(json.dumps(snapshots[0]),task,task))
+            for change in ("status='identity_failed'", "finished_at='2026-09-11T00:00:00+00:00'", 'comments=0,filtered_old=0,filtered_unknown=0,filtered_future=0,filtered_keyword=0,filtered_blocked=0'):
+                c.execute('SAVEPOINT baseline_case')
+                c.execute('UPDATE collection_tasks SET '+change+' WHERE id=?',(self.base,))
+                self.assertEqual(discovery.empty_search_wait(c,row),0,change)
+                c.execute('ROLLBACK TO baseline_case');c.execute('RELEASE baseline_case')
+
+    def test_monitor_can_resume_after_verified_browser_body_isolation(self):
+        monitor=monitoring.save(dict(transport='local_browser'))
+        task,_,_=self.missing_browser_bodies()
+        with app.db() as c:c.execute("UPDATE collection_plans SET status='attention',last_task_id=? WHERE id=?",(task,monitor['id']))
+        self.assertTrue(monitoring.command('start')['enabled'])
+        scheduler.tick(NOW)
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_plans WHERE id=?',(monitor['id'],)).fetchone()
+            self.assertEqual(row['status'],'running')
+            self.assertIn('正文丢失',row['detail'])
+        monitoring.command('stop')
+        scheduler.tick(discovery.future(NOW,301))
+        with app.db() as c:self.assertEqual(c.execute('SELECT status FROM collection_plans WHERE id=?',(monitor['id'],)).fetchone()[0],'paused')
+
     def test_browser_outage_does_not_isolate_login_verification_or_unknown_errors(self):
         task,_=self.empty_search(navigation_http_status=502)
         col.update(task,status='network_error')
