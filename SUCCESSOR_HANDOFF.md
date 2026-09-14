@@ -8,7 +8,9 @@
 
 通知现状必须如实说明：scripts/monitor-health.py每分钟只读；Codex原clubops任务每小时，目标01a09666-68bb-7860-979d-b3415b851bed。monitor-incident写库并不调用Codex，没有推送接收或确认。官方文档 https://learn.chatgpt.com/docs/automations?surface=app 说明事件触发只覆盖受支持的Gmail/Slack/GitHub且不适用于桌面；https://learn.chatgpt.com/docs/app-server 公开thread/resume与turn/start供自行集成，但当前项目未接入，也不能把单独启动另一个app-server等同于已连接当前桌面对话。此次未另建AI任务、擅自缩短周期或承诺秒级唤醒。健康文件现在标注feedback.mode=local_only、codex_push_connected=false，并附实际失败任务状态和结束时间；这只是透明诊断，绝不能宣称通知链路已修好。
 
-源码/双库回退及本次运行证据：artifacts/monitor-incident-20260914。最终重启及批次验证以后续验收文件为准；未恢复旧直播457限流和人工停用的收件入口。
+实际存储复核发现collector.py诊断白名单原先丢弃新的loading字段；已补入严格固定值校验（仅comment-loading-v2、video_shell或comment_panel、8000ms），并加入真实col.run消息入库后由调度器判定的集成测试，避免仅两端各自通过。补齐后146项采集/监控/调度/发现回归通过。第一次托管正常重启270536→261656，2582完成12条新增、27条过旧；补齐入库后第二次正常重启261656→266684，2586自动author completed，后续批次证据见验收文件。19群原范围及业务计数跨两次重启保持，双库quick_check=ok。
+
+源码/双库回退及本次运行证据：artifacts/monitor-incident-20260914与artifacts/monitor-incident-storage-20260914（第二目录仍保留本次整个修复前源码用于整体回退）。第一轮远端备份78fe45cfb1f9781c18c33773c46f3a8465f0212b，最终包含入库修复的备份以data/github-backup/last-run.json为准。未恢复旧直播457限流和人工停用的收件入口。后续不要重复调用已成功pause的维护脚本而覆盖原开启意图。
 
 ## 2026-09-14 11:18 搜索正文丢失隔离、原IM会话更新
 

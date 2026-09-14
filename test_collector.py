@@ -197,6 +197,29 @@ class CollectorTests(unittest.TestCase):
         self.assertNotIn('SECRET',t['detail'])
         self.assertFalse(t['active'])
 
+    def test_loading_evidence_reaches_scheduler_through_real_worker_storage(self):
+        import collection_scheduler as scheduler
+        video='7600000000000000001';url='https://www.douyin.com/video/'+video
+        task_id=self.start(kind='video',target=url)
+        snapshot=dict(page_url=url,navigation_http_status=200,navigation_error='',responses=[],
+            visible_text='全部评论\n留下你的精彩评论吧\n加载中',
+            loading=dict(version='comment-loading-v2',state='comment_panel',wait_ms=8000),
+            headers='PRIVATE_SENTINEL')
+        messages=[dict(type='targets',records=[dict(video_id=video,video_url=url,video_title='合成测试')])]
+        messages += [dict(type='diagnostic',stage=stage,snapshot=snapshot) for stage in ('comment-loading','comment-loading-timeout')]
+        messages.append(dict(type='status',status='network_error',detail='Synthetic loading timeout'))
+        process=Mock(stdin=io.StringIO(),stdout=io.StringIO(''.join(json.dumps(m)+'\n' for m in messages)))
+        process.poll.return_value=0;process.wait.return_value=0
+        with patch('collector.subprocess.Popen',return_value=process):col.run(task_id,col.ACTIVE[task_id])
+        with app.db() as c:
+            task=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task_id,)).fetchone()
+            self.assertEqual(scheduler.transient_http_wait(c,task),0)
+            self.assertEqual(task['status'],'network_error')
+            self.assertEqual(task['comments'],0)
+            for row in c.execute('SELECT snapshot FROM collection_diagnostics WHERE task_id=?',(task_id,)):
+                self.assertNotIn('PRIVATE_SENTINEL',row[0])
+                self.assertEqual(json.loads(row[0])['loading'],snapshot['loading'])
+
     def test_worker_http_failure_evidence_survives_diagnostic_storage(self):
         task_id=self.start()
         messages=[{'type':'diagnostic','stage':'finished-error','snapshot':{

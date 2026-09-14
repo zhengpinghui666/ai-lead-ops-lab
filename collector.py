@@ -592,8 +592,12 @@ def run(task_id, control):
                     c.execute('UPDATE collection_tasks SET skipped=skipped+? WHERE id=?', (min(500, max(0, int(message.get('count', 1)))), task_id))
             elif typ == 'diagnostic':
                 snapshot = message.get('snapshot', {})
+                loading = snapshot.get('loading')
                 allowed = {'title', 'page_url', 'visible_text', 'video_links', 'responses', 'navigation_error', 'navigation_http_status', 'navigation_retry_after_seconds', 'processing'}
                 snapshot = {k: v for k, v in snapshot.items() if k in allowed}
+                if loading in (dict(version='comment-loading-v2',state='video_shell',wait_ms=8000),
+                               dict(version='comment-loading-v2',state='comment_panel',wait_ms=8000)):
+                    snapshot['loading'] = loading
                 encoded = json.dumps(snapshot, ensure_ascii=False)
                 if len(encoded) <= 20000:
                     with app.db() as c:
