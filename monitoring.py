@@ -33,6 +33,8 @@ def state(mode='live'):
             page_concurrency=1, include_keywords='', exclude_keywords='', status='paused', detail='监控未开启；默认只接收最近 1 小时发布的评论',
             next_run_at=None, run_count=0, settled_count=0, last_task_id=None)
         task_id = result['last_task_id']
+        import collection_accounts
+        result['collection_account']=collection_accounts.binding(c,task_id) if task_id else None
         control = collector.ACTIVE.get(task_id) if mode == 'live' else None
         result.update(enabled=result['status'] == 'running', active_task_id=task_id if control else None,
             freshness_target_seconds=freshness_target(c),

@@ -25,7 +25,7 @@ function passed(name){cases++;console.log('PASS '+name);}
     await context.route('**/*',async route=>{
       requests++;const u=new URL(route.request().url());
       if(u.href===top)return route.fulfill({contentType:'text/html',body:`<body>本地合成采集页面<div ${options.outer?'':'id="captcha_container"'} style="margin:60px"><iframe style="border:0;width:300px;height:230px" src="https://captcha.fixture.invalid/frame"></iframe>${options.duplicate?'<iframe src="https://captcha.fixture.invalid/frame"></iframe>':''}</div></body>`});
-      if(u.hostname==='captcha.fixture.invalid'&&u.pathname.startsWith('/frame'))return route.fulfill({contentType:'text/html',body:childHTML()});
+      if(u.hostname==='captcha.fixture.invalid'&&u.pathname.startsWith('/frame')){if(options.lateFrame)await new Promise(r=>setTimeout(r,3500));return route.fulfill({contentType:'text/html',body:childHTML()});}
       if(['captcha.fixture.invalid','images.fixture.invalid'].includes(u.hostname)&&['/background.png','/target.png'].includes(u.pathname)){
         if(options.delay&&u.pathname==='/target.png')await new Promise(r=>setTimeout(r,500));
         return route.fulfill({contentType:'image/png',body:bytes[u.pathname.slice(1,-4)]});
@@ -33,7 +33,7 @@ function passed(name){cases++;console.log('PASS '+name);}
       await route.abort();throw Error('Unexpected fixture URL');
     });
     const page=await context.newPage();
-    async function load(value={}){options=value;await page.goto(top,{waitUntil:value.delay?'domcontentloaded':'load'});}
+    async function load(value={}){options=value;await page.goto(top,{waitUntil:value.delay||value.lateFrame?'domcontentloaded':'load'});}
     await load();
     assert.equal(await promptVisible(page),true);
     const challenge=await capture(page);
@@ -67,6 +67,7 @@ function passed(name){cases++;console.log('PASS '+name);}
     await load({outer:true,click:true});assert.equal(await promptVisible(page),true);
     assert.deepEqual(await capture(page),{reason:'point_prompt_or_image_unsupported',adapter:'douyin_same_shape_pair'});
     passed('observed outer-frame point-selection structure is identified without slider action');
+    await load({outer:true,lateFrame:true});assert.ok((await capture(page)).payload);passed('delayed outer captcha frame loads beyond the former two-second budget');
     await load({outer:true});assert.ok((await capture(page)).payload);
     await page.locator('iframe').evaluate(el=>el.hidden=true);
     assert.equal(await promptVisible(page),false,'Hidden outer frame must not block recovered reads');

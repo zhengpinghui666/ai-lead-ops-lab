@@ -4,6 +4,7 @@ Each endpoint has its own URL-scoped cookie set. No credential export, automatic
 browser launch, session renewal, IM mutation, or plaintext fallback.
 """
 import json
+import os
 import hashlib
 import math
 from pathlib import Path
@@ -35,7 +36,7 @@ MAX_AGE = 12 * 3600
 
 
 def path(directory=None):
-    return (Path(directory) if directory is not None else runtime.data_dir()) / 'private' / 'collection-http' / 'session.dpapi'
+    return (Path(directory) if directory is not None else Path(os.environ['CLUBOPS_COLLECTION_ACCOUNT_DATA_DIR']) if os.environ.get('CLUBOPS_COLLECTION_ACCOUNT_DATA_DIR') else runtime.data_dir()) / 'private' / 'collection-http' / 'session.dpapi'
 
 
 def validate(value):

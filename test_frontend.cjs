@@ -175,6 +175,12 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.match(trimmedChart,/从 2026-09-11 开始/);
   assert.match(trimmedChart,/2026-09-12 · 当日 0/,'Quiet days between real activity must remain');
   assert.equal((trimmedChart.match(/<circle /g)||[]).length,6);
+  const rateChart=run(`dailyChart({granularity:'day',date:'2026-09-13',labels:['2026-09-10','2026-09-11','2026-09-12','2026-09-13'],series:{captcha_rate_sms:[null,0,null,100]}},'每日短信通过率','未尝试留空',[['captcha_rate_sms','短信','#087f77']])`);
+  assert.match(rateChart,/从 2026-09-11 开始/,'Actual zero-percent days must not be trimmed');
+  assert.equal((rateChart.match(/<circle /g)||[]).length,2,'No fake zero points on days without attempts');
+  assert.match(rateChart,/<td>2026-09-12<\/td><td>—<\/td>/);
+  assert.match(rateChart,/当日 100%/);assert.doesNotMatch(rateChart,/NaN/);
+  assert.match(run(`incidentFeedback({runtime:{feedback:{realtime_connected:true,last_delivery:{id:'event-1',status:'needs_user',created_at:1789373518,updated_at:1789373986,received_at:1789373544}}}})`),/已接手，需人工核验/);
   const demandDetail=run('leadDetail(S.leads[0])');
   assert.ok(!demandDetail.includes('俱乐部候选人员'));
   assert.ok(!demandDetail.includes('暂无符合已知条件的可用人员'));

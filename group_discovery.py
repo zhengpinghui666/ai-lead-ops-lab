@@ -131,7 +131,8 @@ def reconcile(account,*,reader=None):
         for row in c.execute('''SELECT a.group_id,g.id,g.status,g.enabled,g.matched,g.member FROM public_group_attempts a
           JOIN monitored_groups g ON g.account_uid=a.account_uid AND g.conversation_id=a.group_id
           WHERE a.account_uid=? AND a.status!='joined' ''',(account,)).fetchall():
-            if not row['member']:continue
+            import group_lifecycle
+            if not row['member'] or group_lifecycle.excluded(c,account,row['group_id']):continue
             c.execute("UPDATE public_group_attempts SET status='joined',updated_at=? WHERE account_uid=? AND group_id=?",(app.now(),account,row['group_id']))
             mark(c,account,row['group_id'],'joined')
             # A manually paused group stays paused even if an application is later approved.
@@ -290,6 +291,7 @@ def run(account,*,client_factory=None,catalog_reader=None):
           AND (g.status='candidate' OR (g.status='follow_wait' AND g.checked_at<=?))
           AND g.list_status IN (0,1,2,9,10) AND g.checked_at>=?
           AND NOT EXISTS(SELECT 1 FROM public_group_attempts a WHERE a.account_uid=g.account_uid AND a.group_id=g.group_id)
+          AND NOT EXISTS(SELECT 1 FROM group_exits e WHERE e.account_uid=g.account_uid AND e.conversation_id=g.group_id)
           AND NOT EXISTS(SELECT 1 FROM monitored_groups m WHERE m.account_uid=g.account_uid AND m.conversation_id=g.group_id)
           ORDER BY (instr(g.name,'搭子')>0 OR instr(g.name,'组队')>0 OR instr(g.name,'开黑')>0 OR instr(g.name,'一起打瓦')>0) DESC,
           g.checked_at DESC,g.group_id LIMIT 5''',(account,monitor.stamp_after(-3600),monitor.stamp_after(-21600))).fetchall()

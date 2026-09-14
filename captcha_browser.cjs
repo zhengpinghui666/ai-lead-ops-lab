@@ -152,11 +152,14 @@ async function observedImages(page,check){
 }
 
 async function capture(page,{check=()=>{}}={}){
-  const deadline=Date.now()+2000;
-  for(let i=0;i<9;i++){
+  const started=Date.now();
+  for(let i=0;i<49;i++){
     check();const value=await captureOnce(page,{check});check();
     if(value.payload)return value;
-    if(!/_missing$|_hidden$|_not_ready$/.test(value.reason)||Date.now()>=deadline||i===8){
+    // The interstitial can precede its cross-origin frame by several seconds.
+    // Wait for that frame without refreshing, submitting or replacing a challenge.
+    const budget=/^(?:frame|prompt)_not_ready$/.test(value.reason)?12000:2000;
+    if(!/_missing$|_hidden$|_not_ready$/.test(value.reason)||Date.now()-started>=budget||i===48){
       try{const evidence=await observedImages(page,check);if(evidence)value.evidence_payload=evidence;}catch{check();}
       return value;
     }

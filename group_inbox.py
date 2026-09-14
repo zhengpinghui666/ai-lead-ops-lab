@@ -17,7 +17,8 @@ def group_row(row):
         raise inbox.ReadError('conversation_identity_mismatch')
     return dict(conversation_id=cid,conversation_short_id=str(short),name=wire.text(core,5)[:200],
                 description=wire.text(core,6)[:500],notice=wire.text(core,9)[:1000],
-                member=inbox._flag(row,8),participants=inbox._number(wire.one(row,7,0,0)),inbox=0)
+                member=inbox._flag(row,8),participants=inbox._number(wire.one(row,7,0,0)),inbox=0,
+                admin_only=wire.one(core,14,0,0)==1 and wire.one(core,15,0,0)==1)
 
 
 DEFAULT_CATALOG_LIMIT = 5

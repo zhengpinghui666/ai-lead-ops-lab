@@ -148,9 +148,13 @@ def _phase(control, phase):
         if control['cancel'].is_set() and phase not in FINISHED:
             phase = 'cancelling'
         control['public'].update(status=phase, updated_at=time.time())
+        if phase=='code_filled':
+            control['public'].setdefault('sms_submitted_at',control['public']['updated_at'])
         history = _history()
         history = [row for row in history if row.get('id') != control['public']['id']]
         _write(_file('jobs.json'), (history + [dict(control['public'])])[-30:])
+        import login_metrics
+        login_metrics.record(control['public'])
 
 
 def _task(task_id):
@@ -159,6 +163,10 @@ def _task(task_id):
         raise ValueError('采集任务 ID 无效')
     with app.db() as connection:
         row = connection.execute('SELECT * FROM collection_tasks WHERE id=?', (task_id,)).fetchone()
+        import collection_accounts
+        assigned=collection_accounts.binding(connection,task_id)
+        if assigned and assigned['storage']=='isolated':
+            raise ValueError(f"采集账号 {assigned['account_id']} 需要在其独立登录环境恢复；不能覆盖私信账号的主登录状态")
     eligible = row and ((row['transport'] == 'http' and row['status'] in LOGIN_FAILURES)
                         or (row['transport'] == 'local_browser' and row['status'] == 'needs_login'))
     if not eligible or not row['finished_at'] or task_id in collector.ACTIVE:

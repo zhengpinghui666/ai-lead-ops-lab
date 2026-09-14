@@ -36,6 +36,24 @@ class BridgeTests(unittest.TestCase):
             self.assertIsNone(self.bridge.dispatch(runner=self.runner))
         self.runner.assert_not_called()
 
+    def test_maintenance_does_not_reopen_an_acknowledged_channel_fault(self):
+        failure=report('attention',2875,'needs_verification')
+        self.bridge.observe(failure);did=self.bridge.dispatch(runner=self.runner)
+        self.bridge.acknowledge(did,'received');self.bridge.acknowledge(did,'needs_user')
+        self.bridge.hold(30);self.bridge.observe({});self.now+=10
+        self.bridge.observe(report('paused'));self.bridge.hold(0)
+        self.bridge.observe(failure)
+        self.assertIsNone(self.bridge.dispatch(runner=self.runner))
+        self.runner.assert_called_once()
+
+    def test_service_loss_cannot_clear_known_channel_incident(self):
+        failure=report('attention',2875,'needs_verification')
+        self.bridge.observe(failure);did=self.bridge.dispatch(runner=self.runner)
+        self.bridge.acknowledge(did,'received');self.bridge.acknowledge(did,'needs_user')
+        self.bridge.observe({});self.bridge.observe(failure)
+        self.assertIsNone(self.bridge.dispatch(runner=self.runner))
+        self.runner.assert_called_once()
+
     def test_durable_queue_receipt_deduplication_and_resolution(self):
         failure=report('attention')
         self.bridge.observe(failure)

@@ -43,6 +43,9 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                 raise http.ReadError('needs_login') from None
             except Exception:
                 raise http.ReadError('session_expired') from None
+            assigned=config.get('collection_account')
+            if assigned and (session['account']!=assigned['account_id'] or session['sender_uid']!=assigned['sender_uid']):
+                raise http.ReadError('identity_failed',{'reason':'collection_account_mismatch'})
             client = http.Client(session, cancelled=lambda: cancel.is_set() or stopped.is_set(), diagnostic=diagnostic,
                                  comment_since=config.get('comment_since'))
             operation = {'search': 'search', 'author': 'detail'}.get(config['kind'], 'comments') if not config.get('resume_targets') else 'comments'
@@ -50,7 +53,8 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
             identity = (identity_probe or uid_bootstrap.probe)({'expected_account': session['account'],
                 'cookie': sessions.cookie_header(session, 'identity'), 'user_agent': session['user_agent']})
             diagnostic({'operation': 'identity', 'transport': 'http', 'status': identity['status'],
-                'identity_check_version': 'identity-check-v2',
+                'identity_check_version': 'identity-check-v2', 'collection_account':session['account'],
+                'collection_sender_uid':identity.get('sender_uid'),
                 **{k: identity[k] for k in ('http_status', 'response_bytes', 'response_sha256', 'business_code',
                     'user_present', 'verification_indicated', 'transport_error', 'transport_phase', 'http_attempts') if k in identity}})
             if cancel.is_set():

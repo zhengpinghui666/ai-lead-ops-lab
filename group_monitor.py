@@ -113,6 +113,8 @@ def discover(*,reader=None):
             for old in c.execute('SELECT id,conversation_id FROM monitored_groups WHERE account_uid=?',(account,)).fetchall():
                 if old['conversation_id'] not in seen:
                     c.execute("UPDATE monitored_groups SET member=0,enabled=0,status='unavailable',detail='当前账号群目录已无此群' WHERE id=?",(old['id'],))
+        import group_lifecycle
+        group_lifecycle.observe(c,account,rows,complete)
         c.execute('INSERT INTO group_reads(account_uid,operation,status,detail,created_at) VALUES(?,?,?,?,?)',
                   (account,'catalog','completed',json.dumps(dict(count=len(rows),complete=complete,evidence=proof)),app.now()))
     return dict(discovered=len(rows),matched=sum(match(r) and r['member'] for r in rows),complete=complete)
@@ -133,6 +135,9 @@ def control(body,mode='live'):
     with GUARD,app.LOCKS[mode],app.db(mode) as c:
         row=c.execute('SELECT * FROM monitored_groups WHERE id=? AND account_uid=?',(rid,account)).fetchone()
         if not row:raise ValueError('当前账号群记录不存在')
+        import group_lifecycle
+        if body['enabled'] and group_lifecycle.excluded(c,account,row['conversation_id']):
+            raise ValueError('该群已按发言权限排除，不再自动加入或开启监控')
         if body['enabled'] and (not row['member'] or not row['matched'] or not match(dict(row)) or not fresh(row['checked_at'])):
             raise ValueError('请先刷新群目录，仅能监控已加入且符合范围的群')
         c.execute('UPDATE monitored_groups SET enabled=?,status=?,detail=?,next_run_at=? WHERE id=?',
@@ -257,6 +262,16 @@ def tick(*,reader=None,catalog_reader=None):
     if STOP.is_set() or not GUARD.acquire(blocking=False):return
     acquired=False;group=None;operation='catalog'
     try:
+        import group_lifecycle
+        with app.db() as c:
+            exit_pending=c.execute("SELECT 1 FROM group_exits WHERE account_uid=? AND status='queued'",(uid_inbox_store._account(),)).fetchone()
+        if exit_pending:
+            acquired=uid_messaging.GUARD.acquire(blocking=False)
+            if not acquired:return
+            ACTIVE=True
+            group_lifecycle.process_one(uid_inbox_store._account())
+            discover(reader=catalog_reader)
+            return
         with app.db() as c:
             group=c.execute('SELECT * FROM monitored_groups WHERE enabled=1 AND account_uid=? AND next_run_at<=? ORDER BY next_run_at,id LIMIT 1',(uid_inbox_store._account(),app.now())).fetchone()
         if not group:return

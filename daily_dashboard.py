@@ -8,6 +8,7 @@ import json
 import clubops as app
 
 BEIJING = timezone(timedelta(hours=8))
+CAPTCHA_TYPES = {'slider':'滑块拼图','same_shape':'同形点选','sms':'短信验证码','other':'其他／未识别类型'}
 
 
 def parsed(value):
@@ -30,8 +31,11 @@ def captcha_summary(c, start, end, event_start=None):
             v = json.loads(row['snapshot'])['verification']
         except (ValueError, KeyError, TypeError):
             continue
-        b = batches.setdefault(row['task_id'], dict(at=stamp, submitted_at=None, passed=False, failed=False, legacy=False))
+        b = batches.setdefault(row['task_id'], dict(at=stamp, submitted_at=None, passed=False, failed=False, legacy=False,kind='other'))
         b['at'] = min(b['at'], stamp)
+        adapter=v.get('adapter','')
+        if adapter=='douyin_same_shape_pair':b['kind']='same_shape'
+        elif adapter in ('douyin_iframe_slider','legacy_slider_dom','douyin_embedded_dom') and (v.get('submissions')==1 or v.get('phase') in ('recognizing','submitting','verifying','accepted')):b['kind']='slider'
         if v.get('submissions') == 1:
             b['submitted_at'] = min(b['submitted_at'] or stamp, stamp)
         if v.get('phase') == 'accepted':
@@ -42,9 +46,15 @@ def captcha_summary(c, start, end, event_start=None):
         if v.get('platform_verdict') == 'failed':
             b['failed'] = True
 
-    def summarize(begin):
-        encounters = [b for b in batches.values() if begin <= b['at'] <= end]
-        submitted = [b for b in batches.values() if b['submitted_at'] and begin <= b['submitted_at'] <= end]
+    for row in c.execute('SELECT * FROM login_verification_metrics'):
+        at=parsed(row['encountered_at']);submitted=parsed(row['submitted_at']);passed_at=parsed(row['passed_at'])
+        if not at or at>end:continue
+        batches['sms:'+row['job_id']]=dict(at=at,submitted_at=submitted,passed=bool(passed_at and passed_at<=end),failed=False,legacy=False,kind='sms',time_basis=row['time_basis'])
+
+    def summarize(begin,finish=end,kind=None):
+        selected=[b for b in batches.values() if kind is None or b['kind']==kind]
+        encounters = [b for b in selected if begin <= b['at'] <= finish]
+        submitted = [b for b in selected if b['submitted_at'] and begin <= b['submitted_at'] <= finish]
         passed = sum(b['passed'] for b in submitted)
         failed = sum(b['failed'] and not b['passed'] for b in submitted)
         return dict(encounters=len(encounters), submitted=len(submitted), passed=passed,
@@ -54,6 +64,14 @@ def captcha_summary(c, start, end, event_start=None):
                     pass_rate=round(passed/len(submitted)*100, 1) if submitted else None)
     today = summarize(start)
     today['all_time'] = summarize(datetime.min.replace(tzinfo=timezone.utc))
+    today['types']=[dict(key=key,name=name,**summarize(start,kind=key)) for key,name in CAPTCHA_TYPES.items()]
+    today['daily']=[]
+    day=(event_start or start).astimezone(BEIJING)
+    while day<=end:
+        finish=min(end,day+timedelta(days=1)-timedelta(microseconds=1))
+        today['daily'].append(dict(date=day.date().isoformat(),types=[dict(key=key,name=name,**summarize(day,finish,key)) for key,name in CAPTCHA_TYPES.items()]))
+        day+=timedelta(days=1)
+    today['historical_sms_time_count']=sum(b.get('time_basis')=='historical_result_time' for b in batches.values())
     events = [(b['submitted_at'], b['passed']) for b in batches.values()
               if b['submitted_at'] and (event_start or start) <= b['submitted_at'] <= end]
     return today, events
@@ -119,6 +137,10 @@ def snapshot(mode='live', reference=None):
         measure('batches_error', """SELECT finished_at AS stamp FROM collection_tasks
             WHERE status NOT IN ('completed','partial','cancelled') AND finished_at IS NOT NULL""")
         captcha, captcha_events = captcha_summary(c, start, end, history_start)
+        for key in CAPTCHA_TYPES:
+            series['captcha_rate_'+key]=[next(t['pass_rate'] for t in day['types'] if t['key']==key) for day in captcha['daily']]
+        first_captcha=next((i for i,day in enumerate(captcha['daily']) if any(t['encounters'] or t['submitted'] for t in day['types'])),None)
+        captcha['daily']=captcha['daily'][first_captcha:] if first_captcha is not None else []
         for key, passed_only in [('captcha_submitted',False),('captcha_passed',True)]:
             days = {}
             for stamp, passed in captcha_events:
@@ -129,14 +151,26 @@ def snapshot(mode='live', reference=None):
             series[key] = [days.get(day, 0) for day in dates]
         plan = c.execute('SELECT status,next_run_at,last_task_id FROM collection_plans WHERE continuous=1').fetchone()
         last = c.execute('SELECT id,status,detail,created_at,finished_at FROM collection_tasks ORDER BY id DESC LIMIT 1').fetchone()
+        last=dict(last) if last else None
+        if last:
+            import collection_accounts
+            last['collection_account']=collection_accounts.binding(c,last['id'])
+            verification=c.execute("SELECT snapshot FROM collection_diagnostics WHERE task_id=? AND stage='captcha_workflow' ORDER BY id DESC LIMIT 1",(last['id'],)).fetchone()
+            if verification:
+                try:
+                    raw=json.loads(verification[0]).get('verification',{})
+                    last['verification']={key:raw[key] for key in ('phase','adapter','reason','submissions') if key in raw}
+                except (ValueError,TypeError):pass
         queued = c.execute("SELECT COUNT(*) FROM semantic_jobs WHERE status IN ('queued','running','cancelling')").fetchone()[0]
         policy = c.execute("SELECT value FROM settings WHERE key='intent_outreach_policy'").fetchone()
         outreach = bool(json.loads(policy[0]).get('enabled')) if policy else False
+    import incident_bridge
+    feedback=incident_bridge.feedback(app.DATA_DIR) if mode=='live' else dict(mode='demo',realtime_connected=False)
     return dict(date=start.date().isoformat(), timezone='Asia/Shanghai', as_of=end.isoformat(),
                 labels=dates, granularity='day', history_days=90,
                 totals=totals, series=series, captcha=captcha, dm=dm,
                 runtime=dict(monitor=dict(plan) if plan else None, latest_batch=dict(last) if last else None,
-                             model_pending=queued, outreach_enabled=outreach),
+                             model_pending=queued, outreach_enabled=outreach, feedback=feedback),
                 conversions=dict(official_account_follows=None,customer_service_adds=None,orders=None))
 
 

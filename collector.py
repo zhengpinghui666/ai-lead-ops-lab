@@ -109,7 +109,9 @@ def state(mode='live'):
             placeholders = ','.join('?' for _ in ids)
             for row in c.execute(f"SELECT task_id,snapshot FROM collection_diagnostics WHERE task_id IN ({placeholders}) AND stage='captcha_workflow' ORDER BY id", ids):
                 verification_by_task.setdefault(row['task_id'], []).append(json.loads(row['snapshot'])['verification'])
+        import collection_accounts
         for task in tasks:
+            task['collection_account']=collection_accounts.binding(c,task['id'])
             verification = verification_by_task.get(task['id'], [])
             task['verification'] = verification[-1] if verification else None
             task['verification_counts'] = {
@@ -127,12 +129,13 @@ def state(mode='live'):
     with GUARD:
         for task in tasks:
             task['active'] = task['id'] in ACTIVE if mode == 'live' else False
-    http_state = collector_http.runtime_status(app.DATA_DIR)
+    selected_account=next((t.get('collection_account') for t in tasks if t.get('collection_account')),None)
+    http_state = collector_http.runtime_status(collection_accounts.directory(selected_account))
     http_state['live_verified'] = any(t['transport'] == 'http' and t['status'] in ('completed','partial') and t['comments'] > 0 for t in tasks)
     return {'available': bool(shutil.which(node) or Path(node).is_file()) and package.is_dir(), 'tasks': tasks,
             'source_id': source['id'] if source else None, 'last_received': source['last_received'] if source else None,
             'transport': 'selectable', 'http': http_state, 'verification': captcha_runtime.status(),
-            'mode': 'bounded_batch', 'external_sender': False, 'candidate_pool': candidates}
+            'accounts': collection_accounts.state(mode), 'mode': 'bounded_batch', 'external_sender': False, 'candidate_pool': candidates}
 
 
 def record_verification(task_id, value):
@@ -218,6 +221,8 @@ def start(body, mode='live', *, resume_from=None, lookback_hours=None, include_k
             comment_since = (datetime.fromisoformat(t) - timedelta(hours=lookback_hours)).isoformat(timespec='seconds')
         task_id = c.execute('INSERT INTO collection_tasks(request_id,kind,target,video_limit,comment_limit,interactive,status,detail,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)', (request_id, kind, target, videos, comments, interactive, 'queued', '等待后端 HTTP 读取' if transport == 'http' else '等待本机浏览器启动', t, t)).lastrowid
         c.execute('UPDATE collection_tasks SET transport=? WHERE id=?', (transport, task_id))
+        import collection_accounts
+        collection_accounts.bind(c,task_id,kind,resume_from=resume_from)
         c.execute('UPDATE collection_tasks SET page_concurrency=?,lookback_hours=?,comment_since=?,include_keywords=?,exclude_keywords=? WHERE id=?', (concurrency, lookback_hours, comment_since, include_keywords, exclude_keywords, task_id))
         if discovery_job:
             import discovery_tracking
@@ -495,6 +500,9 @@ def run(task_id, control):
     try:
         with app.db() as c:
             task = dict(c.execute('SELECT * FROM collection_tasks WHERE id=?', (task_id,)).fetchone())
+            import collection_accounts
+            account_binding=collection_accounts.for_task(c,task_id)
+            account_directory=collection_accounts.directory(account_binding)
             resumed = c.execute('SELECT 1 FROM collection_resumes WHERE task_id=?', (task_id,)).fetchone()
             resume_targets = [dict(r) for r in c.execute('SELECT video_id,video_title,video_url FROM collection_checkpoints WHERE task_id=? ORDER BY rowid', (task_id,))] if resumed else []
             known_titles, known_metrics = cached_video_metadata(c, task, control['source_id'], resume_targets)
@@ -513,12 +521,13 @@ def run(task_id, control):
                 update(task_id, status='dependency_missing', detail='缺少 Node 或 Playwright；运行 python manage.py doctor --require-browser 检查依赖', finished_at=app.now())
                 return
             command_line = [node, str(BASE / 'collector_worker.cjs')]
-        env = {**os.environ, 'CLUBOPS_PLAYWRIGHT': str(package), 'CLUBOPS_DATA_DIR': str(app.DATA_DIR), 'PYTHONIOENCODING': 'utf-8'}
+        env = {**os.environ, 'CLUBOPS_PLAYWRIGHT': str(package), 'CLUBOPS_DATA_DIR': str(app.DATA_DIR), 'PYTHONIOENCODING': 'utf-8', 'CLUBOPS_COLLECTION_ACCOUNT_DATA_DIR':str(account_directory)}
         process = subprocess.Popen(command_line, cwd=BASE, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                    text=True, encoding='utf-8', bufsize=1, env=env, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         with GUARD:
             control['process'] = process
-        config = {**task, 'profile_dir': str(app.DATA_DIR / 'browser-profile'), 'resume_targets': resume_targets,
+        config = {**task, 'profile_dir': str(account_directory / 'browser-profile'), 'resume_targets': resume_targets,
+                  'collection_account': account_binding,
                   'candidate_policy': candidate_policy, 'discovery_job': discovery_job,
                   'resolve_video_titles': True, 'known_video_titles': known_titles,
                   'refresh_video_metrics': True, 'known_video_metrics': known_metrics,
@@ -527,7 +536,7 @@ def run(task_id, control):
         if task['transport']=='http':
             import comment_paging
             import collector_http_session
-            try:paging_tag=comment_paging.session_tag(collector_http_session.load())
+            try:paging_tag=comment_paging.session_tag(collector_http_session.load(account_directory))
             except (OSError,ValueError):pass  # The worker reports the actual session gate.
             config.update(paging_source_id=control['source_id'],paging_session_tag=paging_tag)
         process.stdin.write(json.dumps(config, ensure_ascii=False) + '\n')

@@ -198,7 +198,7 @@ class Provider:
                 update()
 
     def prepare(self, operation, business_body, metadata):
-        commands = {'create': 609, 'send': 100, 'im_check': 1001, 'group_join': 650,
+        commands = {'create': 609, 'send': 100, 'im_check': 1001, 'group_join': 650, 'group_leave': 652,
                     'conversations': 2006, 'stranger_conversations': 1001,
                     'messages': 301, 'stranger_messages': 1002, 'group_members': 605}
         if operation != 'identity' and operation not in commands:
@@ -226,6 +226,9 @@ class Provider:
             if operation=='group_join':
                 from group_public import validate_join_body
                 validate_join_body(business_body,data['sender_uid'])
+            if operation=='group_leave':
+                from group_lifecycle import validate_body
+                validate_body(business_body)
             data['sequence'] += 1
             # Also migrates existing encrypted contexts on their next IM request.
             # Identity Cookie remains separate and bound to its own URL scope.
@@ -234,7 +237,7 @@ class Provider:
             # The captured stranger-list request uses inbox 1. Current web
             # one-to-one create/send calls use the conversation's inbox 0.
             # Inbox is request routing, not reusable authentication material.
-            if operation in ('create', 'send', 'conversations', 'messages', 'group_join', 'group_members'):
+            if operation in ('create', 'send', 'conversations', 'messages', 'group_join', 'group_members', 'group_leave'):
                 context[6] = [(0, 0)]
             elif operation in ('stranger_conversations', 'stranger_messages'):
                 context[6] = [(0, 1)]

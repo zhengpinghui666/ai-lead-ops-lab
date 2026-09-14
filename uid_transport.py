@@ -25,6 +25,7 @@ ENDPOINTS = {
     'messages': ('imapi.douyin.com', '/v1/message/get_by_conversation', 'POST'),
     'stranger_messages': ('imapi.douyin.com', '/v1/stranger/get_messages', 'POST'),
     'group_join': ('imapi.douyin.com', '/v1/conversation/add_participants', 'POST'),
+    'group_leave': ('imapi.douyin.com', '/v1/conversation/leave', 'POST'),
     'group_members': ('imapi.douyin.com', '/v1/conversation/participants_list', 'POST'),
 }
 

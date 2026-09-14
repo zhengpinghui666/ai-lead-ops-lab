@@ -112,7 +112,13 @@ class Bridge:
         now = self.clock()
         with closing(self.connect()) as c, c:
             c.execute('BEGIN IMMEDIATE')
+            hold=c.execute("SELECT value FROM settings WHERE key='hold_until'").fetchone()
+            if hold and now<json.loads(hold[0]):return
             for row in c.execute("SELECT * FROM incidents WHERE active=1 AND channel!='self_test'").fetchall():
+                # An unavailable service or failed probe cannot prove that an
+                # existing channel problem recovered. Keep the same incident.
+                if row['channel']!='service' and report.get('service')!='running':continue
+                if row['channel'] not in ('service','health') and 'health' in current:continue
                 metadata = current.get(row['channel'])
                 fingerprint = json.dumps(metadata, sort_keys=True) if metadata else None
                 if fingerprint != row['fingerprint']:

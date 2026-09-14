@@ -190,6 +190,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/lead-live-history':
                 query = parse_qs(urlparse(self.path).query)
                 return self.respond(live_workflow.history(query.get('lead_id', [''])[0], query.get('offset', ['0'])[0], self.mode()))
+            if path == '/api/collection-accounts':
+                import collection_accounts
+                return self.respond(collection_accounts.state(self.mode()))
             if path == '/api/collector-evidence':
                 mode = self.mode()
                 task_id = int(parse_qs(urlparse(self.path).query).get('id', ['0'])[0])
@@ -309,6 +312,9 @@ class Handler(BaseHTTPRequestHandler):
                 result = group_monitor.refresh(mode)
             elif action == 'group-control':
                 result = group_monitor.control(body,mode)
+            elif action == 'group-exit-admin-only':
+                import group_lifecycle
+                result = group_lifecycle.control(body,mode)
             elif action == 'group-discovery-control':
                 import group_discovery
                 result = group_discovery.control(body,mode)
@@ -361,6 +367,9 @@ class Handler(BaseHTTPRequestHandler):
                 if set(body) != {'id'} or type(body['id']) is not int or body['id'] < 1:
                     raise ValueError('仅接受已保存草稿的任务 ID')
                 result = uid_messaging.send_one(int(body['id']), mode)
+            elif action == 'collection-account-save':
+                import collection_accounts
+                result=collection_accounts.save(body,mode)
             elif action == 'collector-start':
                 result = collector.start(body, mode)
             elif action == 'monitor-save':

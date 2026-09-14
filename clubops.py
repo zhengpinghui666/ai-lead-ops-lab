@@ -150,6 +150,8 @@ def init(mode='live'):
             c.execute('ALTER TABLE people ADD COLUMN profile_gender INTEGER NOT NULL DEFAULT 0')
         if 'profile_gender_observed_at' not in person_columns:
             c.execute("ALTER TABLE people ADD COLUMN profile_gender_observed_at TEXT NOT NULL DEFAULT ''")
+        import collection_accounts
+        c.executescript(collection_accounts.SCHEMA)
         import candidate_pool
         c.executescript(candidate_pool.SCHEMA)
         import discovery_tracking
@@ -162,6 +164,11 @@ def init(mode='live'):
         c.executescript(uid_inbox_sync.SCHEMA)
         import group_monitor
         c.executescript(group_monitor.SCHEMA)
+        import group_lifecycle
+        c.executescript(group_lifecycle.SCHEMA)
+        import login_metrics
+        c.executescript(login_metrics.SCHEMA)
+        login_metrics.backfill(c,mode)
         import group_profiles
         c.executescript(group_profiles.SCHEMA)
         import group_discovery

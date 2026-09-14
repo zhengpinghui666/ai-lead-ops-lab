@@ -1,5 +1,20 @@
 # ClubOps 接续说明
 
+## 2026-09-14 16:39 当前生产状态（覆盖下方旧状态）
+
+- 用户最新关注：评论又暂停是否通知。真实通知 ee2a54e4-f44c-4cbf-a619-75d48c20b22e 于16:11:58投递当前开发任务、16:12:24实际接收；已明确向用户说明收到不等于修复。当前原计划仍 attention，last_task_id 2875；手动验证批次2876仍 needs_verification。故障原因是7446号搜索的点选验证码识别不确定，submissions=0，不能标为已恢复或继续升并发。
+- 7446（1267597446 / UID50887922274）的独立 HTTP 会话已经投入生产：collection_accounts/collection_task_accounts 冻结批次账号、目录、职责；HTTP评论与作者发现真实批次2860–2863、2873等 completed，绑定旧号。9517（34575459517 / UID358898446378682）负责私信和当前群聊；在 collection_accounts 注册为 primary、enabled=false、roles=[] 只表示不负责采集，并未停私信。此前 bind 只作用HTTP导致周期搜索借用主profile，现已改所有transport绑定，2875/2876 browser搜索均7446；使用原独立profile，无新登录。并发仍1路，旧号并发试验尚未开始，不把此前新号2/3/4样本当旧号边界。
+- 2875验证码弹层2秒预算不足：同一登录环境只读等待8秒看到真实验证码，现 capture 对frame/prompt_not_ready延长到12秒，其他缺失仍2秒，不刷新不提交。15项真实Chromium合成验证码适配测试通过（含3.5秒iframe延迟）。修复后2876能读取同形点选题，但point_character_uncertain，不提交答案；平台验证仍待处理。尝试创建并打开7446人工验证窗口的 exec_command 被自动审批以 blocked by policy 拦截，未执行、未打开窗口；已告知用户，禁止换通道重试同一被拦操作。事件回执 needs_user，不是resolved。
+- 用户截图群“亦轩无畏契约演员群”（group27, conversation7124614724230103565, account UID358898446378682）只有群主/管理员发言，用户授权此类退群。新增group_lifecycle.py：本人退群command652来自本地已观察官方PCIM SDK、确认账号、先写提交账本、未知结果不重发、完整目录核验离群。16:11:35请求，16:11:43平台200/code0且目录确认member0，status left，enabled0。保留消息和退群原因、不自动加回。明确管理员发言权限来自core fields14=BLOCK1且15=true；只有这个条件自动排队，同名演员群/无历史消息/普通不活跃不能推断。group_exit_admin_only已授权启用；普通不活跃群仍保留身份降频。group_exits按账号+群隔离，已排除群不能重新监控，发现/加群候选也排除。当前18群开启。124项相关回归通过。新group-exit-admin-only API无发送群消息能力。
+- 每日验证码看板已上线：按滑块、同形点选、短信、其他未知类型分日，通过率分母实际提交，没提交None→—，未知结果不当明确失败。新增login_metrics.py持久化真实短信流程事件（不保存验证码/转发正文）；仅 code_filled+登录完成且identity_verified/session_ready算通过，phone_test和Cookie恢复不算，历史仅有回执时标记historical_result_time。生产旧登录记录无实际短信提交，当前短信—准确，不能把手机测试已转发当通过。daily_dashboard含90天逐日率序列但明细只从实际有记录日期开始（生产09-10起），不在无尝试日造零点，首页有分类行/每日验证码明细弹窗/验证码曲线。48项登录及看板回归、20页前端状态通过；新增0%点不丢/空日不造点测试。test_workbench_state旧全量与轻量页相等用例原生产也失败，已确认非本次引入，尚未修正这个旧测试预期。
+- 首页实时反馈状态已上线：运行中监听心跳、实际接收时间、最近事件状态、处理记录弹窗；验证码异常文案明确账号及未提交原因。已用本机API与IAB本地页面确认上线，用户16:36截图也确认新内容。首页API三次约656/636/607ms，JSON14380字节；不能声称数据毫秒瞬载目标已完全达到。
+- 维护期间读不到服务曾误清原验证码事件，恢复后重复投递758faf07-8630-43dc-80fa-64dc7e35dbac，16:34再次实际接收，仍needs_user；已修复 Bridge.observe 在maintenance hold期间不重结算，服务/探针不可用不推断原渠道已恢复，21项通知测试通过。未恢复的同一验证码不再因正常重启重复通知。
+- 部署及备份：artifacts/group-exit-20260914（11文件）和artifacts/daily-verification-20260914（7文件），均完整source ZIP与两库SQLite备份；captcha_browser/test热换新worker，incident_bridge/test热换并重启监听，不需重启业务。每次恢复原开关；当前comments仍attention（保留真实阻塞）、18群/直播/群发现/原授权自动私信已恢复；收件同步原来暂停继续保持。9517 readonly identity probe真实通过后已恢复outreach。维护hold已释放0。
+- 监听重启时Stop/Start紧邻出现一次退出码1，原PID271020已退出；随后正常启动新PID265320，ClubOps Incident Bridge Running，watcher_error=null，pending0。Windows任务本来已有失败重启3次/1分钟、无限时长；今后重启须等旧进程退出后再start，避免IgnoreNew/文件锁竞争。不要仅看历史receiver_verified，要核验新heartbeat与进程持续存活。Local Health也重启加载新反馈模块。
+- 尚未完成：通用多账号任务UI/多账号群成员与加入流程、三角洲端游多游戏全链路/切换、旧号高并发边界、权重分级/月档策略、本地双机模型、对私信限制调研及需求继续对齐。已有game_catalog/test基础仍仅staging、未部署，不能声称多游戏完成。当前停止升并发，须先完成7446的真实验证。
+- 生产source-files已含group_lifecycle/test、login_metrics/test（共306）；不要全量覆盖staging里旧SUCCESSOR_HANDOFF。后续deploy只用文件白名单。最近远程备份仍旧523cc7bd...，此前新备份因TLS失败，若重试成功再更新。
+
+
 ## 2026-09-14 15:39 最新修复与需求（覆盖下方旧状态）
 
 - 用户确认三角洲行动只接端游；要求多游戏可配置、同时监控、切换对应数据。尚未接通生产多游戏！基础 game_catalog.py/test_game_catalog.py 在 artifacts/multi-game-20260914/staging，仅 4 项测试通过；未纳入生产源码清单。下一步继续集成，不把可配置说明当作已实现。账号隔离、多账号任务分配、旧号并发边界仍未完成，旧号已实际登录成功（下方 13:05 的待登录说法已过时）；生产采集仍是新号，勿声称已经用旧号采集。
