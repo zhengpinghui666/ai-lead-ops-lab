@@ -73,7 +73,7 @@ def check(data_dir=BASE / 'data', port=8765):
     from incident_bridge import feedback
     report = {'checked_at': now.isoformat(), 'status': 'healthy', 'issues': [],
               'feedback': feedback(data_dir)}
-    if report['feedback']['mode']=='event_queue':
+    if report['feedback']['mode'] in ('event_queue','event_push'):
         if not report['feedback'].get('watcher_running'):
             report['issues'].append('feedback:watcher_stale')
         if (report['feedback'].get('last_delivery') or {}).get('status')=='unknown':

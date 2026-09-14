@@ -71,6 +71,8 @@ class Bridge:
                 received_at REAL, finished_at REAL, error TEXT, attempts INTEGER NOT NULL DEFAULT 0,
                 next_try_at REAL NOT NULL DEFAULT 0);
             ''')
+            if 'transport' not in {r[1] for r in c.execute('PRAGMA table_info(deliveries)')}:
+                c.execute("ALTER TABLE deliveries ADD COLUMN transport TEXT NOT NULL DEFAULT 'queue'")
 
     def connect(self):
         c = sqlite3.connect(self.path, timeout=5)
@@ -84,6 +86,15 @@ class Bridge:
             for key, value in dict(thread_id=thread_id, executable=str(Path(executable).resolve()), enabled=True).items():
                 c.execute('INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
                           (key, json.dumps(value)))
+
+    def configure_app(self, node, server, pipe):
+        if not Path(node).is_file() or not Path(server).is_file():
+            raise ValueError('Installed app adapter paths required')
+        import incident_push
+        if not str(pipe).startswith(incident_push.PIPE_PREFIX):raise ValueError('Invalid app pipe')
+        value=dict(node=str(Path(node).resolve()),server=str(Path(server).resolve()),pipe=str(pipe))
+        with closing(self.connect()) as c, c:
+            c.execute("INSERT OR REPLACE INTO settings VALUES('app_push',?)",(json.dumps(value),))
 
     def settings(self):
         with closing(self.connect()) as c:
@@ -144,7 +155,7 @@ class Bridge:
                 '回执只写独立通知账本，resolved 会复核原故障确已消失。'
                 '不能把消息入队或收到通知表述为故障已修复。')
 
-    def dispatch(self, *, runner=subprocess.run):
+    def dispatch(self, *, runner=subprocess.run, pusher=None):
         config = self.settings()
         now = self.clock()
         if not config.get('enabled') or config.get('hold_until',0)>now:
@@ -154,7 +165,7 @@ class Bridge:
             # An unacknowledged message must never be replayed after a crash/timeout.
             c.execute("UPDATE deliveries SET status='unknown',error='sender_interrupted_unknown',updated_at=? WHERE status='sending' AND updated_at<?",
                       (now, now-60))
-            if c.execute("SELECT 1 FROM deliveries WHERE status IN ('sending','queued','received','unknown')").fetchone():
+            if c.execute("SELECT 1 FROM deliveries WHERE status IN ('sending','queued','pushed','received','unknown')").fetchone():
                 return None
             delivery = c.execute("SELECT * FROM deliveries WHERE status='retry' AND next_try_at<=? ORDER BY created_at LIMIT 1", (now,)).fetchone()
             if delivery:
@@ -181,25 +192,35 @@ class Bridge:
         if not Path(executable).is_file():
             executable=shutil.which('codex') or executable
         status,error,queue_id='unknown','queue_result_unknown',None
-        try:
-            result=runner([executable,'queue','--thread',config['thread_id'],'--message',self.prompt(delivery,rows)],
-                cwd=BASE,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
-                text=True,encoding='utf8',errors='replace',timeout=20,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
-            # Do not retain raw stdout/stderr: upstream errors may contain private configuration.
-            match=re.search(r'Queued message ('+UUID+r') for thread ('+UUID+r')\.',result.stdout or '')
-            if match and match[2]==config['thread_id']:
-                status,error,queue_id='queued',None,match[1]
-        except FileNotFoundError:
-            status,error='retry','codex_executable_unavailable'  # Process did not start; safe to retry.
-        except subprocess.TimeoutExpired:
-            error='queue_timeout_unknown'  # May already be accepted: no blind duplicate send.
-        except OSError:
-            status,error='retry','codex_process_not_started'
+        transport='queue'
+        app_result=None
+        if config.get('app_push'):
+            import incident_push
+            app_result=(pusher or incident_push.push)(config['app_push'],config['thread_id'],self.prompt(delivery,rows))
+            if app_result['status']!='not_sent':
+                status,error=app_result['status'],app_result.get('error')
+                transport='app_push'
+        if app_result is None or app_result['status']=='not_sent':
+            try:
+                result=runner([executable,'queue','--thread',config['thread_id'],'--message',self.prompt(delivery,rows)],
+                    cwd=BASE,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                    text=True,encoding='utf8',errors='replace',timeout=20,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name=='nt' else 0)
+                # Do not retain raw stdout/stderr: upstream errors may contain private configuration.
+                match=re.search(r'Queued message ('+UUID+r') for thread ('+UUID+r')\.',result.stdout or '')
+                if match and match[2]==config['thread_id']:
+                    status,error,queue_id='queued',None,match[1]
+            except FileNotFoundError:
+                status,error='retry','codex_executable_unavailable'  # Process did not start; safe to retry.
+            except subprocess.TimeoutExpired:
+                error='queue_timeout_unknown'  # May already be accepted: no blind duplicate send.
+            except OSError:
+                status,error='retry','codex_process_not_started'
         with closing(self.connect()) as c, c:
             # Receipt can arrive while the command is still returning.
-            c.execute("UPDATE deliveries SET status=?,error=?,queue_id=?,updated_at=?,next_try_at=? WHERE id=? AND status='sending'",
-                      (status,error,queue_id,self.clock(),self.clock()+min(300,5*2**min(6,delivery['attempts'])),did))
+            c.execute("UPDATE deliveries SET status=?,error=?,queue_id=?,updated_at=?,next_try_at=?,transport=? WHERE id=? AND status='sending'",
+                      (status,error,queue_id,self.clock(),self.clock()+min(300,5*2**min(6,delivery['attempts'])),transport,did))
+            c.execute('UPDATE deliveries SET transport=? WHERE id=?',(transport,did))
         return did
 
     def acknowledge(self, delivery_id, state, report=None):
@@ -234,10 +255,12 @@ class Bridge:
 
     def status(self):
         with closing(self.connect()) as c:
-            last=c.execute('SELECT id,status,created_at,updated_at,received_at,finished_at,error FROM deliveries ORDER BY created_at DESC LIMIT 1').fetchone()
+            last=c.execute('SELECT id,status,created_at,updated_at,received_at,finished_at,error,transport FROM deliveries ORDER BY created_at DESC LIMIT 1').fetchone()
             received=c.execute('SELECT 1 FROM deliveries WHERE received_at IS NOT NULL LIMIT 1').fetchone()
+            realtime=c.execute("SELECT 1 FROM deliveries WHERE received_at IS NOT NULL AND transport='app_push' LIMIT 1").fetchone()
             pending=c.execute("SELECT COUNT(*) FROM incidents WHERE active=1 AND state='pending'").fetchone()[0]
-        return dict(mode='event_queue',enabled=self.settings().get('enabled',False),
+        return dict(mode='event_push' if self.settings().get('app_push') else 'event_queue',enabled=self.settings().get('enabled',False),
+                    realtime_receiver_verified=bool(realtime),
                     receiver_verified=bool(received),pending=pending,last_delivery=dict(last) if last else None)
 
 
@@ -249,7 +272,8 @@ def feedback(data_dir):
         fresh=0<=time.time()-raw['heartbeat_at']<45
         last=raw.get('last_delivery') or {}
         ready=fresh and raw.get('enabled') and raw.get('receiver_verified') and not raw.get('watcher_error') and last.get('status') not in ('unknown','retry')
-        return dict(mode='event_queue',codex_push_connected=bool(ready),
+        realtime=bool(ready and raw.get('mode')=='event_push' and raw.get('realtime_receiver_verified') and last.get('transport')=='app_push')
+        return dict(mode=raw.get('mode','event_queue'),codex_push_connected=realtime,realtime_connected=realtime,
                     watcher_running=fresh,receiver_verified=bool(raw.get('receiver_verified')),
                     last_delivery=raw.get('last_delivery'),pending=raw.get('pending',0))
     except (OSError,ValueError,KeyError,TypeError):

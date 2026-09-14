@@ -385,6 +385,30 @@ class HTTPReadTests(unittest.TestCase):
             http.parse_page(body(comments=None,total=1,verify_type='captcha'),'replies',VIDEO,PARENT)
         self.assertEqual(caught.exception.status,'needs_verification')
 
+    def test_nonterminal_invisible_reply_advances_without_losing_later_text(self):
+        empty=body(comments=None,total=3,cursor=1,has_more=1)
+        page=http.parse_page(empty,'replies',VIDEO,PARENT,requested_cursor=0)
+        self.assertEqual(page['rows'],[]);self.assertTrue(page['has_more'])
+        self.assertEqual(page['reply_visibility']['state'],'nonterminal_without_visible_replies')
+        for payload,requested in [(empty,1),(empty,2),({**empty,'cursor':0},0),
+                ({**empty,'total':1},0),({**empty,'total':True},0),({**empty,'comments':{}},0),
+                ({**empty,'verify_type':'captcha'},0)]:
+            with self.subTest(payload=payload,requested=requested),self.assertRaises(http.ReadError):
+                http.parse_page(payload,'replies',VIDEO,PARENT,requested_cursor=requested)
+        calls=[]
+        class Client:
+            def page(self,operation,**kw):
+                calls.append((operation,kw['cursor']))
+                payload=(body([record(reply_comment_total=3)]) if operation=='comments' else empty
+                    if kw['cursor']==0 else body([record(cid='7683708327758415397',reply_id=PARENT)],total=3,cursor=3))
+                return http.parse_page(payload,operation,VIDEO,PARENT if operation=='replies' else '',requested_cursor=kw['cursor'])
+        events=[]
+        worker.collect(dict(kind='video',target=VIDEO,page_concurrency=1,video_limit=1,comment_limit=3),
+            events.append,threading.Event(),client=Client())
+        self.assertEqual(calls,[('comments',0),('replies',0),('replies',1)])
+        self.assertEqual(events[-1]['status'],'completed')
+        self.assertEqual(len([e for e in events if e['type']=='comment']),2)
+
     def test_terminal_null_replies_keep_statistical_total_and_main_comments_continue(self):
         empty=body(comments=None,total=1,cursor=10)
         result=http.parse_page(empty,'replies',VIDEO,PARENT)

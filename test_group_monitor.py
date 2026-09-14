@@ -295,12 +295,12 @@ class MonitorTests(unittest.TestCase):
             after = [tuple(r) for r in c.execute('SELECT id,raw_text,published_at,observed_at,category,reason,facts FROM group_messages ORDER BY id')]
             self.assertEqual(before, after)
             passed = [r[0] for r in c.execute("SELECT id FROM group_messages WHERE filter_reason=''")]
-            self.assertEqual(passed, [1, 2, 3])
+            self.assertEqual(passed, [2, 3])
             self.assertFalse(monitor.eligible(c, self.raw(c), semantic.state()['engine'], SENDER))
             audit = [json.loads(r[0]) for r in c.execute("SELECT detail FROM group_reads WHERE operation='rescreen'")]
             self.assertTrue(all(r['previous_relevance']==old for r in audit))
             self.assertEqual(len(audit), 5)
-        self.assertEqual(queue.enqueue('group', passed)['queued'], 3)
+        self.assertEqual(queue.enqueue('group', passed)['queued'], 2)
 
     def test_pc_notice_excluding_mobile_is_readable_but_commercial_ban_blocks_outreach(self):
         from game_scope import record_exclusion

@@ -3,7 +3,7 @@ import re
 from game_scope import GAME_PATTERN, exclusion_reason
 from service_roles import SUPPLY, RECRUIT, ordinary_teamup
 
-RULESET_VERSION = 'rules-v7-service-roles'
+RULESET_VERSION = 'rules-v8-teamup-boundary'
 SEPARATOR = re.compile(r'[，,。.!?！？；;\n]')
 NEGATIVE_BEFORE = re.compile(r'(?:不(?:是|再|要|想|用|需要|打算|考虑)?|没(?:有|想|打算)?|并非|无需|拒绝|谢绝)(?:再|去|找)?\s*$')
 NEGATIVE_AFTER = re.compile(r'^\s*(?:不要|不行|没空|不方便|不考虑|不用|不需要|不合适|取消|太贵)')
@@ -16,7 +16,7 @@ REQUEST = (rf'(?:预约|需要|想要|想买|想购买|购买|找|求|(?<![原�
 GROUP = r'(?:找|来|求|缺|差)[^，,。.!?！？；;\n]{0,8}?(?:搭子|队友|个人|人|一位|两位|组队)|带我|带一下|一起(?:玩|开黑|匹配)|组队|互带互学|互学互带|[双三五]排'
 PRODUCT = r'皮肤|枪皮|外设|键盘|鼠标|显卡|显示器|电脑|账号|通行证'
 AMOUNT = r'\d+(?:\.\d+)?(?:\s*[-–到至]\s*\d+(?:\.\d+)?)?'
-RELEVANCE_VERSION = 'comment-relevance-v3'
+RELEVANCE_VERSION = 'comment-relevance-v4'
 COMPANION = r'陪玩|陪练|陪打|陪排|带练|代练|代打|男陪|女陪|技术陪|娱乐陪|点陪|陪\s*[wW]'
 HELP = (r'求带|带带我|带我(?:打|玩|上分|排位|开黑)|带我[啊呀吧呗吗么?？!！\s]*$'
         r'|(?:找|求|来|缺|有没有|一起)[^，,。.!?！？；;\n]{0,8}(?:搭子|队友|组队|开黑|[双三五]排)'
@@ -39,6 +39,9 @@ def companion_relevance(raw, video_context='', parent_context=''):
         return dict(version=RELEVANCE_VERSION, passed=passed, reason=reason, evidence=list(evidence)[:4])
     if not raw.strip():
         return decision(False, '没有可供判断的文字。')
+    from service_roles import ordinary_teamup
+    if ordinary_teamup(raw):
+        return {**decision(False, '普通组队邀约或排位求带，未见陪玩服务线索；段位、房间码和群名不作为点单依据。'), 'excluded_teamup': True}
     for pattern, reason in ((COMPANION, '原文提到陪玩、陪练或相关服务。'),
                             (HELP, '原文有求带、陪同游戏或组队表达，交由模型区分付费与免费意图。'),
                             (SERVICE_ACTION, '原文有游戏服务咨询、接单或招募线索。')):

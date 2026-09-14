@@ -134,9 +134,47 @@ class BridgeTests(unittest.TestCase):
         path=self.bridge.directory/'status.json'
         path.write_text(json.dumps(state));self.assertFalse(feedback(self.root)['codex_push_connected'])
         state['receiver_verified']=True
+        path.write_text(json.dumps(state));self.assertFalse(feedback(self.root)['codex_push_connected'],'An older queued receipt does not prove realtime push')
+        state.update(mode='event_push',realtime_receiver_verified=True,last_delivery={'status':'resolved','transport':'app_push'})
         path.write_text(json.dumps(state));self.assertTrue(feedback(self.root)['codex_push_connected'])
         state['heartbeat_at']-=60
         path.write_text(json.dumps(state));self.assertFalse(feedback(self.root)['codex_push_connected'])
+
+    def test_app_push_receipt_stays_separate_from_receiver_ack(self):
+        self.bridge.configure_app(self.exe,self.exe,r'\\.\pipe\codex-browser-use-test')
+        self.bridge.self_test()
+        did=self.bridge.dispatch(runner=self.runner,pusher=lambda *a:dict(status='pushed',error=None))
+        self.runner.assert_not_called()
+        self.assertFalse(self.bridge.status()['realtime_receiver_verified'])
+        self.assertIsNone(self.bridge.dispatch(runner=self.runner))
+        self.bridge.acknowledge(did,'received')
+        self.assertTrue(self.bridge.status()['realtime_receiver_verified'])
+        self.bridge.acknowledge(did,'resolved',report())
+
+    def test_app_push_unknown_never_falls_back_to_duplicate_queue(self):
+        self.bridge.configure_app(self.exe,self.exe,r'\\.\pipe\codex-browser-use-test')
+        self.bridge.self_test()
+        self.bridge.dispatch(runner=self.runner,pusher=lambda *a:dict(status='unknown',error='app_push_outcome_unknown'))
+        self.runner.assert_not_called()
+        self.assertEqual(self.bridge.status()['last_delivery']['status'],'unknown')
+
+    def test_app_unavailable_before_send_uses_existing_queue_as_degraded_delivery(self):
+        self.bridge.configure_app(self.exe,self.exe,r'\\.\pipe\codex-browser-use-test')
+        self.bridge.self_test()
+        self.bridge.dispatch(runner=self.runner,pusher=lambda *a:dict(status='not_sent',error='app_push_unavailable'))
+        self.runner.assert_called_once()
+        self.assertEqual(self.bridge.status()['last_delivery']['transport'],'queue')
+
+    def test_fast_receiver_ack_during_app_call_is_not_overwritten(self):
+        self.bridge.configure_app(self.exe,self.exe,r'\\.\pipe\codex-browser-use-test')
+        self.bridge.self_test()
+        def receive(*args):
+            did=self.bridge.status()['last_delivery']['id']
+            self.bridge.acknowledge(did,'received');self.bridge.acknowledge(did,'resolved',report())
+            return dict(status='pushed',error=None)
+        self.bridge.dispatch(runner=self.runner,pusher=receive)
+        self.assertEqual(self.bridge.status()['last_delivery']['status'],'resolved')
+        self.assertTrue(self.bridge.status()['realtime_receiver_verified'])
 
 
 if __name__=='__main__':unittest.main()

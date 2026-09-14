@@ -1,5 +1,17 @@
 # ClubOps 接续说明
 
+## 2026-09-14 15:39 最新修复与需求（覆盖下方旧状态）
+
+- 用户确认三角洲行动只接端游；要求多游戏可配置、同时监控、切换对应数据。尚未接通生产多游戏！基础 game_catalog.py/test_game_catalog.py 在 artifacts/multi-game-20260914/staging，仅 4 项测试通过；未纳入生产源码清单。下一步继续集成，不把可配置说明当作已实现。账号隔离、多账号任务分配、旧号并发边界仍未完成，旧号已实际登录成功（下方 13:05 的待登录说法已过时）；生产采集仍是新号，勿声称已经用旧号采集。
+- 截图标签已按用户命名统一：点单（板板）/接单（陪陪），评论/直播/群聊/需求页一致；保留后台分类 ID 与招募子类。GET /app.js 核验并通过 20 状态结构测试。备份 artifacts/category-labels-20260914。
+- 用户明确五条纯组队均不是点单：黄金白银有人打么；有人能带我打排位吗；下三有人玩嘛，不压力；超1有点菜，有人一起打吗；xol524匹配有人玩吗。旧初筛的游戏邀约+瓦群名被 v8 模型过宽升级 buyer。已上线 ordinary-teamup-v2、rules-v8-teamup-boundary、comment-relevance-v4、prompt-v10；纯组队前置挡住且已评审关键词不能绕过，历史模型投影和私信前复核也挡住；人工判断保留。旧模型兼容仍保留，但所有投影经过新规则，避免整批旧需求消失。截图 5 条（group 385/206/351/128/127）均实测 social；7 条匹配历史全部不具备私信资格，原文及模型账本未删除。group21 是更早未判买家的重复存档，仍 uncertain，不属于此次点单。group206 在修复前 job39 已获平台接受；另外两个 UID 的 job27/30 为发送失败，不可称从未发送过。
+- 评论 #2810 于15:04 因 replies comments:null/has_more:1/cursor:1/total:3 停监控。已限制性接纳这种游标前进且仍低于total的不可见回复分页，保留总页数/请求预算和非前进游标拒绝。59项分页测试通过。只热换新子进程导入的 collector_http.py，#2811真实断点恢复完成，随后#2812及后续批次成功；已收到并核验后 resolved 原事件7cbf0585-95cb-4d6f-beab-70545fc7b38f。旧记录保留。备份 artifacts/reply-pagination-20260914。
+- 旧 codex queue 只入下一轮队列，15:04故障并未即时送达，用户提醒后手动接手。已改事件投递优先调用已安装 Codex app tools MCP 的 send_message_to_thread（固定同一现有任务、无模型/权限覆盖）；不是新建任务，也不经浏览器鼠标。新的 incident_push.py 遇提交前不可用才回退 queue，提交后结果未知绝不重复发；状态分 pushed/received/resolved，queue不再冒充实时连接。Windows App Server 默认 control socket不存在，不能用 app-server proxy；不要启动另一个 App Server 或改主App权限。MCP用当前已安装server.mjs、Node和每次启动的本地pipe，配置信息在独立通知账本；App升级改变adapter路径时会降级，需后续核验。
+- 合成通知8ccca041-0042-4993-b824-cf269c4e7e3f经实际MCP进入当前进行中任务，received/resolved通过。又只创建合成事件并写独立唤醒信号，由常驻监听器自身检测投递7ba72be3-be50-48e8-838d-65aa7cd9a549（无手动dispatch），也在当前工作期间收到并回执通过。后者入队账本到App接受约0.203秒，接收回执约54.85秒（模型工具/推理工作边界）；不能宣称模型或修复毫秒级。监听任务 ClubOps Incident Bridge Running，PID271020，event_push，realtime_receiver_verified=true。未发任何测试客户私信。
+- 本次维护已正常停服、保留source ZIP和SQLite在线备份、部署13个文件、正常启动并恢复原采集/直播/19群/找群和原授权自动私信，原收件同步暂停保持。148项业务回归、19项通知回归通过；#2830/2831已真实完成18/28条观察。证据及维护脚本在 artifacts/teamup-push-20260914，不要重跑prepare覆盖before基线。
+- 用户参考视频已只看画面完成评估（没有听写音轨），报告 artifacts/reference-audit-20260914/review.md；优点是可收起策略侧栏、逐人私信状态、账号/会话/消息三级工作区和分层设置，演示不能证明并发/成功率/风控。仍需在后续交付中向用户简明呈现。
+
+
 ## 2026-09-14 13:05 用户改由旧号承担视频并发，暂未切换账号路由
 
 用户先授权分档测限流边界，随后明确“视频的并发我打算用原来的那个号来做”。已停止仅本次measure.py实验控制进程267168，等待自然批次边界，经正式API恢复新号原page_concurrency=1、video_limit=3，其余24h/30秒/过滤/传输字段逐项一致并恢复running。这是用户改变测试账号的安排，不能由巡检重新提高新号并发。试验期间已验证2/3/4个作品HTTP请求重叠，已完成样本无可见限流；未探明平台上限，不能把4路产品配置上限称为平台边界。全部样本与用户调整后的结果在artifacts/comment-parallel-20260914/result.json，不能重跑measure.py。

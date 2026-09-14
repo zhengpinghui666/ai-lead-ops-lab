@@ -146,7 +146,7 @@ def page_shape(body):
     return result
 
 
-def parse_page(body, operation, video='', parent='', title=''):
+def parse_page(body, operation, video='', parent='', title='', *, requested_cursor=0):
     """Strict known containers only; IDs remain arbitrary-precision strings."""
     if not isinstance(body, dict) or type(body.get('status_code')) is not int:
         raise ReadError('schema_changed', {'reason': 'invalid_status_code'})
@@ -173,11 +173,14 @@ def parse_page(body, operation, video='', parent='', title=''):
     # the terminal page. This says nothing about deletion or the total count.
     empty_visible = (operation in ('comments','replies') and 'comments' in body and items is None
                      and more == 0 and type(body.get('total')) is int and 0 <= body['total'] < 2**63)
-    if empty_visible:
+    empty_reply_page = (operation == 'replies' and 'comments' in body and items is None and more == 1
+                        and type(body.get('total')) is int and 0 <= body['total'] < 2**63
+                        and type(requested_cursor) is int and 0 <= requested_cursor < cursor < body['total'])
+    if empty_visible or empty_reply_page:
         items = []
     if not isinstance(items, list):
         raise ReadError('schema_changed', {'reason': 'invalid_page_container'})
-    if len(items) > 1000 or (not items and more):
+    if len(items) > 1000 or (not items and more and not empty_reply_page):
         raise ReadError('schema_changed', {'reason': 'invalid_page_size' if items else 'empty_page_with_more'})
     rows, skipped, reply_targets, non_text_reply_targets, seen = [], 0, [], [], set()
     nontext = 0
@@ -243,6 +246,9 @@ def parse_page(body, operation, video='', parent='', title=''):
     if empty_visible:
         field='reply_visibility' if operation=='replies' else 'comment_visibility'
         result[field] = {'state': 'terminal_without_visible_'+operation, 'declared_total': body['total'], 'returned_rows': 0}
+    if empty_reply_page:
+        result['reply_visibility'] = {'state':'nonterminal_without_visible_replies',
+            'declared_total':body['total'],'returned_rows':0,'requested_cursor':requested_cursor,'next_cursor':cursor}
     return result
 
 
@@ -443,7 +449,7 @@ class Client:
                 evidence['response_shape'] = discovery_shape(body)
                 result = parse_discovery(body, operation, video=video, sec_uid=sec_uid, requested_cursor=cursor)
             else:
-                result = parse_page(body, operation, video, parent, title)
+                result = parse_page(body, operation, video, parent, title, requested_cursor=cursor)
             evidence.update(status='valid_page', rows=len(result['rows']), skipped=result['skipped'],
                             skipped_reasons=result['skipped_reasons'],has_more=result['has_more'],next_cursor=result['cursor'])
             if operation in ('comments','replies'):

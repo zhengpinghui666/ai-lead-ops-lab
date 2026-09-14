@@ -49,6 +49,7 @@ def literal_hits(text,terms):
 def message_relevance(c,text,title='',parent=''):
     from intent_rules import companion_relevance
     result=companion_relevance(text,title,parent)
+    if result.get('excluded_teamup'):return result
     hits=literal_hits(text,active(c,'message')['service'])
     if not hits:return result
     return {**result,'passed':True,'learned_keywords':hits,

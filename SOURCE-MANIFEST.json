@@ -173,8 +173,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "48d833e567fe98fda69451d21f644dbc6d0b7f522bb3000afc0b8a6dca9bcbe6",
-      "bytes": 106684
+      "sha256": "aa72635c139477e2f1a012fe24ec7b98eb45ebbbebb2cd45d80abeeb9c8d621d",
+      "bytes": 111263
     },
     {
       "name": "UID_HTTP.md",
@@ -198,13 +198,13 @@
     },
     {
       "name": "analysis_store.py",
-      "sha256": "2c15ffac1b815365c3b9f7cc10af07533859c3223b1f5b53a5ea0d8b1c4aeaeb",
-      "bytes": 7701
+      "sha256": "5eb4c5f3bbfaa55acae78ca4a10f39d2f8104fcf7f20d20dc812276ad769ddd5",
+      "bytes": 7891
     },
     {
       "name": "asset_keywords.py",
-      "sha256": "992b4c6cbc5c81ced507991ad5962a7f2c55547f81827b20c32543c3bcbe2501",
-      "bytes": 10358
+      "sha256": "a11eefe578a2e4ec5e518fed13fd9f15cab2de1b2a0af8ce2ff8d3abda76399f",
+      "bytes": 10409
     },
     {
       "name": "asset_references.py",
@@ -303,8 +303,8 @@
     },
     {
       "name": "collector_http.py",
-      "sha256": "95d62ca49099ee924e86c1a9978f86e6159370b642b4aace312565829db178e4",
-      "bytes": 27713
+      "sha256": "4a508ab4ca930627a9e3c5a591e2f0c0cd9d818cf17a1987b817a550c7590e87",
+      "bytes": 28328
     },
     {
       "name": "collector_http_session.py",
@@ -478,8 +478,13 @@
     },
     {
       "name": "incident_bridge.py",
-      "sha256": "8923ff7d0329079716e81afa2b95c5c7963fbbb3a20b96efd2d095ad5e03efda",
-      "bytes": 15429
+      "sha256": "43a435501e90212c07773dc436aedabf7d4ad59866cfe3f7b8c1854ed5528686",
+      "bytes": 17565
+    },
+    {
+      "name": "incident_push.py",
+      "sha256": "a61aebe61a557c85d3ddcd6fa0e5de28d5aa0e6e2a49c3fcc94311eb554d9a06",
+      "bytes": 5026
     },
     {
       "name": "integrations/iphone/forwarder-core.cjs",
@@ -588,8 +593,8 @@
     },
     {
       "name": "intent_rules.py",
-      "sha256": "7f87562f6f6faa2043a82535f70a3e8e9afc4dd213da945230fd1daa1d02a8f5",
-      "bytes": 17803
+      "sha256": "e7822beeeb0b9f210f0b8cd9004adb8a7b2ca8c8d7976a7ecfe52495a1a98bd4",
+      "bytes": 18054
     },
     {
       "name": "keyword_learning.py",
@@ -788,8 +793,8 @@
     },
     {
       "name": "scripts/monitor-health.py",
-      "sha256": "a2b678c182cf0fae54f7b7027bfdb9ddd1224bd82aaab730cef85581595325bd",
-      "bytes": 7056
+      "sha256": "ee5fa7d54a5c388e746047d4aa6d11f2ed271794060afad2d60ebfac408aa798",
+      "bytes": 7073
     },
     {
       "name": "scripts/prepare-collection-session.cjs",
@@ -848,8 +853,8 @@
     },
     {
       "name": "semantic.py",
-      "sha256": "42e17216a43454b81642f8a00b426ed699ea1d6378be6d5059c8f7dd1a3bbefa",
-      "bytes": 40536
+      "sha256": "1797e28e3d7f91f3df920801b47656fda1b69626d4015c35154fc53a6ee0aaf7",
+      "bytes": 40887
     },
     {
       "name": "semantic_api.py",
@@ -868,13 +873,13 @@
     },
     {
       "name": "service_roles.py",
-      "sha256": "9b90e43b49628629b1728bf98e719e696b5d37ce9d9da3c4c9858bee32648510",
-      "bytes": 3343
+      "sha256": "3f816ce75fb57148f5e7578e57e42d7e16edcfecd2db1f0041ff8534b4489319",
+      "bytes": 4884
     },
     {
       "name": "source-files.json",
-      "sha256": "643d9c0be696347d5da6102147003f0b6935f9cd0976ad8466fed2498fc06f3a",
-      "bytes": 8769
+      "sha256": "fe68d35cbed5310c672568d2751f233ac8d9c0d5ad5fe9f28847fd3f30d5f5dd",
+      "bytes": 8820
     },
     {
       "name": "start.ps1",
@@ -893,8 +898,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "94f6542148ae273fb9b040a6ca15b7f1faff0f198ef7ecfce419dfc953777bb1",
-      "bytes": 222538
+      "sha256": "66f5fe41413ccd743e4731fa5e1ac1a18e0da1a7841f96849556c74ef3e73ff7",
+      "bytes": 222619
     },
     {
       "name": "static/clubops-iphone.js",
@@ -1028,8 +1033,8 @@
     },
     {
       "name": "test_collector_http.py",
-      "sha256": "bc1aa8b43890e27c2dfad1e8f49b7d0e57fc8f023e8bb30114fcf8944aa0a383",
-      "bytes": 52408
+      "sha256": "4cc9e610ccdcf57eb22fdf5d5f36a023dfe429bc4bf87cd8eedde040998d16d4",
+      "bytes": 54117
     },
     {
       "name": "test_comment_keywords.py",
@@ -1103,8 +1108,8 @@
     },
     {
       "name": "test_group_monitor.py",
-      "sha256": "dffb4eb57eee8ff6bcfb03d341e0bae5e24dbd81a43e24a7bf1b215785814ed4",
-      "bytes": 24811
+      "sha256": "64f5d8aeb4c46db50905d152c6f0e226daeef6aa5f67feab8cca5e0f7d2f1e83",
+      "bytes": 25189
     },
     {
       "name": "test_group_profiles.py",
@@ -1123,8 +1128,13 @@
     },
     {
       "name": "test_incident_bridge.py",
-      "sha256": "302839f7a2ec376d6a440d90c1c78cd91c153adf032abd6928794ededb81413c",
-      "bytes": 7904
+      "sha256": "35ea097d1e88128963d0037ce3e2f51c750db79c8d9247cf1f9a8f5005498990",
+      "bytes": 10410
+    },
+    {
+      "name": "test_incident_push.py",
+      "sha256": "40932f34c7e7733c48f2b29a1271134744b1c068ddb8202a189688a3e3da510d",
+      "bytes": 2065
     },
     {
       "name": "test_intent_outreach.py",
@@ -1133,8 +1143,8 @@
     },
     {
       "name": "test_intent_rules.py",
-      "sha256": "9bc78d7396301742b47cb77bec3aef85be1251f1e0a874006ffcbfdf8f9350e5",
-      "bytes": 14293
+      "sha256": "6f19c75a21bfe07dfc759a8d49dce943f23581d6f6e76e25da2460d96f30c5ae",
+      "bytes": 14517
     },
     {
       "name": "test_iphone_forwarder.cjs",
@@ -1323,8 +1333,8 @@
     },
     {
       "name": "test_service_roles.py",
-      "sha256": "f575dfaff6156aefbf1070b9b8d4e16abacb7edee794988d0c03a9e74b2de638",
-      "bytes": 5494
+      "sha256": "2dc13e3bf932d8d91f86378e2d0789dff22929177954dd89ccb53c3d745337e3",
+      "bytes": 6040
     },
     {
       "name": "test_team_access.py",

@@ -84,6 +84,8 @@ def latest(c, kind, record_id, method, input_hash):
 
 def compatible_engine(recorded, current):
     """Recall extensions retain earlier decisions for identical source inputs.
+    v10 applies the stricter ordinary-teamup guard to every projected result,
+    including compatible older model results, before display or outreach.
 
     Other model, provider, schema or prompt changes still require a new result.
     This never rewrites historical records or schedules another model request.
@@ -94,7 +96,7 @@ def compatible_engine(recorded, current):
         return True
     return any(f':intent-prompt-v{old}:' in recorded and
                recorded.replace(f':intent-prompt-v{old}:', f':intent-prompt-v{new}:') == current
-               for old, new in ((6, 7), (6, 8), (7, 8), (6, 9), (7, 9), (8, 9)))
+               for old, new in ((6, 7), (6, 8), (7, 8), (6, 9), (7, 9), (8, 9), (6, 10), (7, 10), (8, 10), (9, 10)))
 
 
 def project(c, row, *, model_engine=None, details=True):
