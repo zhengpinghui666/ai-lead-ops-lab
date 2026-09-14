@@ -65,9 +65,11 @@ def collection_state(mode, view=None, section=''):
 VIEWS = {'overview','monitor','monitor-settings','live','groups','leads','inbox','analytics','settings','recruit','roster'}
 
 
-def workbench_state(mode, view=None, section='', lead_id=None, work_id=None, selected=None):
+def workbench_state(mode, view=None, section='', lead_id=None, work_id=None, selected=None, lead_list=None):
     if view is not None and view not in VIEWS:
         raise ValueError('页面不存在')
+    if lead_list is not None and (view != 'leads' or lead_id is not None or section):
+        raise ValueError('分页仅适用于需求列表')
     if view == 'overview' and mode == 'live':
         return {**daily_dashboard.workbench(mode), 'csrf': CSRF, 'view': view}
     light = view in {'monitor','monitor-settings','live','groups','settings'} and mode == 'live'
@@ -94,6 +96,9 @@ def workbench_state(mode, view=None, section='', lead_id=None, work_id=None, sel
         elif view=='analytics':
             result['leads']=[{k:r[k] for k in ('id','source_kind','stage')} for r in result['leads']]
             result['comments']=[{k:r.get(k) for k in ('analysis_method','video_url','published_at','discovered_at')} for r in result['comments']]
+    if lead_list is not None:
+        import lead_listing
+        lead_listing.page(result, lead_list, clubops.TARGET_GAME)
     result['messaging_test'] = messaging_http.state(clubops.DATA_DIR, mode)
     result['uid_messaging'] = uid_messaging.state(mode)
     result['csrf'] = CSRF
@@ -217,7 +222,8 @@ class Handler(BaseHTTPRequestHandler):
                 if lead_id is not None and (view!='leads' or lead_id<=0):raise ValueError('需求详情参数无效')
                 if work_id is not None and (view!='monitor' or work_id<=0):raise ValueError('作品详情参数无效')
                 selected=int(query['selected'][0]) if query.get('selected') else None
-                return self.respond(workbench_state(self.mode(),view,query.get('section',[''])[0],lead_id,work_id,selected))
+                import lead_listing
+                return self.respond(workbench_state(self.mode(),view,query.get('section',[''])[0],lead_id,work_id,selected,lead_listing.arguments(query)))
             if path == '/api/export':
                 result = clubops.state(self.mode())
                 return self.respond({'exported_at': clubops.now(), 'mode': result['mode'], 'comments': result['comments'], 'leads': result['leads']})

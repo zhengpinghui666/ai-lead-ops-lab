@@ -144,7 +144,7 @@ def discover(client, seeds, *, author_pages=1, page_size=10, include_related=Tru
             or type(author_pages) is not int or not 1 <= author_pages <= 3
             or type(page_size) is not int or not 1 <= page_size <= 20 or type(include_related) is not bool):
         raise ValueError('发现预算无效')
-    candidates, authors, details, failures = {}, set(), [], []
+    candidates, authors, details, failures, restricted = {}, set(), [], [], []
     operation, seed = 'detail', ''
     def accept(page, source, seed_id):
         stamp = time.time()
@@ -156,7 +156,14 @@ def discover(client, seeds, *, author_pages=1, page_size=10, include_related=Tru
     try:
         for seed in dict.fromkeys(map(str, seeds)):
             operation = 'detail'
-            detail = client.page(operation, video=seed, count=1)
+            try:
+                detail = client.page(operation, video=seed, count=1)
+            except ReadError as exc:
+                reason = work_restriction(exc, seed)
+                if not reason:
+                    raise
+                restricted.append(dict(video_id=seed,reason=reason,restriction_scope='work'))
+                continue
             details.extend(detail['rows'])
             sec = detail['rows'][0]['author_sec_uid']
             if sec and sec not in authors:
@@ -179,7 +186,7 @@ def discover(client, seeds, *, author_pages=1, page_size=10, include_related=Tru
     except ReadError as exc:
         failures.append({'operation': operation, 'seed_video_id': seed, 'status': exc.status})
     return {'status': 'partial' if failures else 'completed', 'candidates': list(candidates.values()),
-            'seed_details': details, 'failures': failures, 'browser_used': False,
+            'seed_details': details, 'failures': failures, 'restricted_seeds':restricted, 'browser_used': False,
             'scope': 'bounded_author_and_related_candidates' if include_related else 'bounded_author_candidates', 'all_douyin': False,
             'comment_freshness_verified': False}
 

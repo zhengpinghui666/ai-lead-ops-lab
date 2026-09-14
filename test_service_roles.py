@@ -15,11 +15,20 @@ from test_semantic import prediction
 
 
 class RoleTests(unittest.TestCase):
+    def test_ordinary_teamup_projects_uncertain_models_but_preserves_human_review(self):
+        for method in ('model','human','pending'):
+            row=dict(category='uncertain',analysis_method=method)
+            service_roles.project(row,dict(text='有没有妹子一起玩',title='瓦搭子群',parent=''))
+            self.assertEqual(row['category'],'social' if method=='model' else 'uncertain')
+            if method=='model':self.assertEqual(row['role_guard']['previous_category'],'uncertain')
+
     def test_pure_teamup_is_not_a_customer_even_after_legacy_model_false_positive(self):
         from intent_rules import classify_comment
         for text in ('现在有打的吗？','现在有打么','有人打不','来个搭子',
                      '黄金白银有人打么','有人能带我打排位吗','下三有人玩嘛，不压力',
-                     '超1有点菜，有人一起打吗？','xol524匹配有人玩吗','黄金白银，有人打吗'):
+                     '超1有点菜，有人一起打吗？','xol524匹配有人玩吗','黄金白银，有人打吗',
+                     '有没有一起玩的啊','钻超有人打吗','有没有妹子一起玩',
+                     '今晚有没有小姐姐一起打瓦呀','钻2超1，有无兄弟一起玩瓦？'):
             with self.subTest(text=text):
                 row=dict(category='buyer',analysis_method='model')
                 service_roles.project(row,dict(text=text,title='瓦搭子群',parent=''))
@@ -28,7 +37,9 @@ class RoleTests(unittest.TestCase):
                 self.assertFalse(companion_relevance(text,'瓦搭子群')['passed'])
         for text in ('太菜了，想找个厉害的人带我打瓦','现在有女陪可以点吗','来个搭子，预算100',
                      '黄金白银有人打么，付费','有人能带我打排位吗，想点女陪','超1想找技术陪',
-                     'xol524匹配有人玩吗，一局10元','有人打吗，想了解一下陪玩价格'):
+                     'xol524匹配有人玩吗，一局10元','有人打吗，想了解一下陪玩价格',
+                     '有没有女陪一起玩','有没有妹子一起玩，预算100元',
+                     '钻超有人打吗，想点个技术陪','有没有一起玩的啊，陪玩多少钱'):
             self.assertFalse(service_roles.ordinary_teamup(text))
 
     def test_personal_supply_variants_share_gate_and_are_never_buyers(self):

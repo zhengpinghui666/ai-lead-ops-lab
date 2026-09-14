@@ -342,3 +342,10 @@ main>#lead-detail{max-width:900px;position:static}main>#lead-detail .card-body{p
 @media(max-width:700px){.attention-inline .actions{flex-wrap:wrap}.overview-context p{line-height:1.6}.page-overview.primary-page .daily-plot{min-height:150px}}
 
 .group-account-picker{display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}.group-account-picker select{height:36px;max-width:min(360px,60vw);padding:0 10px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink);font:inherit}
+
+/* Demand results keep their filters visible while only the current page loads. */
+.lead-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.lead-pagination nav{display:flex;align-items:center;gap:12px;white-space:nowrap}
+.lead-results-workspace>.card>.empty{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.lead-list-status{display:flex;flex:1;min-height:160px;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--muted);padding:24px}
+@media(max-width:700px){.lead-pagination{padding:10px 12px;gap:8px}.lead-pagination nav{gap:8px}.lead-pagination .button{padding:6px 10px}}

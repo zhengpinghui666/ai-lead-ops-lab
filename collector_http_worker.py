@@ -82,6 +82,10 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
             seeds = [row['video_id'] for row in video_targets(config['target'])]
             discovery_job=config.get('discovery_job') or {}
             result = video_discovery.discover(client, seeds, author_pages=discovery_job.get('author_pages',1), page_size=10, include_related=False)
+            for restriction in result.get('restricted_seeds',[]):
+                if cancel.is_set():raise http.ReadError('cancelled')
+                emit({'type':'discovery_restriction',**restriction})
+                diagnostic({'operation':'author_seed_restriction',**restriction,'status':'skipped_restricted_work'})
             for source,records in [('author_seed',result['seed_details']),('author',result['candidates'])]:
                 for at in range(0,len(records),10):
                     emit({'type':'discovery_catalog','source':source,'records':[{**r,'video_title':r['video_title'][:500]} for r in records[at:at+10]]})
@@ -138,8 +142,9 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                             'candidate_count':len(candidates),'selected':[r['video_id'] for r in targets],
                             **candidate_pool.selection_evidence(candidates,targets,config['candidate_policy'])})
         if not targets:
+            restricted_empty=config['kind']=='author' and bool(result.get('restricted_seeds')) and result['status']=='completed'
             healthy_empty=config['kind']=='author' and bool(config.get('discovery_job')) and result['status']=='completed'
-            emit({'type': 'status', 'status': 'completed' if healthy_empty else 'no_data', 'detail': '作者作品检查完成，本次没有文案匹配的作品，等待下次检查' if healthy_empty else '本次有限发现未找到可读取的相关视频；未扩大范围或切换入口'})
+            emit({'type': 'status', 'status': 'completed' if healthy_empty or restricted_empty else 'no_data', 'detail': '作者入口检查完成，受限作品已停止跟踪；本次未读取评论，其他公开作品继续' if restricted_empty else '作者作品检查完成，本次没有文案匹配的作品，等待下次检查' if healthy_empty else '本次有限发现未找到可读取的相关视频；未扩大范围或切换入口'})
             return
         emit({'type': 'targets', 'records': targets})
 

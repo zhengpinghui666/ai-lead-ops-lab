@@ -19,10 +19,10 @@ RECRUIT = r'(?:招|招聘|招募|收)(?:长期|大量|全职|兼职|国服|瓦|�
 QUICK = re.compile(SUPPLY + '|' + RECRUIT + r'|接单|找.{0,2}老板|有老板吗|招聘|招募|求职|应聘', re.I)
 TEAMUP_ONLY = re.compile(r'(?:(?:现在|今晚|今天|一会儿|一会|这会儿|这会|此时)\s*)?(?:有(?:人|没有人|没有)?(?:要)?(?:一起)?(?:打|玩)(?:瓦|游戏)?(?:的)?(?:吗|么|嘛|不)?|(?:有没有|有无)(?:人)?(?:要)?(?:一起)?(?:打|玩)(?:瓦|游戏)?(?:的)?|(?:来|找)(?:个|几个|点)?(?:搭子|队友)(?:一起)?(?:打瓦|开黑)?)[？?！!。,.，\s]*')
 SERVICE_CLUE = re.compile(r'陪玩|陪陪|陪练|男陪|女陪|技术陪|娱乐陪|打手|老板|板板|点单|下单|接单|招募|招人|招聘|收费|付费|有偿|预算|价格|多少钱|多少米|付钱|花钱|[0-9]+\s*(?:元|块|米|rmb)|教学|教练|复盘|厉害|高手|大佬|猛男', re.I)
-TEAMUP_QUESTION = re.compile(r'(?:有人|有没有人|有无|谁)(?:(?:能|可以)?带我(?:打|玩)?(?:排位|匹配|游戏|瓦)|(?:要|想|来|能)?(?:一起)?(?:打|玩)(?:排位|匹配|游戏|瓦)?)(?:的)?(?:吗|么|嘛|不|没|啊|呀)?')
+TEAMUP_QUESTION = re.compile(r'(?:有人|有没有(?:人|妹子|小姐姐|小哥哥|兄弟|队友|搭子)?|有无(?:人|妹子|小姐姐|小哥哥|兄弟|队友|搭子)?|谁)(?:(?:能|可以)?带我(?:打|玩)?(?:排位|匹配|游戏|瓦)|(?:要|想|来|能)?(?:一起)?(?:打|玩)(?:排位|匹配|游戏|瓦)?)(?:的)?(?:吗|么|嘛|不|没|啊|呀)?')
 # Only neutral additions can surround an invitation. Rank, lobby codes and
 # self-deprecating small talk do not establish a service-shopping requirement.
-TEAMUP_NEUTRAL = re.compile(r'(?:(?:现在|今晚|今天|一会儿|一会|这会儿|这会|此时|我|本人|有点菜|很菜|太菜了|新手|不压力|没压力|匹配|排位|开黑|无畏契约|瓦)|(?:黑铁|青铜|白银|黄金|铂金|钻石|超凡|神话|辐能|超|下)[一二两三四五六七八九十0-9]*|[a-z0-9]{3,16}|[？?！!。,.，；;、：:\s])+', re.I)
+TEAMUP_NEUTRAL = re.compile(r'(?:(?:现在|今晚|今天|一会儿|一会|这会儿|这会|此时|我|本人|有点菜|很菜|太菜了|新手|不压力|没压力|匹配|排位|开黑|无畏契约|瓦)|(?:黑铁|青铜|白银|黄金|铂金|钻石|超凡|神话|辐能|钻|超|下)[一二两三四五六七八九十0-9]*|[a-z0-9]{3,16}|[？?！!。,.，；;、：:\s])+', re.I)
 
 
 def ordinary_teamup(text):
@@ -50,8 +50,8 @@ def classify(text, title='', parent=''):
 
 def project(row, source):
     """Make legacy false buyers visible as supply; preserve human reviews."""
-    if row.get('analysis_method') not in ('human', 'pending') and row.get('category') == 'buyer' and ordinary_teamup(source['text']):
-        row['role_guard'] = dict(version='ordinary-teamup-v2', previous_category='buyer')
+    if row.get('analysis_method') not in ('human', 'pending') and row.get('category') in ('buyer','uncertain') and ordinary_teamup(source['text']):
+        row['role_guard'] = dict(version='ordinary-teamup-v3', previous_category=row['category'])
         row.update(category='social', reason='普通找搭子、组队邀约，未表达陪玩服务需求。', analysis_method='rules')
     if row.get('analysis_method') not in ('human', 'pending'):
         role = classify(source['text'], source.get('title', ''), source.get('parent', ''))

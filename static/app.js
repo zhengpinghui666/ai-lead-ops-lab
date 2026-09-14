@@ -34,6 +34,7 @@ let monitorHistory=null,monitorHistoryKey='',monitorHistorySequence=0,monitorHis
 let monitorHistoryErrorKey='';
 const monitorHistoryCache=new Map(),monitorHistoryCounts=new Map();
 let publishedFilter='all',publishedFrom='',publishedUntil='',leadSort='published';
+let leadPage=1,leadLoadTimer=null,leadListLoading=false,leadListError='';
 const publicationWindows={all:'全部发布时间',hour:'近 1 小时',day:'近 24 小时',week:'近 7 天',month:'近 30 天',custom:'指定日期（北京时间）',unknown:'发布时间未知',future:'未来时间 · 待核对'};
 let S, mode='live', page=location.hash.slice(1).split('/')[0] || 'overview', selected=null, conversation=null, tab='buyer', query='', gameFilter='', draftText='', draftKey='', toastTimer, busy=false;
 let section=location.hash.slice(1).split('/').slice(1).join('/'),dailyTrend='demand',trendDays=30;
@@ -48,7 +49,7 @@ function detailHead(title,actions=''){return `<div class="detail-breadcrumb"><a 
 const draftCache=new Map();
 const viewScrollCache=new Map();let renderedViewKey='';
 const scrollTargets='#main,#main .table-scroll,#main .result-table-scroll,#main .work-list,#main .inbox-list,#main .chat-history';
-const viewKey=()=>JSON.stringify([mode,page,section,tab,workQuery,workFilter,workPage,query,gameFilter,serviceFilter,publishedFilter,publishedFrom,publishedUntil,leadSort,monitorResultVideo,monitorResultFilter,monitorResultQuery,monitorResultPage,liveScope,liveSearch,liveFilter,livePage,groupBefore,conversation]);
+const viewKey=()=>JSON.stringify([mode,page,section,tab,workQuery,workFilter,workPage,query,gameFilter,serviceFilter,publishedFilter,publishedFrom,publishedUntil,leadSort,leadPage,monitorResultVideo,monitorResultFilter,monitorResultQuery,monitorResultPage,liveScope,liveSearch,liveFilter,livePage,groupBefore,conversation]);
 function rememberViewScroll(){if(renderedViewKey){viewScrollCache.set(renderedViewKey,[...document.querySelectorAll(scrollTargets)].map(e=>[e.scrollTop||0,e.scrollLeft||0]));if(viewScrollCache.size>40)viewScrollCache.delete(viewScrollCache.keys().next().value);}}
 function restoreViewScroll(key){const values=viewScrollCache.get(key)||[];[...document.querySelectorAll(scrollTargets)].forEach((e,i)=>{e.scrollTop=values[i]?.[0]||0;e.scrollLeft=values[i]?.[1]||0;});renderedViewKey=key;}
 const badge=(text, cls='')=>`<span class="badge ${cls}">${esc(text)}</span>`;
@@ -95,9 +96,10 @@ function compareLeadTime(a,b,key=leadSort){
 function publicationSummary(reference=Date.now()){
   const rows=S.comments.filter(c=>focused(c.game));let day=0,week=0,unknown=0,future=0;
   for(const c of rows){const stamp=timeValue(c.published_at);if(stamp===null){unknown++;continue;}const elapsed=reference-stamp;if(elapsed<0){future++;continue;}if(elapsed<=86400000)day++;if(elapsed<=604800000)week++;}
+  if(S.lead_list?.publication_summary)({day,week,unknown,future}=S.lead_list.publication_summary);
   return `<div class="publication-summary">本方向 / 待识别评论：近 24 小时发布 <b>${day}</b> 条 · 近 7 天 <b>${week}</b> 条 · 时间未知 <b>${unknown}</b> 条${future?` · 未来时间待核对 <b>${future}</b> 条`:''}<small>按原始发布时间计算，不是采集时间；不代表平台全部近期评论。时间显示为北京时间。</small></div>`;
 }
-function resetLeadFilters(){query='';gameFilter='';serviceFilter='';publishedFilter='all';publishedFrom='';publishedUntil='';leadSort='published';selected=null;}
+function resetLeadFilters(){query='';gameFilter='';serviceFilter='';publishedFilter='all';publishedFrom='';publishedUntil='';leadSort='published';leadPage=1;selected=null;}
 const avatarInitials=name=>{const text=String(name||'?');const parts=typeof Intl.Segmenter==='function'?[...new Intl.Segmenter('zh',{granularity:'grapheme'}).segment(text)].map(p=>p.segment):Array.from(text);return parts.slice(-2).join('');};
 const avatar=(name,small=false)=>`<span class="avatar ${small?'small':''}">${esc(avatarInitials(name))}</span>`;
 const sourceLink=c=>c.evidence_type==='group'?`<a href="#groups">群聊 · ${esc(c.group_title)}</a>`:(c.source_url||c.video_url)?`<a href="${esc(c.source_url||c.video_url)}" target="_blank" rel="noopener noreferrer">${icon('arrow-up-right')} ${c.evidence_type==='live'?'查看直播间':'查看原视频'}</a>`:'<span class="muted">未提供来源链接</span>';
@@ -132,8 +134,20 @@ function recordLoadTiming(name,started,sequence){
   if(name==='appDataReadyMs'&&!data.appInitialDataReadyAtMs)data.appInitialDataReadyAtMs=String(Math.round(loadingClock()));
   if(name==='appFrameMountedMs'&&typeof requestAnimationFrame==='function')requestAnimationFrame(()=>requestAnimationFrame(()=>{if(sequence===loadSequence)data.appFramePaintMs=String(Math.round(loadingClock()-started));}));
 }
+function leadListParameters(){
+  return Object.entries({lead_page:leadPage,lead_page_size:30,lead_tab:tab,lead_query:query,lead_game:gameFilter,lead_service:serviceFilter,lead_published:publishedFilter,lead_from:publishedFrom,lead_until:publishedUntil,lead_sort:leadSort}).map(([k,v])=>k+'='+encodeURIComponent(v)).join('&');
+}
+function refreshLeadList(delay=0){
+  if(page!=='leads'||section){render();return;}
+  clearTimeout(leadLoadTimer);leadLoadTimer=null;load.controller?.abort();loadSequence++;
+  leadListError=publicationError();leadListLoading=!leadListError;render();
+  if(leadListError)return;
+  leadLoadTimer=setTimeout(()=>{leadLoadTimer=null;if(page==='leads'&&!section)void load().catch(loadError);},delay);
+}
 async function load(){
   const requestedMode=mode,requestedPage=pages[page]?page:'overview',requestedSection=section,sequence=++loadSequence,started=loadingClock();
+  const requestedLeadList=requestedPage==='leads'&&!requestedSection;
+  if(requestedLeadList){clearTimeout(leadLoadTimer);leadLoadTimer=null;leadListLoading=true;leadListError='';}
   renderNavigation();
   if(!S||S.view&&S.view!==requestedPage){rememberViewScroll();renderedViewKey='';$('#main').className='app-page page-'+requestedPage+' loading-page';$('#main').innerHTML=loadingFrame(requestedPage);icons();recordLoadTiming('appFrameMountedMs',started,sequence);}
   load.controller?.abort();
@@ -142,14 +156,18 @@ async function load(){
   const prefetchHistory=requestedPage==='monitor'&&!section;
   if(prefetchHistory)void refreshMonitorHistory();
   try{
-    const r=await fetch(`/api/state?mode=${requestedMode}&view=${encodeURIComponent(requestedPage)}&section=${encodeURIComponent(requestedSection)}${requestedPage==='inbox'?'&selected='+(requestedSection.startsWith('contact/')?Number(requestedSection.split('/')[1]):conversation||0):''}${requestedPage==='leads'&&requestedSection.startsWith('detail/')?'&lead_id='+Number(requestedSection.split('/')[1]):''}`,controller?{signal:controller.signal}:undefined);
+    const r=await fetch(`/api/state?mode=${requestedMode}&view=${encodeURIComponent(requestedPage)}&section=${encodeURIComponent(requestedSection)}${requestedLeadList?'&'+leadListParameters():''}${requestedPage==='inbox'?'&selected='+(requestedSection.startsWith('contact/')?Number(requestedSection.split('/')[1]):conversation||0):''}${requestedPage==='leads'&&requestedSection.startsWith('detail/')?'&lead_id='+Number(requestedSection.split('/')[1]):''}`,controller?{signal:controller.signal}:undefined);
     const responseAt=loadingClock(),v=await r.json(),parsedAt=loadingClock();if(!r.ok)throw Error(v.error||'读取失败');
     if(requestedMode!==mode||sequence!==loadSequence||requestedPage!==page||requestedSection!==section)return;
     const timing=document.documentElement?.dataset;if(timing&&!timing.appInitialDataReadyAtMs){timing.appInitialResponseMs=String(Math.round(responseAt-started));timing.appInitialJsonMs=String(Math.round(parsedAt-responseAt));timing.appInitialRequestStartedAtMs=String(Math.round(started));}
+    if(requestedLeadList){leadListLoading=false;leadListError='';if(v.lead_list)leadPage=v.lead_list.page;}
     S=v;S._pageDataSignal=JSON.stringify([v.collector?.model_queue,v.collector?.intent_outreach?.last_job_id,v.collector?.intent_outreach?.counts]);render(!prefetchHistory);recordLoadTiming('appDataReadyMs',started,sequence);queueCollectionPoll();
     if(timing&&!timing.appInitialRenderMs)timing.appInitialRenderMs=String(Math.round(loadingClock()-parsedAt));
   }catch(error){
-    if(requestedMode===mode&&sequence===loadSequence&&requestedPage===page)throw error;
+    if(requestedMode===mode&&sequence===loadSequence&&requestedPage===page){
+      if(requestedLeadList&&S?.view==='leads'){leadListLoading=false;leadListError=error.name==='AbortError'?'读取超时，请重试。':error.message;render();return;}
+      throw error;
+    }
   }finally{if(timeout!==null)clearTimeout(timeout);}
 }
 function loadError(err){$('#main').innerHTML=empty('暂时无法连接工作台',`请确认电脑已开机、联网并运行 ClubOps。${esc(err.name==='AbortError'?'本次读取超时，请重试。':err.message)}`,'refresh','重试','unplug');icons();}
@@ -379,13 +397,19 @@ function monitorSettingsDialog(){showSettingsModal('评论监控设置',monitorS
 
 
 function leadTable(items,compact=false){return `<div class="table-scroll"><table class="lead-table"><thead><tr><th>用户 / 需求原文</th><th>游戏</th>${compact?'': '<th>分类 / 跟进</th>'}<th>发布 / 首次入库</th></tr></thead><tbody>${items.map(l=>`<tr data-action="select-lead" data-id="${l.id}" tabindex="0" aria-label="查看 ${esc(personName(l))} 的需求" class="${selected===l.id?'selected':''}"><td><div class="row">${avatar(personName(l),true)}<div><strong>${esc(personName(l))}</strong><span class="cell-sub">${evidenceCount(l)}${l.latest.analysis_method==='pending'?' · 尚未初筛':''}</span></div></div><span class="cell-title" style="margin-top:10px;font-size:.875rem">${esc(l.latest.raw_text||'暂无来源原文')}</span></td><td class="nowrap">${esc(l.game||'游戏待确认')}${!l.game?'<small class="cell-sub">原文与上下文未唯一确认 · 意向确认后介绍瓦陪陪</small>':''}</td>${compact?'':`<td>${category(l.category)}<span class="cell-sub">${stages[l.stage]}</span></td>`}<td class="comment-times"><span title="${esc(l.latest.published_at||'未提供')}">发布 ${age(l.latest.published_at)}</span><small>首次入库 ${date(l.latest.discovered_at)}</small></td></tr>`).join('')}</tbody></table></div>`;}
-function filteredLeads(cats){const reference=Date.now();return S.leads.filter(l=>(!cats||cats.includes(l.category))&&(gameFilter==='other'?!!l.game&&l.game!==TARGET_GAME:gameFilter?l.game===gameFilter:focused(l.game))&&(!serviceFilter||l.latest.facts?.service_type===serviceFilter)&&publicationMatches(l.latest,reference)&&(!query||`${l.nickname} ${l.latest.raw_text||''} ${l.external_id}`.toLowerCase().includes(query.toLowerCase()))).sort(compareLeadTime);}
+function filteredLeads(cats){if(S.lead_list&&page==='leads'&&!section)return S.leads;const reference=Date.now();return S.leads.filter(l=>(!cats||cats.includes(l.category))&&(gameFilter==='other'?!!l.game&&l.game!==TARGET_GAME:gameFilter?l.game===gameFilter:focused(l.game))&&(!serviceFilter||l.latest.facts?.service_type===serviceFilter)&&publicationMatches(l.latest,reference)&&(!query||`${l.nickname} ${l.latest.raw_text||''} ${l.external_id}`.toLowerCase().includes(query.toLowerCase()))).sort(compareLeadTime);}
 function filterBar(){
   const full=fullFilterBar(),search=full.match(/<label class="search">[\s\S]*?<\/label>/)?.[0]||'';
   return `<div class="lead-filter-layout">${search}<details id="lead-advanced-filters" class="lead-advanced"><summary>筛选与排序${publishedFilter!=='all'||gameFilter||serviceFilter?' · 已应用条件':''}</summary>${full.replace(search,'')}${publicationSummary()}</details></div>`;
 }
 function fullFilterBar(){return `<div class="lead-filters"><label class="search">${icon('search')}<input id="lead-search" aria-label="搜索昵称、ID 或评论" placeholder="搜索昵称、ID、评论" value="${esc(query)}"></label><select id="game-filter" class="control" aria-label="按游戏筛选">${gameOpts(gameFilter)}</select><select id="service-filter" class="control" aria-label="按服务类型筛选">${opts({'':'全部服务',...Object.fromEntries(serviceTypes.map(s=>[s,s]))},serviceFilter)}</select><select id="published-filter" class="control" aria-label="按发布时间筛选">${opts(publicationWindows,publishedFilter)}</select><select id="lead-sort" class="control" aria-label="线索排序">${opts({published:'发布时间新到旧（未知置后）',discovered:'首次入库时间新到旧'},leadSort)}</select>${button('清除筛选','clear-lead-filters','small')}${publishedFilter==='custom'?`<div class="publication-dates"><label>开始日期（含）<input id="published-from" type="date" value="${esc(publishedFrom)}" aria-label="开始日期（北京时间）"></label><label>结束日期（含）<input id="published-until" type="date" value="${esc(publishedUntil)}" aria-label="结束日期（北京时间）"></label>${button('应用日期','apply-published-range','small')}<small>选择日期后点击“应用日期”，更新结果。</small></div>`:''}<p class="filter-scope">筛选每位用户当前展示评论的发布时间，不按入库时间判断新需求；其余评论仍保留在历史中。</p>${publicationError()?`<p class="filter-error" role="alert">${esc(publicationError())}</p>`:''}</div>`;}
-function leads(){const cats=tab==='all'?null:tab==='supply'?['seller','recruit']:[tab];const items=filteredLeads(cats);let l=items.find(x=>x.id===selected);if(section.startsWith('detail/')){l=S.leads.find(x=>x.id===Number(section.split('/')[1]));return detailHead('需求详情')+(l?leadDetail(l):notice('这条需求当前不可用，请返回列表。'));}const withoutUser=S.comments.filter(c=>!c.person_id).length;return head('识别无畏契约的真实付费需求。','付费陪玩、陪练、接单与免费组队分别判断。普通“找搭子”保留为待判断，不默认视为客户。',button(icon('scan-text')+(S.stats.pending?` 初筛待处理 (${S.stats.pending})`:'规则初筛已完成'),'analyze',S.stats.pending?'primary':'small',S.stats.pending?'':'disabled'))+(withoutUser?notice(`另有 ${withoutUser} 条评论缺少用户标识，保留原文但不会仅按昵称合并成客户。`)+button('查看未关联评论','unlinked-comments','small'):'')+`<div class="lead-results-workspace"><div class="card"><div class="toolbar"><div class="tabs">${[['buyer','点单（板板）'],['supply','接单（陪陪）'],['club','俱乐部'],['uncertain','待判断'],['all','全部']].map(([v,t])=>`<button class="tab ${tab===v?'active':''}" data-action="lead-tab" data-tab="${v}">${t}</button>`).join('')}</div>${filterBar()}</div>${items.length?leadTable(items):empty('当前筛选下没有线索',S.comments.length?'当前发布时间、分类或搜索条件下没有已入库记录。可清除筛选查看历史；不代表平台没有相关需求。':'开启评论监控后，系统自动记录原文并筛选需求；有明确用户标识才建立用户线索。')}<div class="card-foot">${items.length} 位用户 · 分类取自每位用户当前展示的来源记录，评论与弹幕历史可展开核对。</div></div></div>`;}
+function leads(){const cats=tab==='all'?null:tab==='supply'?['seller','recruit']:[tab];const items=filteredLeads(cats);let l=items.find(x=>x.id===selected);if(section.startsWith('detail/')){l=S.leads.find(x=>x.id===Number(section.split('/')[1]));return detailHead('需求详情')+(l?leadDetail(l):notice('这条需求当前不可用，请返回列表。'));}const withoutUser=S.lead_list?.unlinked_count??S.comments.filter(c=>!c.person_id).length;return head('识别无畏契约的真实付费需求。','付费陪玩、陪练、接单与免费组队分别判断。普通“找搭子”保留为待判断，不默认视为客户。',button(icon('scan-text')+(S.stats.pending?` 初筛待处理 (${S.stats.pending})`:'规则初筛已完成'),'analyze',S.stats.pending?'primary':'small',S.stats.pending?'':'disabled'))+(withoutUser?notice(`另有 ${withoutUser} 条评论缺少用户标识，保留原文但不会仅按昵称合并成客户。`)+button('查看未关联评论','unlinked-comments','small'):'')+`<div class="lead-results-workspace"><div class="card"><div class="toolbar"><div class="tabs">${[['buyer','点单（板板）'],['supply','接单（陪陪）'],['club','俱乐部'],['uncertain','待判断'],['all','全部']].map(([v,t])=>`<button class="tab ${tab===v?'active':''}" data-action="lead-tab" data-tab="${v}">${t}</button>`).join('')}</div>${filterBar()}</div>${leadListLoading?'<div class="lead-list-status" role="status" aria-busy="true">正在加载需求…</div>':leadListError?`<div class="lead-list-status" role="alert"><p>${esc(leadListError)}</p>${button('重试','lead-retry','small')}</div>`:items.length?leadTable(items):empty('当前筛选下没有线索',(S.lead_list?.comment_count??S.comments.length)?'当前发布时间、分类或搜索条件下没有已入库记录。可清除筛选查看历史；不代表平台没有相关需求。':'开启评论监控后，系统自动记录原文并筛选需求；有明确用户标识才建立用户线索。','clear-lead-filters','清除筛选')}${leadListFooter(items.length)}</div></div>`;}
+function leadListFooter(count){
+  const p=S.lead_list;
+  if(!p)return `<div class="card-foot">${count} 位用户 · 分类取自当前展示的来源记录，历史可在详情核对。</div>`;
+  const unavailable=leadListLoading||!!leadListError;
+  return `<div class="card-foot lead-pagination"><span>${unavailable?(leadListError?'暂未取得筛选结果':'正在更新筛选结果'):`${p.start}–${p.end} / 共 ${p.total} 位用户`}</span><nav aria-label="需求列表分页">${button('上一页','lead-page','small',`data-id="${p.page-1}" ${unavailable||p.page<=1?'disabled':''}`)}<span>第 ${p.page} / ${p.pages} 页</span>${button('下一页','lead-page','small',`data-id="${p.page+1}" ${unavailable||p.page>=p.pages?'disabled':''}`)}</nav></div>`;
+}
 
 function matching(l){const f=l.latest.facts||{};return S.members.filter(m=>m.available&&l.game&&m.game===l.game&&(!f.region||!m.region||f.region===m.region)&&(!f.service_type||!m.service_types?.length||m.service_types.includes(f.service_type)));}
 function parentEvidence(c){
@@ -677,15 +701,17 @@ case 'intent-outreach-toggle': await save('intent-outreach-control',{enabled:el.
 case 'live-discover': {const value=await api('live-discover');S.collector.live_monitor.discovery=value;const panel=$('#live-discovery'),opened=!!panel?.open;if(panel){panel.outerHTML=liveDiscoveryPanel();$('#live-discovery').open=opened;icons();}toast(value.status==='ready'?'直播候选已更新；选择房间后保存配置':'未更新候选，请查看具体状态',value.status!=='ready');break;}
 case 'live-use-room': {const row=liveState().discovery?.rows?.[Number(el.dataset.index)];if(row&&!$('#live-form'))liveSettingsDialog();const form=$('#live-form');if(row&&form){form.elements.namedItem('room_url').value=row.room_url;markMonitorDraft(form.elements.namedItem('room_url'));form.scrollIntoView({behavior:'smooth',block:'start'});toast('直播间已填入；保存配置后再开启读取');}break;}
 case 'live-review': {const r=await fetch(`/api/live-message?mode=${mode}&id=${id}`);const row=await r.json();if(!r.ok)throw Error(row.error||'弹幕读取失败');reviewDialog(id,row);break;}
-case 'live-open-lead': await load();resetLeadFilters();tab='all';selected=id;navigate('leads');break;
+case 'live-open-lead': resetLeadFilters();tab='all';selected=id;navigate('leads/detail/'+id);break;
 case 'live-history-page': await historyDialog(id,Number(el.dataset.offset)||0);break;
 case 'live-prev': livePage=Math.max(1,livePage-1);redrawLiveResults();await refreshLiveArchive();break;
 case 'live-next': livePage++;redrawLiveResults();await refreshLiveArchive();break;
 case 'unlinked-comments': unlinkedCommentsDialog();break;
-case 'go-leads': serviceFilter='';navigate('leads');break;
-case 'apply-published-range': publishedFrom=$('#published-from').value;publishedUntil=$('#published-until').value;selected=null;render();break;
-case 'clear-lead-filters': resetLeadFilters();render();break;
-case 'lead-tab': tab=el.dataset.tab;selected=null;render();break;
+case 'go-leads': if(page!=='leads')resetLeadFilters();navigate('leads');break;
+case 'apply-published-range': publishedFrom=$('#published-from').value;publishedUntil=$('#published-until').value;selected=null;leadPage=1;refreshLeadList();break;
+case 'clear-lead-filters': resetLeadFilters();refreshLeadList();break;
+case 'lead-tab': tab=el.dataset.tab;selected=null;leadPage=1;refreshLeadList();break;
+case 'lead-page': if(S.lead_list&&!leadListLoading&&Number.isInteger(id)&&id>=1&&id<=S.lead_list.pages){leadPage=id;refreshLeadList();}break;
+case 'lead-retry': refreshLeadList();break;
 case 'select-lead': if(page!=='leads'){resetLeadFilters();tab='all';}selected=id;navigate('leads/detail/'+id);break;
 case 'review': reviewDialog(id);break;
 case 'history': historyDialog(id);break;
@@ -708,14 +734,14 @@ async function handleActionClick(e){
 }
 document.addEventListener('click',handleActionClick);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.body.classList.contains('menu-open')){setMobileNavigation(false);}const row=e.target.closest('tr[data-action]');if(row&&e.target===row&&(e.key==='Enter'||e.key===' ')){e.preventDefault();row.click();}});
-document.addEventListener('input',e=>{markMonitorDraft(e.target);if(e.target.id==='work-search'){const pos=e.target.selectionStart;workQuery=e.target.value;workPage=1;redrawWorkPool();const input=$('#work-search');input.focus();input.setSelectionRange(pos,pos);}if(e.target.id==='monitor-result-search'){const pos=e.target.selectionStart;monitorResultQuery=e.target.value;monitorResultPage=1;redrawMonitorResults();void refreshMonitorHistory();const input=$('#monitor-result-search');input.focus();input.setSelectionRange(pos,pos);}if(e.target.id==='lead-search'){const pos=e.target.selectionStart;query=e.target.value;render();const el=$('#lead-search');el.focus();el.setSelectionRange(pos,pos);}if(e.target.id==='draft-content'){draftText=e.target.value;draftKey='';stashDraft();}});
+document.addEventListener('input',e=>{markMonitorDraft(e.target);if(e.target.id==='work-search'){const pos=e.target.selectionStart;workQuery=e.target.value;workPage=1;redrawWorkPool();const input=$('#work-search');input.focus();input.setSelectionRange(pos,pos);}if(e.target.id==='monitor-result-search'){const pos=e.target.selectionStart;monitorResultQuery=e.target.value;monitorResultPage=1;redrawMonitorResults();void refreshMonitorHistory();const input=$('#monitor-result-search');input.focus();input.setSelectionRange(pos,pos);}if(e.target.id==='lead-search'){const pos=e.target.selectionStart;query=e.target.value;leadPage=1;refreshLeadList(300);const el=$('#lead-search');el.focus();el.setSelectionRange(pos,pos);}if(e.target.id==='draft-content'){draftText=e.target.value;draftKey='';stashDraft();}});
 document.addEventListener('change',async e=>{
   if(e.target.id==='group-account-select'){groupAccount=e.target.value;groupBefore=0;groupState=null;await refreshGroups();return;}
   markMonitorDraft(e.target);
   if(['kind','transport'].includes(e.target.name))syncCollectionForm(e.target.closest('form'));
   if(e.target.name==='fields_action')$('#review-fields').disabled=e.target.value!=='confirm';
   const controls={'game-filter':v=>gameFilter=v,'service-filter':v=>serviceFilter=v,'published-filter':v=>publishedFilter=v,'lead-sort':v=>leadSort=v};
-  if(controls[e.target.id]){const id=e.target.id;controls[id](e.target.value);selected=null;render();$('#'+id)?.focus();}
+  if(controls[e.target.id]){const id=e.target.id;controls[id](e.target.value);selected=null;leadPage=1;refreshLeadList();$('#'+id)?.focus();}
 });
 document.addEventListener('submit',async e=>{const form=e.target;const formId=form.getAttribute('id');if(!formId)return;e.preventDefault();if(busy)return;busy=true;const submitButton=$('button[type="submit"]',form);if(submitButton)submitButton.disabled=true;try{const formError=$('.form-error',form);if(formError){formError.hidden=true;formError.textContent='';}const values=Object.fromEntries(new FormData(form));
   if(formId==='composer'){draftText=values.content.trim();if(!draftText)throw Error('请先填写消息内容');draftKey=draftKey||crypto.randomUUID();stashDraft();await api('draft',{lead_id:conversation,content:draftText,request_id:draftKey});draftText='';draftKey='';stashDraft();await load();toast('草稿已保存，尚未发送');}
@@ -749,7 +775,8 @@ window.addEventListener('hashchange',()=>{
   const parts=location.hash.slice(1).split('/'),next=pages[parts[0]]?parts[0]:'overview',nextSection=parts.slice(1).join('/');
   monitorDraftDirty=false;liveDraftDirty=false;semanticDraftDirty=false;stashDraft();
   const same=next===page;page=next;section=sectionSets[page]?.includes(nextSection.split('/')[0])?nextSection:'';
-  if(!same){gameFilter='';query='';}setMobileNavigation(false,false);
+  clearTimeout(leadLoadTimer);leadLoadTimer=null;
+  if(!same){gameFilter='';query='';leadPage=1;}setMobileNavigation(false,false);
   void load().catch(loadError);
   window.scrollTo({top:0});$('#main')?.focus?.({preventScroll:true});
 });
@@ -1151,7 +1178,7 @@ async function pollCollection(){
     }
     if(page==='monitor'&&!section&&!editing)await refreshMonitorHistory();
     if(page==='groups'&&!editing&&!groupBefore)await refreshGroups();
-    if(collectionReloadPending&&!editing&&!(page==='live'&&value.live_monitor?.active_id)){await load();collectionReloadPending=false;}
+    if(collectionReloadPending&&!editing&&!(page==='leads'&&(leadListLoading||leadLoadTimer))&&!(page==='live'&&value.live_monitor?.active_id)){await load();collectionReloadPending=false;}
   }catch{if(page==='monitor')toast('暂时无法刷新采集状态；不会因此重启任务',true);if(page==='overview'&&$('#dashboard-refresh-error')){const el=$('#dashboard-refresh-error');el.hidden=false;el.textContent='刷新暂时失败，保留上次数据；请按更新时间判断。';}}
   finally{collectionPolling=false;queueCollectionPoll();}
 }

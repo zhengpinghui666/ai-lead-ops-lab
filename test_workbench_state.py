@@ -38,8 +38,20 @@ class WorkbenchStateTests(unittest.TestCase):
         app.seed_demo()
         full=server.workbench_state('demo')
         leads=server.workbench_state('demo','leads')
-        self.assertEqual(full['comments'],leads['comments'])
-        self.assertEqual(full['leads'],leads['leads'])
+        # List reads already omit heavy histories. Their retained evidence and
+        # classification must agree, and complete evidence remains in details.
+        comment_keys=('id','person_id','raw_text','category','game','published_at','discovered_at')
+        project=lambda rows,keys:[{k:r.get(k) for k in keys} for r in rows]
+        self.assertEqual(project(full['comments'],comment_keys),project(leads['comments'],comment_keys))
+        lead_keys=('id','person_id','category','game','stage')
+        self.assertEqual(project(full['leads'],lead_keys),project(leads['leads'],lead_keys))
+        self.assertEqual([r['latest']['raw_text'] for r in full['leads']],[r['latest']['raw_text'] for r in leads['leads']])
+        for lead in full['leads']:
+            detail=server.workbench_state('demo','leads','detail/'+str(lead['id']),lead_id=lead['id'])
+            self.assertEqual(detail['leads'][0]['latest'],lead['latest'])
+            original={r['id']:r for r in full['comments']}
+            for comment in detail['comments']:
+                self.assertEqual(comment,original[comment['id']])
         self.assertEqual(full['stats'],leads['stats'])
         overview=server.workbench_state('demo','overview')
         self.assertEqual(overview['stats'],full['stats'])

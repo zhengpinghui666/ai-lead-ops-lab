@@ -296,6 +296,22 @@ def allowed_video_ids(connection, task):
     return None
 
 
+def restricted_discovery_seed(task_id, message):
+    """Only retire the exact configured author seed after a scoped worker event."""
+    from video_discovery import WORK_RESTRICTION_DETAILS
+    video,reason=message.get('video_id'),message.get('reason')
+    if message.get('restriction_scope')!='work' or reason not in WORK_RESTRICTION_DETAILS:
+        raise ValueError('作者种子限制范围无效')
+    with app.LOCKS['live'],app.db() as c:
+        task=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task_id,)).fetchone()
+        if not task or task['kind']!='author' or task['transport']!='http' or task['finished_at'] or task['status']=='cancelling':
+            raise ValueError('作者种子限制与当前任务不符')
+        if video not in {r['video_id'] for r in video_targets(task['target'])}:
+            raise ValueError('作者种子限制超出任务范围')
+        changed=c.execute('UPDATE discovery_works SET enabled=0,last_checked_at=?,next_check_at=NULL WHERE video_id=? AND enabled=1',(app.now(),video)).rowcount
+        if changed:app.event(c,'collector',f'作者发现入口 {video}：{WORK_RESTRICTION_DETAILS[reason]}')
+
+
 def checkpoint(task_id, message):
     records = message.get('records')
     if message.get('type') == 'targets':
@@ -611,6 +627,9 @@ def run(task_id, control):
             elif typ in ('targets', 'checkpoint'):
                 if not control['cancel']:
                     checkpoint(task_id, message)
+            elif typ == 'discovery_restriction':
+                if not control['cancel']:
+                    restricted_discovery_seed(task_id, message)
             elif typ == 'candidates':
                 if not control['cancel']:
                     with app.LOCKS['live'], app.db() as c:

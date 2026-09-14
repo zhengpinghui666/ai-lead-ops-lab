@@ -7,7 +7,7 @@ const context=vm.createContext({AbortController,encodeURIComponent,Error,setTime
   fetch:(url,options)=>new Promise((resolve,reject)=>requests.push({url,options,resolve,reject})),
 });
 const run=code=>vm.runInContext(code,context);
-run("let S,mode='live',page='monitor',section='',renderedViewKey='',loadSequence=0; const pages={monitor:['监控中心'],leads:['需求筛选'],overview:['工作总览']},navPages=Object.keys(pages);");
+run("let S,mode='live',page='monitor',section='',renderedViewKey='',loadSequence=0,leadPage=1,leadLoadTimer=null,leadListLoading=false,leadListError='',tab='buyer',query='',gameFilter='',serviceFilter='',publishedFilter='all',publishedFrom='',publishedUntil='',leadSort='published'; const pages={monitor:['监控中心'],leads:['需求筛选'],overview:['工作总览']},navPages=Object.keys(pages);");
 const source=fs.readFileSync('static/app.js','utf8');
 run(source.slice(source.indexOf('function renderNavigation()'),source.indexOf('async function api(')));
 (async()=>{
@@ -15,7 +15,7 @@ run(source.slice(source.indexOf('function renderNavigation()'),source.indexOf('a
   assert.match(node('#nav').innerHTML,/需求筛选/,'Navigation exists before the API responds');
   assert.match(node('#main').innerHTML,/正在加载采集监控/);
   assert.doesNotMatch(node('#main').innerHTML,/作品库/,'The result workspace does not mount the source library while loading');
-  assert.match(node('#main').innerHTML,/有意向的评论/);
+  assert.match(node('#main').innerHTML,/点单（板板）的评论/);
   assert.match(node('#main').innerHTML,/aria-busy="true"/);
   assert.match(requests[0].url,/view=monitor/);
   assert.equal(historyReads,1,'Comment history starts alongside the initial state read');
