@@ -18,8 +18,8 @@
     },
     {
       "name": "AFTERNOON_REQUIREMENTS_20260914.md",
-      "sha256": "41eddd32dd12bb01b61660bd494614d2fe1395784224527cfc60d113b33fb7b9",
-      "bytes": 11218
+      "sha256": "4a4f028ee0904b8e06151d3c1fdbd44e809ec71f32ab8c47facf8582f585c69c",
+      "bytes": 11466
     },
     {
       "name": "ASSET_VERTICALITY.md",
@@ -63,8 +63,8 @@
     },
     {
       "name": "COMMENT_READ_PRIORITY.md",
-      "sha256": "046ffcc2465cdf214621d65af36aebcdfc08f6238e855d5fb02df0e73e37283c",
-      "bytes": 1994
+      "sha256": "6e37811b81f86878771d1caca9d4f3f9e7af2cd496dbf9bbe2a5b68565198a0e",
+      "bytes": 2567
     },
     {
       "name": "DAILY_DASHBOARD.md",
@@ -203,8 +203,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "797e52aeaccf67e25d934638878abea1eb93adbe1e9ef7629540158df36a313a",
-      "bytes": 177767
+      "sha256": "4615bb4b27e9839aa7d897a1a5f95ba61945c43f429f5e08014208c265a86d17",
+      "bytes": 180708
     },
     {
       "name": "UID_HTTP.md",
@@ -358,8 +358,8 @@
     },
     {
       "name": "collection_scheduler.py",
-      "sha256": "6931f07b1b653adf531c0f33e0477231f34d08d6aeb770e184ae69a7cdd1fae6",
-      "bytes": 44772
+      "sha256": "9033cc58a33c6e3119e62c6a9d6fd92ddef12c048ad4bbc1796d17aeb6126c09",
+      "bytes": 46167
     },
     {
       "name": "collection_session_refresh.py",
@@ -1468,8 +1468,8 @@
     },
     {
       "name": "test_monitoring.py",
-      "sha256": "f747925e4dc243978860d286434060c544c73eb890f9a4a8dee48c5ac01798b3",
-      "bytes": 67447
+      "sha256": "f0df3ceab5a6b217583aef3c00982db8584e221b4ed8a8301c8b65f2ddbbc267",
+      "bytes": 71380
     },
     {
       "name": "test_note_comment_scroll.cjs",

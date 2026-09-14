@@ -64,6 +64,21 @@ def transient_http_wait(connection, task):
         return None
 
 
+def validated_work_queue_marker(snapshot, task, previous):
+    """Recognize only our ordered local queue receipts, never platform evidence."""
+    if not isinstance(snapshot,dict) or set(snapshot)!={'processing'}:return None
+    p=snapshot['processing']
+    if not isinstance(p,dict) or set(p)!={'version','phase','works','page_concurrency','newest_order_verified'}:return None
+    if (p['version']!='front-page-priority-v1' or p['newest_order_verified'] is not False
+            or type(p['works']) is not int or not 1<=p['works']<=task['video_limit']
+            or type(p['page_concurrency']) is not int
+            or p['page_concurrency']!=min(task['page_concurrency'],task['video_limit'])):return None
+    if previous is None:
+        return p if p['phase']=='front_pages' else None
+    return p if (previous['phase']=='front_pages' and p['phase']=='history_and_replies'
+                 and p['works']==previous['works']) else None
+
+
 def transient_reply_wait(connection, task):
     """Retry a malformed reply envelope only with identity and same-video evidence.
 
@@ -76,9 +91,14 @@ def transient_reply_wait(connection, task):
         identity = False
         main_videos = set()
         failed = []
+        queue=None
         for row in connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=? ORDER BY id', (task['id'],)):
             if row['stage']=='comment_paging':
                 continue  # Parent-generated cursor receipts are separate from HTTP evidence.
+            if row['stage']=='work_read_queue':
+                queue=validated_work_queue_marker(json.loads(row['snapshot']),task,queue)
+                if not identity or queue is None:return None
+                continue
             if row['stage'] != 'http_read':
                 return None
             responses = json.loads(row['snapshot']).get('responses')
@@ -148,10 +168,15 @@ def transient_data_wait(connection, task):
     if not task or task['transport'] != 'http' or task['status'] != 'network_error' or not task['finished_at']:
         return None
     identity, failed = False, 0
+    queue=None
     try:
         for row in connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=? ORDER BY id', (task['id'],)):
             snapshot = json.loads(row['snapshot'])
             if row['stage'] == 'comment_paging':
+                continue
+            if row['stage']=='work_read_queue':
+                queue=validated_work_queue_marker(snapshot,task,queue)
+                if not identity or queue is None:return None
                 continue
             if row['stage'] == 'author_discovery':
                 for summary in snapshot.get('responses', []):

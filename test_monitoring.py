@@ -17,6 +17,62 @@ VIDEO = '7600000000000000001'
 
 
 class MonitorTests(unittest.TestCase):
+    def queue_markers(self,task,phases=('front_pages','history_and_replies')):
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            old=c.execute('SELECT stage,snapshot,created_at FROM collection_diagnostics WHERE task_id=? ORDER BY id',(task,)).fetchall()
+            c.execute('DELETE FROM collection_diagnostics WHERE task_id=?',(task,))
+            insert=lambda stage,snapshot:c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(task,stage,snapshot,app.now()))
+            insert(old[0]['stage'],old[0]['snapshot'])
+            ids=[]
+            for phase in phases:
+                marker=dict(processing=dict(version='front-page-priority-v1',phase=phase,works=row['video_limit'],
+                    page_concurrency=min(row['video_limit'],row['page_concurrency']),newest_order_verified=False))
+                ids.append(insert('work_read_queue',json.dumps(marker)).lastrowid)
+            for item in old[1:]:insert(item['stage'],item['snapshot'])
+            return ids
+
+    def test_front_page_queue_diagnostics_allow_evidenced_data_recovery(self):
+        self.http_baseline();task=sch.tick(NOW);self.data_network_failure(task);self.queue_markers(task)
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            self.assertEqual(sch.transient_data_wait(c,row),0)
+        sch.tick();self.assertEqual(mon.state()['status'],'running')
+        self.assertIsNotNone(self.at(mon.state()['next_run_at']))
+
+    def test_queue_network_retries_remain_bounded(self):
+        original=self.data_network_failure
+        def failure(task):
+            result=original(task);self.queue_markers(task);return result
+        with patch.object(self,'data_network_failure',side_effect=failure):
+            self.test_data_timeout_uses_bounded_backoff_and_keeps_failure()
+
+    def test_queue_reply_retries_remain_bounded(self):
+        original=self.reply_failure
+        def failure(task):
+            result=original(task);self.queue_markers(task);return result
+        with patch.object(self,'reply_failure',side_effect=failure):
+            self.test_reply_envelope_retries_three_times_and_keeps_failure_history()
+
+    def test_queue_markers_cannot_hide_unknown_metadata_gates_or_changed_limits(self):
+        self.http_baseline();task=sch.tick(NOW);self.data_network_failure(task)
+        marker=self.queue_markers(task,('front_pages',))[0]
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            good=json.loads(c.execute('SELECT snapshot FROM collection_diagnostics WHERE id=?',(marker,)).fetchone()[0])
+            changes=[{'phase':'history_and_replies'},{'version':'unknown'},{'works':0},{'works':100},
+                     {'works':True},{'page_concurrency':99},{'newest_order_verified':True},
+                     {'verification_indicated':True},{'http_status':429}]
+            for change in changes:
+                with self.subTest(change=change):
+                    c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps({'processing':{**good['processing'],**change}}),marker))
+                    self.assertIsNone(sch.transient_data_wait(c,row))
+            c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps({**good,'responses':[{'status':'needs_verification'}]}),marker))
+            self.assertIsNone(sch.transient_data_wait(c,row))
+            c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps(good),marker))
+            c.execute("INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,'work_read_queue',?,?)",(task,json.dumps(good),NOW))
+            self.assertIsNone(sch.transient_data_wait(c,row),'Duplicate phase must not be ignored')
+
     def test_author_selection_metadata_is_not_an_http_failure(self):
         self.http_baseline()
         task=sch.tick(NOW)

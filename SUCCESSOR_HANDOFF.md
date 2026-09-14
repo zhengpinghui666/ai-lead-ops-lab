@@ -1,5 +1,15 @@
+## 2026-09-15 04:37 评论网络故障已恢复，修复前页诊断与退避衔接
+
+- 实时事件f862d612-95c0-47d9-9421-b0e2c71b61d4，04:29立即received后先读health/handoff。健康文件仍显示前一分钟3411成功，实际DB3412 network_error、计划attention，故障真实存在；不能因文件healthy忽略更晚的通知。
+- 原3412是7446/UID50887922274/isolated、video、2路3作品30评论24h。身份HTTP200 verified，无验证提示；多页成功后request9、comments cursor73约15016ms连接失败、无HTTP状态。前页优先新work_read_queue阶段被transient_data_wait当未知诊断，导致原有限退避不成立。该衔接遗漏属于本项目代码，非平台验证码/限流。
+- collection_scheduler新增严格本地队列标记校验：identity通过后，仅接受front-page-priority-v1、前页→历史的顺序、1..原作品预算、原有效并发、newest_order_verified=false及精确字段；未知版本、额外状态/响应、重复或逆序阶段拒绝。数据网络和回复分页两条恢复路径都兼容，仍要求原完整HTTP证据；原60/120/240秒最多3次、停止/冻结/平台gate保护不变。未加入无限重试或换号。
+- 新回归在旧版失败；171项隔离回归通过，包含队列元数据下网络/回复3次后停止、标记注入、预算/顺序、原发现/账号与分页链路。真实3412诊断只读回放旧版不具恢复资格，新版具备；失败记录不改写。artifact comment-network-20260915-0429保存incident-before.json、baseline.db、regression-before.log、tests.log、actual-diagnostic-replay.json和stage。
+- 保留源码ZIP/两库备份、哈希防覆盖后正常退出246304→原系统任务启动246344，部署collection_scheduler.py/test_monitoring.py/COMMENT_READ_PRIORITY.md共3文件，白名单345。停止/启动业务计数和账号角色一致，原20群/直播/发现恢复、原inbox仍暂停；原attention仅精确3412经新恢复校验开启。9517首次HTTP身份探测被本机“已有核对正在处理”400拒绝，待其结束后第二次verified，恢复原授权outreach；不把本机忙当平台门槛绕过。
+- 实际3413 completed且冻结discovery job、账号、目标、预算与3412一致；3414作者发现completed，3415后续作品completed，证明自动调度继续。04:37:40事件resolved并复核原故障消失，hold清0。直播723目前running，后续完成状态以runtime-verification.json为准；没有声称其已完成。原失败3412仍network_error。源码备份在本记录之后执行，最终看新last-run时间和退出码。
+
 ## 2026-09-15 04:16 高权重检查名额已落地，三路实际恢复核验
 
+- 04:19:39源码备份恢复成功：退出0、last-run新pushed，345文件，GitHub API提交5cc868ae62a271a62ceaf742000c56c7d63d265e，原私有仓库codex/backup分支；原03点失败已补传。ZIP已testzip通过，重复manifest内容哈希一致。本行是备份后接续注记，不为此再启动重复备份。
 - 04点先只读新鲜healthy文件，跳过故障诊断，按计划只读汇总与清单。0401汇总/明细/同小时对照、0400-scheduling和0400-analysis位于artifacts/operational-reviews。最近小时2327首次观察仅68在24h内（前日同小时1171/61），高权重52检查年龄中位40.9分钟/P95约2.98小时，未达标；模型无积压，今日20完成仅18noise/1seller/1social、4失败，无发送尝试。公众号/客服/已读未知，原inbox暂停；不能把0观测回复当实际0回复。
 - 证据：旧调度过去小时162作品名额仅27高权重，冷积压/首次读取先于充分相关作品。v8-service-capacity每3轮前2轮在原池内优先sufficient_samples且score>=70，第三轮保留旧探索。活跃优先、普通/垂直配额、作者/搜索机会、未来/关闭/暂停/冻结限制保留；分频阈值与工作预算没有增加。原7446/2路/3作品/30评论/30秒/24h不变。
 - 新积压反例在旧代码失败；98项相关隔离回归通过。固定内存模拟36作品轮次、108名额：高权重17→49、不同高权重17→44，首次覆盖两版均36；假定成功无新评论，非真实时效或转化。artifact high-weight-reservation-20260915-0407保存stage、baseline.db、simulation.json、tests.log与regression-before说明。
