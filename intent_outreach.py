@@ -277,6 +277,12 @@ def prepare_draft(row, policy, content):
 
 
 def tick():
+    import collection_accounts
+    with app.db() as c:
+        policy=read(c,POLICY_KEY)
+        if c.execute('SELECT 1 FROM collection_accounts').fetchone():
+            assigned=collection_accounts.role_accounts(c,'outreach')
+            if not any(a['sender_uid']==policy.get('sender_uid') for a in assigned):return
     import uid_session_renewal
     if uid_session_renewal.pending():
         return

@@ -340,3 +340,5 @@ main>#lead-detail{max-width:900px;position:static}main>#lead-detail .card-body{p
 .page-overview.primary-page .overview-context{align-items:center;margin-bottom:16px;gap:12px}.overview-context .actions{gap:8px}.daily-chart-actions{display:flex;justify-content:space-between;align-items:center;padding-top:8px;flex:none}.page-overview.primary-page .daily-plot{min-height:150px}.attention-inline{align-items:center}.attention-inline .actions{flex:none}
 @media(max-width:1100px){.page-overview.primary-page .overview-context{align-items:flex-start;flex-direction:column;gap:4px}.page-overview.primary-page .overview-context .actions{width:100%;justify-content:space-between}}
 @media(max-width:700px){.attention-inline .actions{flex-wrap:wrap}.overview-context p{line-height:1.6}.page-overview.primary-page .daily-plot{min-height:150px}}
+
+.group-account-picker{display:flex;align-items:center;gap:8px;font-size:13px;min-width:0}.group-account-picker select{height:36px;max-width:min(360px,60vw);padding:0 10px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink);font:inherit}

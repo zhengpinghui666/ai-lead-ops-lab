@@ -53,7 +53,7 @@ function identityDiagnostic(result){
 }
 
 async function recover(account,{commands=new Commands(),emit=()=>{},launchContext,verify,
-    timeoutMs=600000,initialWaitMs=8000,tickMs=400,armWaitMs=15000}={}){
+    timeoutMs=600000,initialWaitMs=8000,tickMs=400,armWaitMs=15000,manualOnly=false}={}){
   if(typeof account!=='string'||!/^[A-Za-z0-9_.-]{2,64}$/.test(account))throw Error('invalid_account');
   let context,identity=null,phase='',code=null,filled=false,armed=false;
   const status=value=>{if(phase!==value){phase=value;emit({type:'status',status:value});}};
@@ -84,6 +84,16 @@ async function recover(account,{commands=new Commands(),emit=()=>{},launchContex
     if(commands.cancelled)return {status:'cancelled'};
     if(identity==='mismatch')return {status:'account_mismatch'};
     if(identity!=='matched'){
+      if(manualOnly){
+        status('manual_required');
+        while(performance.now()<deadline&&!commands.cancelled&&identity!=='matched'){
+          if(identity==='mismatch')return {status:'account_mismatch'};
+          if(commands.take('complete'))break;
+          await sleep(tickMs);
+        }
+        if(commands.cancelled)return {status:'cancelled'};
+        if(performance.now()>=deadline)return {status:'timeout'};
+      }else{
       status('arming_relay');
       const armEnd=Math.min(deadline,performance.now()+armWaitMs);
       while(!armed&&!commands.cancelled&&performance.now()<armEnd){
@@ -125,6 +135,7 @@ async function recover(account,{commands=new Commands(),emit=()=>{},launchContex
       }
       if(commands.cancelled)return {status:'cancelled'};
       if(performance.now()>=deadline)return {status:'timeout'};
+      }
     }
     code=null;commands.clear();status('checking_identity');
     // prepare() closes this browser before the independent HTTP check and only

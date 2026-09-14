@@ -247,6 +247,26 @@ class LiveMonitorTests(unittest.TestCase):
         self.assertEqual(live.state()['current']['status'], 'completed')
         self.assertEqual(len(live.state()['rows']), 1)
 
+    def test_live_start_freezes_chosen_account_and_not_sender_default(self):
+        with app.db() as c:
+            c.execute("INSERT INTO collection_accounts VALUES('7446','111','采集号','isolated',1,'[\"live\"]',?)",(app.now(),))
+        with patch('threading.Thread.start'):
+            result=live.start(dict(request_id='account-fixture'),_tracking_config=self.config)
+        with app.db() as c:
+            config=json.loads(c.execute('SELECT config FROM live_sessions WHERE id=?',(result['id'],)).fetchone()[0])
+            c.execute("UPDATE collection_accounts SET enabled=0 WHERE account_id='7446'")
+            self.assertEqual(config['collection_account'],dict(account_id='7446',sender_uid='111',storage='isolated'))
+            self.assertEqual(c.execute('SELECT account_id FROM account_role_runs').fetchone()[0],'7446')
+        live.ACTIVE.clear()
+
+    def test_live_wrong_identity_never_launches_collection_browser(self):
+        sid=self.session();control={'process':None,'stop':False};live.ACTIVE[sid]=control
+        config=dict(self.config,collection_account=dict(account_id='7446',sender_uid='111',storage='isolated'))
+        with patch('collector_http_session.load',return_value={'user_agent':'fixture'}),patch('collector_http_session.cookie_header',return_value='fixture'),patch('uid_bootstrap.probe',return_value={'status':'identity_verified','sender_uid':'222'}),patch('subprocess.Popen') as launch:
+            live.worker(sid,config,control)
+            launch.assert_not_called()
+        self.assertEqual(live.state()['current']['status'],'needs_login')
+
     def test_outer_id_migration_backs_up_existing_records(self):
         sid = self.session()
         live.receive(sid, self.event())

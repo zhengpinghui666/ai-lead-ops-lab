@@ -9,10 +9,12 @@ def follow(account,target):
     if not collector.GUARD.acquire(blocking=False):return deferred
     try:
         with app.db() as c:
-            if c.execute("SELECT 1 FROM collection_tasks WHERE finished_at IS NULL AND status IN ('queued','starting','running') AND transport='local_browser' LIMIT 1").fetchone():return deferred
+            if c.execute("SELECT 1 FROM collection_tasks WHERE finished_at IS NULL AND transport='local_browser' LIMIT 1").fetchone():return deferred
+            if c.execute('SELECT 1 FROM account_login_jobs WHERE finished_at IS NULL LIMIT 1').fetchone():return deferred
         node,package=collector.dependencies()
         if not node or not package.is_dir():return dict(status='not_submitted',proof=dict(submission_started=False,reason='browser_dependency'))
-        env={**os.environ,'CLUBOPS_PLAYWRIGHT':str(package),'CLUBOPS_DATA_DIR':str(app.DATA_DIR)}
+        import account_scope
+        env={**os.environ,'CLUBOPS_PLAYWRIGHT':str(package),'CLUBOPS_DATA_DIR':str(account_scope.directory())}
         try:
             process=subprocess.run([node,str(collector.BASE/'group_follow_browser.cjs')],
                 input=json.dumps(dict(account=account,uid=target['uid'],sec_uid=target['sec_uid'])),

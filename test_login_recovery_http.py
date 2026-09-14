@@ -49,6 +49,22 @@ class LoginHTTPTests(unittest.TestCase):
         with response:
             return response.status, response.read(), dict(response.headers)
 
+    def test_accounts_read_and_mutation_boundary(self):
+        import account_admin,group_accounts
+        with patch.object(account_admin,'state',return_value={'accounts':[]}),patch.object(account_admin,'start_login') as login:
+            status,raw,_=self.request('/api/accounts');self.assertEqual(status,200)
+            csrf=json.loads(raw)['csrf'];login.assert_not_called()
+        with patch.object(account_admin,'save',return_value={'accounts':[]}) as save:
+            self.assertEqual(self.request('/api/account-save',{})[0],403)
+            self.assertEqual(self.request('/api/account-save',{},**{'X-ClubOps-Token':csrf,'Origin':self.base})[0],200)
+            save.assert_called_once_with({},'live')
+        with patch.object(group_accounts,'state',return_value={'groups':[]}) as read:
+            self.assertEqual(self.request('/api/groups?account=7446&before=8&filter=all')[0],200)
+            read.assert_called_once_with('live',8,'all','7446')
+        with patch.object(group_accounts,'dispatch',return_value={}) as dispatch:
+            self.assertEqual(self.request('/api/group-control',{'account_id':'7446','id':1,'enabled':True},**{'X-ClubOps-Token':csrf,'Origin':self.base})[0],200)
+            dispatch.assert_called_once_with('group-control',{'account_id':'7446','id':1,'enabled':True},'live')
+
     def test_bark_configuration_is_local_csrf_protected_and_never_echoes_key(self):
         import bark_notify
         status,raw,_=self.request('/api/bark');self.assertEqual(status,200)

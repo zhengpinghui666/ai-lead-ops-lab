@@ -166,6 +166,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == '/api/bark':
                 import bark_notify
                 return self.respond({**bark_notify.state(clubops.DATA_DIR), 'csrf': CSRF})
+            if path == '/api/accounts':
+                import account_admin
+                return self.respond({**account_admin.state(self.mode()),'csrf':CSRF})
             if path == '/api/login-recovery':
                 return self.respond({**login_recovery.state(self.mode()), 'csrf': CSRF})
             if path == '/api/collector':
@@ -176,7 +179,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(collection_state(self.mode(), view, section))
             if path == '/api/groups':
                 query=parse_qs(urlparse(self.path).query)
-                return self.respond(group_monitor.state(self.mode(),int(query.get('before',['0'])[0]),query.get('filter',['all'])[0]))
+                import group_accounts
+                return self.respond(group_accounts.state(self.mode(),int(query.get('before',['0'])[0]),query.get('filter',['all'])[0],query.get('account',[''])[0]))
             if path == '/api/monitor-comments':
                 import monitor_comments
                 query = {k:v[0] for k,v in parse_qs(urlparse(self.path).query).items()}
@@ -219,7 +223,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond({'exported_at': clubops.now(), 'mode': result['mode'], 'comments': result['comments'], 'leads': result['leads']})
             files = {'/': ('app.html', 'text/html; charset=utf-8'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/app.css': ('app.css', 'text/css; charset=utf-8'), '/vendor/lucide.min.js': ('vendor/lucide.min.js', 'text/javascript; charset=utf-8'),
                      '/login': ('login.html', 'text/html; charset=utf-8'), '/bark.js': ('bark.js', 'text/javascript; charset=utf-8'), '/login.js': ('login.js', 'text/javascript; charset=utf-8'),
-                     '/login.css': ('login.css', 'text/css; charset=utf-8'), '/login-guide': ('login-guide.html', 'text/html; charset=utf-8'), '/iphone-script': ('clubops-iphone.js', 'text/plain; charset=utf-8')}
+                     '/accounts.js': ('accounts.js', 'text/javascript; charset=utf-8'), '/login.css': ('login.css', 'text/css; charset=utf-8'), '/login-guide': ('login-guide.html', 'text/html; charset=utf-8'), '/iphone-script': ('clubops-iphone.js', 'text/plain; charset=utf-8')}
             if path not in files:
                 return self.respond({'error': 'Not found'}, 404)
             file, mime = files[path]
@@ -316,19 +320,9 @@ class Handler(BaseHTTPRequestHandler):
                 result = uid_messaging.state(mode)
             elif action == 'intent-outreach-control':
                 result = intent_outreach.control(body.get('enabled'), mode)
-            elif action == 'group-discover':
-                result = group_monitor.refresh(mode)
-            elif action == 'group-control':
-                result = group_monitor.control(body,mode)
-            elif action == 'group-exit-admin-only':
-                import group_lifecycle
-                result = group_lifecycle.control(body,mode)
-            elif action == 'group-discovery-control':
-                import group_discovery
-                result = group_discovery.control(body,mode)
-            elif action in ('group-question','group-answer'):
-                import group_discovery
-                result = group_discovery.question(body,mode) if action=='group-question' else group_discovery.answer(body,mode)
+            elif action in ('group-discover','group-control','group-exit-admin-only','group-discovery-control','group-question','group-answer'):
+                import group_accounts
+                result=group_accounts.dispatch(action,body,mode)
             elif action == 'uid-inbox-read':
                 import uid_inbox_store
                 result = uid_inbox_store.read(body,mode)
@@ -378,6 +372,10 @@ class Handler(BaseHTTPRequestHandler):
             elif action == 'collection-account-save':
                 import collection_accounts
                 result=collection_accounts.save(body,mode)
+            elif action in ('account-create','account-save','account-login-start','account-login-command'):
+                import account_admin
+                result={'account-create':account_admin.create,'account-save':account_admin.save,
+                  'account-login-start':account_admin.start_login,'account-login-command':account_admin.command}[action](body,mode)
             elif action == 'collector-start':
                 result = collector.start(body, mode)
             elif action == 'collector-verify':
@@ -468,6 +466,8 @@ def main():
             live_tracking.recover()
             collector.recover()
             login_recovery.recover()
+            import account_admin
+            account_admin.recover()
             collection_scheduler.recover()
             collection_scheduler.start_service()
             semantic_queue.start_service()
@@ -494,6 +494,7 @@ def main():
                 live_monitor.shutdown()
                 collection_scheduler.shutdown()
                 login_recovery.shutdown()
+                account_admin.shutdown()
                 collector.shutdown()
                 semantic_queue.shutdown()
     finally:

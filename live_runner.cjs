@@ -42,6 +42,12 @@ async function main(){
     await emit({type:'status',status:'connecting'});
     // Keep the documented desktop client identity in both background and visible sessions.
     context=await chromium.launchPersistentContext(config.profile_dir,{...require('./browser_config.cjs')(),userAgent:devices['Desktop Chrome'].userAgent,headless:!config.interactive,acceptDownloads:false,viewport:{width:1280,height:800},timeout:25000});
+    if(config.session_cookies){
+      if(!Array.isArray(config.session_cookies)||config.session_cookies.length>150)throw Error('account_session');
+      await context.clearCookies();
+      await context.addCookies(config.session_cookies);
+      delete config.session_cookies;
+    }
     if(stopping)return;
     context.on('close',()=>stop('interrupted'));
     const page=context.pages()[0]||await context.newPage();

@@ -58,6 +58,13 @@ function fixture({loggedIn=false,account='1267597446',inputs=1,manualValue='',su
   const original=manual.options.emit;manual.options.emit=e=>{original(e);if(e.status==='manual_required')manual.commands.push({command:'complete'});};
   assert.equal((await recover('1267597446',manual.options)).status,'completed');
   assert.equal(manual.trace.includes('filled'),false);assert.equal(manual.trace.at(-1),'http');
+  const independent=fixture();independent.options.manualOnly=true;
+  independent.options.emit=e=>{if(e.status==='manual_required')independent.commands.push({command:'complete'});};
+  assert.equal((await recover('1267597446',independent.options)).status,'completed');
+  assert.deepEqual(independent.trace,['closed','http']);
+  const independentTimeout=fixture();independentTimeout.options.manualOnly=true;
+  assert.equal((await recover('1267597446',independentTimeout.options)).status,'timeout');
+  assert.deepEqual(independentTimeout.trace,['closed']);
   const duplicate=fixture();const originalEmit=duplicate.options.emit;
   duplicate.options.emit=e=>{originalEmit(e);if(e.status==='code_filled')duplicate.commands.push({command:'otp',code:'654321'});};
   assert.equal((await recover('1267597446',duplicate.options)).status,'completed');

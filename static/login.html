@@ -4,40 +4,27 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light"><title>账号登录 · ClubOps</title>
   <link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/login.css">
-  <script defer src="/vendor/lucide.min.js"></script><script defer src="/login.js"></script><script defer src="/bark.js"></script>
+  <script defer src="/vendor/lucide.min.js"></script><script defer src="/login.js"></script><script defer src="/accounts.js"></script><script defer src="/bark.js"></script>
 </head>
 <body>
   <button class="mobile-nav-backdrop" data-command="close-menu" aria-label="关闭导航遮罩" tabindex="-1"></button>
   <aside id="sidebar">
     <button class="icon-button mobile-nav-close" data-command="close-menu" aria-label="关闭导航"><i data-lucide="x"></i></button>
     <a class="brand" href="/#overview"><span class="brand-mark"><i data-lucide="audio-lines"></i></span><span>ClubOps<small>无畏契约 · 获客导流</small></span></a>
-    <div class="nav-caption">工作台</div>
+
     <nav id="nav" aria-label="主导航"><div class="nav-group-label">运营结果</div><a href="/#overview"><i data-lucide="layout-dashboard"></i>工作总览</a><a href="/#leads"><i data-lucide="scan-text"></i>需求筛选</a><a href="/#inbox"><i data-lucide="messages-square"></i>私信导流</a><a href="/#analytics"><i data-lucide="chart-no-axes-combined"></i>导流统计</a><div class="nav-group-label">采集管理</div><a href="/#monitor"><i data-lucide="radar"></i>采集监控</a><div class="nav-group-label">系统</div><a href="/#settings"><i data-lucide="sliders-horizontal"></i>数据与设置</a><a href="/login" class="active" aria-current="page"><i data-lucide="key-round"></i>账号登录</a></nav>
     <div class="sidebar-bottom">本机工作区 · 登录恢复</div>
   </aside>
   <div class="shell">
     <button class="icon-button mobile-menu" data-command="menu" aria-label="打开导航" aria-controls="sidebar" aria-expanded="false"><i data-lucide="menu"></i><span>导航</span></button>
-    <main id="main" class="login-main" tabindex="-1">
-      <div class="page-head"><div><h1>账号登录</h1><p class="muted">保留登录状态，让中断的采集继续。</p></div><a class="button small" href="/#monitor">返回采集</a></div>
+    <main id="main" class="login-main accounts-main" tabindex="-1">
+      <div class="page-head"><div><h1>账号登录</h1><p class="muted">管理每个账号的登录状态与任务分工。</p></div><div class="actions"><button class="button small" data-command="bark-open">手机通知</button><a class="button small" href="/#monitor">返回采集</a></div></div>
       <div id="feedback" role="status" aria-live="polite" hidden></div>
-      <section class="card login-status-card" aria-labelledby="status-title">
-        <div class="card-body"><div class="row spread"><span class="login-eyebrow">当前连接</span><span id="status-badge" class="badge">正在读取</span></div>
-          <h2 id="status-title">正在检查本机状态…</h2><p id="status-description" class="muted">此页面只读取状态，不会自动请求短信。</p>
-          <div id="job-context" class="login-meta" hidden></div>
-          <div class="login-actions"><button class="button primary" id="setup-link" data-command="setup" hidden>连接手机转发</button><button class="button primary" id="start-login" data-command="start" disabled>检查并恢复登录</button><button class="button" id="manual-complete" data-command="complete" hidden>已手动完成登录，核对身份</button><button class="button" id="cancel-login" data-command="cancel" hidden>取消本次任务</button></div>
-          <p id="action-hint" class="login-hint"></p>
-
-          <div id="phone-test-message" class="login-test" hidden><strong>手机连接测试</strong><p>在 iPhone 上手动运行已配置的转发快捷指令，输入下方测试文字：</p><output id="test-message"></output><small>这是连接测试，不会向抖音请求验证码。</small></div>
-        </div>
+      <section class="account-workspace card" aria-label="多账户管理">
+        <aside class="account-directory"><div class="account-directory-head"><strong>全部账号 <span id="account-count">—</span></strong><button class="button small" data-account-action="add">添加账号</button></div><div id="account-list" class="account-list"><p class="muted">正在读取账号…</p></div></aside>
+        <div id="account-detail" class="account-detail"><p class="muted">选择账号查看登录状态与任务分工。</p></div>
       </section>
-      <ol class="login-steps" aria-label="连接准备进度">
-        <li><i data-lucide="cloud"></i><div><strong>1. 中转连接</strong><span id="relay-step">等待检查</span></div></li>
-        <li><i data-lucide="smartphone"></i><div><strong>2. 手机转发</strong><span id="phone-step">等待检查</span></div></li>
-        <li><i data-lucide="shield-check"></i><div><strong>3. 登录状态</strong><span id="session-step">等待检查</span></div></li>
-      </ol>
-      <section class="card section-gap"><div class="card-body row spread"><div><h2>登录与手机连接设置</h2><p class="muted">账号、自动恢复与手机转发配置</p></div><div class="row"><button class="button small" data-command="bark-settings">手机通知</button><button class="button small" data-command="settings">打开设置</button></div></div></section>
-      <section class="card section-gap" aria-labelledby="history-title"><div class="card-head"><h2 id="history-title">最近恢复记录</h2><small>保留状态，不保存验证码</small></div><div id="login-history" class="card-body"><p class="muted">正在读取…</p></div></section>
-      <p class="login-footnote">短信登录用于恢复账号会话。关键词搜索要求的滑块、点选等验证会单独提示；登录成功后仍需确认相应读取恢复。</p>
+      <p class="login-footnote">多个账号共用采集资产；相同任务分批分担，在途批次保留原账号。</p>
     </main>
   </div>
 <dialog id="login-settings-dialog" class="settings-modal" aria-labelledby="login-settings-title"><div class="modal-head"><h2 id="login-settings-title">登录与手机连接设置</h2><button type="button" class="icon-button" data-command="close-settings" aria-label="关闭设置"><i data-lucide="x"></i></button></div><div class="modal-body">          <div id="resume-choice" hidden><label class="field"><span>登录成功后</span><select id="resume-task"><option value="">只恢复登录，不启动采集</option></select></label></div>
@@ -72,9 +59,30 @@
         </section>
       </div>
 </div></dialog>
+<dialog id="primary-login-dialog" class="settings-modal" aria-labelledby="primary-login-title"><div class="modal-head"><h2 id="primary-login-title">主账号登录与恢复记录</h2><button class="icon-button" data-account-action="close" aria-label="关闭登录详情">×</button></div><div class="modal-body">      <section class="card login-status-card" aria-labelledby="status-title">
+        <div class="card-body"><div class="row spread"><span class="login-eyebrow">当前连接</span><span id="status-badge" class="badge">正在读取</span></div>
+          <h2 id="status-title">正在检查本机状态…</h2><p id="status-description" class="muted">此页面只读取状态，不会自动请求短信。</p>
+          <div id="job-context" class="login-meta" hidden></div>
+          <div class="login-actions"><button class="button primary" id="setup-link" data-command="setup" hidden>连接手机转发</button><button class="button primary" id="start-login" data-command="start" disabled>检查并恢复登录</button><button class="button" id="manual-complete" data-command="complete" hidden>已手动完成登录，核对身份</button><button class="button" id="cancel-login" data-command="cancel" hidden>取消本次任务</button></div>
+          <p id="action-hint" class="login-hint"></p>
+
+          <div id="phone-test-message" class="login-test" hidden><strong>手机连接测试</strong><p>在 iPhone 上手动运行已配置的转发快捷指令，输入下方测试文字：</p><output id="test-message"></output><small>这是连接测试，不会向抖音请求验证码。</small></div>
+        </div>
+      </section>
+      <ol class="login-steps" aria-label="连接准备进度">
+        <li><i data-lucide="cloud"></i><div><strong>1. 中转连接</strong><span id="relay-step">等待检查</span></div></li>
+        <li><i data-lucide="smartphone"></i><div><strong>2. 手机转发</strong><span id="phone-step">等待检查</span></div></li>
+        <li><i data-lucide="shield-check"></i><div><strong>3. 登录状态</strong><span id="session-step">等待检查</span></div></li>
+      </ol>
+      <section class="card section-gap"><div class="card-body row spread"><div><h2>登录与手机连接设置</h2><p class="muted">账号、自动恢复与手机转发配置</p></div><button class="button small" data-command="settings">打开设置</button></div></section>
+      <section class="card section-gap" aria-labelledby="history-title"><div class="card-head"><h2 id="history-title">最近恢复记录</h2><small>保留状态，不保存验证码</small></div><div id="login-history" class="card-body"><p class="muted">正在读取…</p></div></section>
+      <p class="login-footnote">短信登录用于恢复账号会话。关键词搜索要求的滑块、点选等验证会单独提示；登录成功后仍需确认相应读取恢复。</p>
+</div></dialog>
+<dialog id="account-editor" class="settings-modal" aria-labelledby="account-editor-title"><div class="modal-head"><h2 id="account-editor-title">账号任务分工</h2><button class="icon-button" data-account-action="close" aria-label="关闭账号设置">×</button></div><div class="modal-body" id="account-editor-body"></div></dialog>
 <dialog id="bark-dialog" class="settings-modal" aria-labelledby="bark-title"><div class="modal-head"><h2 id="bark-title">手机锁屏通知</h2><button class="button small" type="button" data-command="bark-close">关闭</button></div><div class="modal-body">
 <p>安装 Bark 并允许通知，将首页的推送地址粘贴到下方。测试时先锁屏，再点击电脑上的“发送测试”。</p>
 <form id="bark-form"><label class="field"><span>Bark 推送地址</span><input id="bark-url" type="password" autocomplete="off" maxlength="2048" placeholder="https://api.day.app/…"><small>已保存时留空即可保留；密钥在本机加密保存。</small></label><label class="login-toggle"><input id="bark-enabled" type="checkbox" checked><span>需要人工处理时通知我</span></label><div class="login-actions"><button class="button primary small" type="submit">保存配置</button><button class="button small" type="button" data-command="bark-test">发送测试</button><button class="button small" type="button" data-command="bark-confirm">我已收到</button></div></form>
 <p id="bark-status" class="login-hint" role="status">正在读取…</p><p class="muted">服务端接受推送后，仍需确认手机实际收到。同一故障只提醒一次；通知不包含客户消息或验证码。</p>
-</div></dialog></body>
+</div></dialog>
+</body>
 </html>

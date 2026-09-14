@@ -84,8 +84,9 @@ def tick(*,member_reader=None,profile_reader=None):
     acquired=False;targets=[];group=None
     try:
         account=uid_inbox_store._account()
+        throttle='group_profile_next_run:'+account
         with app.db() as c:
-            cfg=c.execute("SELECT value FROM settings WHERE key='group_profile_next_run'").fetchone()
+            cfg=c.execute('SELECT value FROM settings WHERE key=?',(throttle,)).fetchone()
             if cfg and json.loads(cfg[0])>app.now():return
             seed_observed(c,account)
             targets=[dict(r) for r in c.execute('''SELECT DISTINCT p.* FROM group_profiles p
@@ -109,7 +110,7 @@ def tick(*,member_reader=None,profile_reader=None):
         if not acquired:return
         monitor.ACTIVE=True
         with app.LOCKS['live'],app.db() as c:
-            c.execute('INSERT OR REPLACE INTO settings VALUES(?,?)',('group_profile_next_run',json.dumps(monitor.stamp_after(30))))
+            c.execute('INSERT OR REPLACE INTO settings VALUES(?,?)',(throttle,json.dumps(monitor.stamp_after(30))))
         if group:
             result=(member_reader or group_inbox.members)(account,dict(group,inbox=0),cursor=group['profile_cursor'])
             with app.LOCKS['live'],app.db() as c:
@@ -151,7 +152,7 @@ def tick(*,member_reader=None,profile_reader=None):
                               (monitor.stamp_after(min(21600,60*2**min(8,target['failures']))),account,target['uid']))
                 c.execute('INSERT INTO group_reads(group_id,account_uid,operation,status,detail,created_at) VALUES(?,?,?,?,?,?)',
                           (group['id'] if group else None,account,'profiles','failed','资料读取未完成；消息采集继续，稍后补齐',app.now()))
-                c.execute('INSERT OR REPLACE INTO settings VALUES(?,?)',('group_profile_next_run',json.dumps(monitor.stamp_after(120))))
+                c.execute('INSERT OR REPLACE INTO settings VALUES(?,?)',(throttle,json.dumps(monitor.stamp_after(120))))
     finally:
         if acquired:monitor.ACTIVE=False;uid_messaging.GUARD.release()
         monitor.GUARD.release()

@@ -56,6 +56,9 @@ def _target(c, lead_id):
 
 
 def _account():
+    import account_scope
+    selected=account_scope.current()
+    if selected:return wire.numeric_uid(selected['sender_uid'])
     settings,_=uid_messaging.config()
     try:return wire.numeric_uid(settings.get('sender_uid'))
     except ValueError:raise ValueError('请先在私信通道配置中核对当前账号') from None

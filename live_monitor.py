@@ -325,6 +325,11 @@ def start(body, mode='live', *, _tracking_config=None):
             raise ValueError('持续跟踪已开启，请先关闭后再启动单次读取')
         sid = c.execute('INSERT INTO live_sessions(request_id,room_url,config,status,detail,started_at,updated_at) VALUES(?,?,?,?,?,?,?)',
                         (request_id, config['room_url'], json.dumps(config, ensure_ascii=False), 'connecting', DETAILS['connecting'], app.now(), app.now())).lastrowid
+        import collection_accounts
+        assigned=collection_accounts.select_role(c,'live','live:'+str(sid))
+        if assigned:
+            config=dict(config,collection_account={k:assigned[k] for k in ('account_id','sender_uid','storage')})
+            c.execute('UPDATE live_sessions SET config=? WHERE id=?',(json.dumps(config,ensure_ascii=False),sid))
         control = {'process': None, 'stop': False, 'thread': None}
         ACTIVE[sid] = control
     thread = threading.Thread(target=worker, args=(sid, config, control), daemon=True, name=f'live-{sid}')
@@ -363,6 +368,22 @@ def worker(session_id, config, control):
     final = 'interrupted'
     counts = {}
     try:
+        import collection_accounts,collector_http_session,uid_bootstrap
+        assigned=config.get('collection_account')
+        profile=app.DATA_DIR/'live-browser-profile'
+        payload=dict(config)
+        if assigned:
+            directory=collection_accounts.directory(assigned)
+            session=collector_http_session.load(directory)
+            identity=uid_bootstrap.probe(dict(expected_account=assigned['account_id'],cookie=collector_http_session.cookie_header(session,'identity'),user_agent=session['user_agent']))
+            if identity.get('status')!='identity_verified' or identity.get('sender_uid')!=assigned['sender_uid']:
+                final='needs_login'
+                return
+            profile=directory/'live-browser-profile'
+            cookies={}
+            for group in session['cookies'].values():
+                for cookie in group:cookies[(cookie['name'],cookie['domain'],cookie['path'])]=cookie
+            payload['session_cookies']=list(cookies.values())
         node, package = collector.dependencies()
         if not node or not package.is_dir():
             final = 'dependency_missing'
@@ -376,7 +397,7 @@ def worker(session_id, config, control):
         deadline.start()
         with GUARD:
             control['process'] = process
-            process.stdin.write(json.dumps({**config, 'profile_dir': str(app.DATA_DIR / 'live-browser-profile')}) + '\n')
+            process.stdin.write(json.dumps({**payload, 'profile_dir': str(profile)}) + '\n')
             if control['stop']:
                 process.stdin.write('{"command":"stop"}\n')
             process.stdin.flush()

@@ -30,7 +30,8 @@ HTTP_HEADERS = {'accept', 'accept-language', 'content-type', 'cookie', 'origin',
 
 
 def vault_path():
-    return runtime.data_dir() / 'private' / 'uid-http' / 'session.dpapi'
+    import account_scope
+    return account_scope.directory() / 'private' / 'uid-http' / 'session.dpapi'
 
 
 def crypt(raw, *, decrypt=False):

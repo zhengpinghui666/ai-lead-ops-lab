@@ -140,6 +140,9 @@ def control(body,mode='live'):
             raise ValueError('该群已按发言权限排除，不再自动加入或开启监控')
         if body['enabled'] and (not row['member'] or not row['matched'] or not match(dict(row)) or not fresh(row['checked_at'])):
             raise ValueError('请先刷新群目录，仅能监控已加入且符合范围的群')
+        if body['enabled']:
+            import group_accounts
+            group_accounts.claim(c,row['conversation_id'],account)
         c.execute('UPDATE monitored_groups SET enabled=?,status=?,detail=?,next_run_at=? WHERE id=?',
                   (int(body['enabled']),'waiting' if body['enabled'] else 'paused',
                    '等待读取；群内不发言' if body['enabled'] else '用户暂停群监控',app.now(),rid))
@@ -163,7 +166,7 @@ def routing(c,rid):
     excluded=record_exclusion(c,'group',rid)
     allowed=bool(not row['filter_reason'] and relevance['passed'] and row['enabled'] and row['member']
                  and row['matched'] and fresh(row['checked_at']) and demand_freshness.assess(row['published_at'])['eligible']
-                 and row['account_uid']==uid_inbox_store._account())
+                 and __import__('group_accounts').role_allowed(c,row['account_uid']))
     reason='已加入的对口群消息通过初筛，进入模型。' if allowed else row['filter_reason'] or '群监控已关闭、成员身份待更新或消息不在一天内。'
     if excluded:allowed=False;reason=excluded
     return dict(version='group-pc-v1',model_allowed=allowed,route='model' if allowed else 'keywords',reason=reason,
@@ -211,6 +214,9 @@ def ingest(c,group,result):
     for message in result['messages']:
         group_profiles.remember(c,group['account_uid'],message['uid'],message.get('sec_uid',''))
         if int(message['index'])<=int(group['watermark']):continue
+        if c.execute('''SELECT 1 FROM group_messages m JOIN monitored_groups g ON g.id=m.group_id
+            WHERE g.conversation_id=? AND m.message_id=? AND m.group_id<>?''',
+            (group['conversation_id'],message['message_id'],group['id'])).fetchone():continue
         published=uid_inbox_store.message_timestamp(message['created_at_raw'])
         import author_roles
         author_roles.remember(c,message['uid'],text=message['raw_text'],source='group_message')
@@ -246,7 +252,7 @@ def project(c,raw,*,engine=None):
 
 def eligible(c,raw,engine,account,*,allow_unknown=False):
     grant=policy(c)
-    if not grant.get('outreach_enabled') or grant.get('account_uid')!=account or raw['account_uid']!=account:return False
+    if not grant.get('outreach_enabled') or grant.get('account_uid')!=account:return False
     group=c.execute('SELECT notice FROM monitored_groups WHERE id=?',(raw['group_id'],)).fetchone()
     if not group or outreach_restriction(dict(group)):return False
     if not routing(c,raw['id'])['model_allowed']:return False
@@ -255,8 +261,9 @@ def eligible(c,raw,engine,account,*,allow_unknown=False):
 
 
 def tick(*,reader=None,catalog_reader=None):
-    import uid_session_renewal
-    if uid_session_renewal.pending():
+    import uid_session_renewal,account_scope
+    selected=account_scope.current()
+    if (not selected or selected['storage']=='primary') and uid_session_renewal.pending():
         return
     global ACTIVE
     if STOP.is_set() or not GUARD.acquire(blocking=False):return
@@ -275,6 +282,9 @@ def tick(*,reader=None,catalog_reader=None):
         with app.db() as c:
             group=c.execute('SELECT * FROM monitored_groups WHERE enabled=1 AND account_uid=? AND next_run_at<=? ORDER BY next_run_at,id LIMIT 1',(uid_inbox_store._account(),app.now())).fetchone()
         if not group:return
+        with app.LOCKS['live'],app.db() as c:
+            import group_accounts
+            if not group_accounts.owns(c,group['conversation_id'],group['account_uid']):return
         acquired=uid_messaging.GUARD.acquire(blocking=False)
         if not acquired:return
         ACTIVE=True
@@ -434,7 +444,7 @@ def state(mode='live',before=0,category_filter='all'):
             if len(selected)>=51:break
         messages=selected[:50]
         for row in messages:
-            attempt=c.execute('SELECT job_id,status,detail FROM uid_message_attempts WHERE sender_uid=? AND recipient_uid=? ORDER BY job_id DESC LIMIT 1',(account,row['uid'])).fetchone()
+            attempt=c.execute('SELECT job_id,status,detail FROM uid_message_attempts WHERE sender_uid=? AND recipient_uid=? ORDER BY job_id DESC LIMIT 1',(uid_messaging.config()[0].get('sender_uid',''),row['uid'])).fetchone()
             row['outreach']=dict(attempt) if attempt else None
         profiles=group_profiles.state(c,account)
     return dict(account_uid=account,groups=groups,messages=messages,enabled=sum(g['enabled'] for g in groups),
@@ -451,16 +461,16 @@ def start_service():
     group_answers.start_service()
     def loop():
         while not STOP.wait(1):
-            try:tick()
-            except Exception:pass  # Read failures are durable; isolate this loop from comments/live.
-            try:
-                import group_discovery
-                group_discovery.tick()
-            except Exception:pass
-            try:
-                import group_profiles
-                group_profiles.tick()
-            except Exception:pass
+            import account_scope,collection_accounts,group_discovery,group_profiles
+            with app.db() as c:
+                accounts=collection_accounts.role_accounts(c,'groups')
+                if not c.execute('SELECT 1 FROM collection_accounts').fetchone():accounts=[None]
+            for account in accounts:
+                if STOP.is_set():break
+                with account_scope.use(account):
+                    for action in (tick,group_discovery.tick,group_profiles.tick):
+                        try:action()
+                        except Exception:pass  # One account cannot terminate other account loops.
     THREAD=threading.Thread(target=loop,name='group-monitor',daemon=True);THREAD.start()
 
 

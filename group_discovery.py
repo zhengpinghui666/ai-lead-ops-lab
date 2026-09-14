@@ -55,12 +55,20 @@ DETAILS=dict(candidate='等待核验入群条件',unmatched='群名称和介绍�
 
 
 def config(c):
-    row=c.execute('SELECT value FROM settings WHERE key=?',(KEY,)).fetchone()
-    return json.loads(row[0]) if row else dict(enabled=False,account_uid='',next_run_at='',detail='尚未开启公开群筛选')
+    import account_scope
+    current=account_scope.current()
+    main=c.execute('SELECT value FROM settings WHERE key=?',(KEY,)).fetchone()
+    main=json.loads(main[0]) if main else dict(enabled=False,account_uid='',next_run_at='',detail='尚未开启公开群筛选')
+    if not current or main.get('account_uid')==current['sender_uid']:return main
+    row=c.execute('SELECT value FROM settings WHERE key=?',(KEY+':'+current['sender_uid'],)).fetchone()
+    return json.loads(row[0]) if row else dict(main,account_uid=current['sender_uid'],next_run_at='',detail='等待为该账号核验公开群')
 
 
 def save(c,value):
-    c.execute('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',(KEY,json.dumps(value,ensure_ascii=False)))
+    main=c.execute('SELECT value FROM settings WHERE key=?',(KEY,)).fetchone()
+    account=json.loads(main[0]).get('account_uid') if main else None
+    key=KEY if not account or account==value.get('account_uid') else KEY+':'+value['account_uid']
+    c.execute('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',(key,json.dumps(value,ensure_ascii=False)))
 
 
 def search_terms(c):
@@ -136,7 +144,8 @@ def reconcile(account,*,reader=None):
             c.execute("UPDATE public_group_attempts SET status='joined',updated_at=? WHERE account_uid=? AND group_id=?",(app.now(),account,row['group_id']))
             mark(c,account,row['group_id'],'joined')
             # A manually paused group stays paused even if an application is later approved.
-            if row['matched'] and row['status']=='available':
+            import group_accounts
+            if row['matched'] and row['status']=='available' and group_accounts.owns(c,row['group_id'],account):
                 c.execute("UPDATE monitored_groups SET enabled=1,status='waiting',detail='已确认加入，等待读取；群内不发言',next_run_at=? WHERE id=?",(app.now(),row['id']))
 
 
@@ -265,6 +274,15 @@ def run(account,*,client_factory=None,catalog_reader=None):
           AND (o.next_check_at IS NULL OR o.next_check_at<=?))
           SELECT * FROM source_rows WHERE rn=1
           ORDER BY COALESCE(checked_at,''),instr(title,'群')>0 DESC,last_seen_at DESC,author_sec_uid LIMIT ?''',(account,app.now(),OWNER_BATCH)).fetchall()
+    import group_accounts
+    with app.LOCKS['live'],app.db() as c:
+        transfer_sources=group_accounts.sources_for(c,account)
+    combined=[dict(author_sec_uid=sec,video_id='') for sec in transfer_sources]+[dict(r) for r in sources]
+    seen=set();sources=[]
+    for source in combined:
+        if source['author_sec_uid'] not in seen:
+            sources.append(source);seen.add(source['author_sec_uid'])
+    sources=sources[:OWNER_BATCH]
     client=None
     for source in sources:
         with app.db() as c:cfg=config(c)
@@ -290,11 +308,13 @@ def run(account,*,client_factory=None,catalog_reader=None):
         candidates=c.execute('''SELECT g.* FROM public_group_candidates g WHERE g.account_uid=? AND g.matched=1
           AND (g.status='candidate' OR (g.status='follow_wait' AND g.checked_at<=?))
           AND g.list_status IN (0,1,2,9,10) AND g.checked_at>=?
+          AND NOT EXISTS(SELECT 1 FROM group_account_assignments x WHERE x.conversation_id=g.group_id AND x.account_uid<>g.account_uid)
           AND NOT EXISTS(SELECT 1 FROM public_group_attempts a WHERE a.account_uid=g.account_uid AND a.group_id=g.group_id)
           AND NOT EXISTS(SELECT 1 FROM group_exits e WHERE e.account_uid=g.account_uid AND e.conversation_id=g.group_id)
-          AND NOT EXISTS(SELECT 1 FROM monitored_groups m WHERE m.account_uid=g.account_uid AND m.conversation_id=g.group_id)
+          AND NOT EXISTS(SELECT 1 FROM monitored_groups m WHERE m.account_uid=g.account_uid AND m.conversation_id=g.group_id AND m.member=1)
           ORDER BY (instr(g.name,'搭子')>0 OR instr(g.name,'组队')>0 OR instr(g.name,'开黑')>0 OR instr(g.name,'一起打瓦')>0) DESC,
           g.checked_at DESC,g.group_id LIMIT 5''',(account,monitor.stamp_after(-3600),monitor.stamp_after(-21600))).fetchall()
+        candidates=[row for row in candidates if group_accounts.owns(c,row['group_id'],account)]
         if not candidates:return
     client=client or (client_factory or group_public.Client)(account)
     # Unmet VIP/follow conditions must not consume the whole discovery round.

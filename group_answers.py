@@ -111,8 +111,15 @@ def start_service():
     with app.db() as c:c.execute("UPDATE public_group_answer_runs SET status='interrupted',finished_at=? WHERE status='running'",(app.now(),))
     def loop():
         while not STOP.wait(2):
-            try:tick()
-            except Exception:pass
+            import account_scope,collection_accounts
+            with app.db() as c:
+                rows=collection_accounts.role_accounts(c,'groups')
+                if not c.execute('SELECT 1 FROM collection_accounts').fetchone():rows=[None]
+            for row in rows:
+                if STOP.is_set():break
+                with account_scope.use(row):
+                    try:tick()
+                    except Exception:pass
     THREAD=threading.Thread(target=loop,name='group-answers',daemon=True);THREAD.start()
 
 
