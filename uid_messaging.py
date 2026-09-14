@@ -124,6 +124,10 @@ def snapshot(c, job_id):
     return dict(job), dict(person), dict(source)
 
 
+class ChannelBusy(ValueError):
+    """Transient local contention, before any attempt or platform submission."""
+
+
 def authorized_outreach(c, authorization, job, person, settings):
     """Validate a local operator grant without inventing recipient consent."""
     import monitoring
@@ -139,7 +143,7 @@ def authorized_outreach(c, authorization, job, person, settings):
         policy = intent_outreach.read(c, intent_outreach.POLICY_KEY)
         if (not policy.get('enabled') or policy.get('revision') != authorization['policy_revision']
                 or policy.get('sender_uid') != settings.get('sender_uid')
-                or intent_outreach.rendered_content(c,policy,person['external_id']) != job['content']):
+                or intent_outreach.rendered_content(c,policy,person['external_id'],game=intent_outreach.evidence_game(c,authorization)) != job['content']):
             raise ValueError('自动发送授权已关闭或变更；未发送')
         if intent_outreach.previously_contacted(c,policy,person['external_id']):
             raise ValueError('该对象已有换号前的联系记录；不会因换号重复发送')
@@ -158,7 +162,7 @@ def authorized_outreach(c, authorization, job, person, settings):
         raw=c.execute(group_monitor.SELECT+' WHERE m.id=?',(authorization['group_id'],)).fetchone()
         if (not raw or raw['person_id']!=person['id']
                 or authorization['group_sha256']!=hashlib.sha256(raw['raw_text'].encode()).hexdigest()
-                or not group_monitor.eligible(c,raw,semantic.state()['engine'],settings['sender_uid'])):
+                or not group_monitor.eligible(c,raw,semantic.state()['engine'],settings['sender_uid'],allow_unknown='瓦陪陪' in job['content'])):
             raise ValueError('群消息未通过初筛和当前模型确认，或群监控授权已失效；未发送')
         return
     from game_scope import record_exclusion
@@ -173,16 +177,23 @@ def authorized_outreach(c, authorization, job, person, settings):
                 or authorization['live_sha256'] != hashlib.sha256(raw['raw_text'].encode()).hexdigest()):
             raise ValueError('本次操作授权缺少对应弹幕证据；未发送')
         analysis = live_workflow.project(c, raw, history=False)
-        if analysis.get('category') != 'buyer' or analysis.get('analysis_method') not in ('rules', 'model', 'human'):
-            raise ValueError('该弹幕当前未被识别为有意向；未发送')
+        if not eligible_demand_copy(analysis, job['content']):
+            raise ValueError('该弹幕不符合当前客户需求或游戏范围；未发送')
         return
     comment = c.execute('SELECT * FROM comments WHERE id=?', (authorization['comment_id'],)).fetchone()
     if (not comment or comment['person_id'] != person['id']
             or authorization['comment_sha256'] != hashlib.sha256(comment['raw_text'].encode()).hexdigest()):
         raise ValueError('本次操作授权缺少对应评论证据；未发送')
     analysis = monitoring.observation_analysis(c, comment['id'], comment['raw_text'], semantic.state()['engine'])
-    if analysis.get('category') != 'buyer' or analysis.get('analysis_method') not in ('rules', 'model', 'human'):
-        raise ValueError('该评论当前未被识别为有意向；未发送')
+    if not eligible_demand_copy(analysis, job['content']):
+        raise ValueError('该评论不符合当前客户需求或游戏范围；未发送')
+
+
+def eligible_demand_copy(analysis, content):
+    game = analysis.get('game')
+    method = analysis.get('analysis_method')
+    return (analysis.get('category') == 'buyer' and method in ('rules','model','human')
+        and (game == app.TARGET_GAME or not game and method in ('model','human') and '瓦陪陪' in content))
 
 
 def conditions(job, person, source, settings, *, authorization=None, connection=None):
@@ -241,7 +252,7 @@ def send_one(job_id, mode='live', *, transport=None, resume_note=None, operator_
     if mode != 'live':
         raise ValueError('演示区不允许个人号 HTTP 发送')
     if not GUARD.acquire(blocking=False):
-        raise ValueError('已有一条 HTTP 任务正在处理；请等待完成')
+        raise ChannelBusy('已有一条 HTTP 任务正在处理；请等待完成')
     try:
         authorization = json.loads(json.dumps(operator_authorization)) if operator_authorization is not None else None
         return _send_one(job_id, transport or uid_transport.send, resume_note, authorization, retry_note)

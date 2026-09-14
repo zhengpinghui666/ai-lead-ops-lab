@@ -303,7 +303,7 @@ class QueueTests(unittest.TestCase):
 
     def test_operator_grant_is_bound_audited_and_never_invents_consent(self):
         grant = self.outreach_grant()
-        with patch('monitoring.observation_analysis', return_value=dict(category='buyer', analysis_method='model')):
+        with patch('monitoring.observation_analysis', return_value=dict(category='buyer', game=app.TARGET_GAME, analysis_method='model')):
             with self.assertRaises(ValueError):
                 channel.send_one(self.job['id'], transport=self.accepted)
             transport = Mock(wraps=self.accepted)
@@ -319,7 +319,7 @@ class QueueTests(unittest.TestCase):
     def test_operator_grant_rejects_mismatch_stale_intent_and_do_not_contact(self):
         grant = self.outreach_grant()
         transport = Mock(wraps=self.accepted)
-        with patch('monitoring.observation_analysis', return_value=dict(category='buyer', analysis_method='model')):
+        with patch('monitoring.observation_analysis', return_value=dict(category='buyer', game=app.TARGET_GAME, analysis_method='model')):
             for key in ('job_id', 'sender_uid', 'recipient_uid', 'content_sha256', 'comment_id', 'comment_sha256'):
                 wrong = {**grant, key: 999999 if key.endswith('_id') else 'mismatch'}
                 with self.subTest(key=key), self.assertRaises(ValueError):
@@ -337,7 +337,7 @@ class QueueTests(unittest.TestCase):
 
     def test_operator_grant_checks_intent_again_before_submission(self):
         grant = self.outreach_grant()
-        with patch('monitoring.observation_analysis', side_effect=[dict(category='buyer', analysis_method='model'), dict(category='seller', analysis_method='human')]):
+        with patch('monitoring.observation_analysis', side_effect=[dict(category='buyer', game=app.TARGET_GAME, analysis_method='model'), dict(category='seller', analysis_method='human')]):
             result = channel.send_one(self.job['id'], transport=self.accepted, operator_authorization=grant)
         self.assertEqual(result['status'], 'unknown')
         with app.db() as c:

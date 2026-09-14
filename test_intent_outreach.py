@@ -167,7 +167,7 @@ class OutreachTests(unittest.TestCase):
             c.execute("UPDATE sources SET kind='browser'")
         outreach.STOP.clear()
         outreach.authorize('点陪🥣看我主业', '合成测试操作授权', SENDER)
-        self.analysis = patch('monitoring.observation_analysis', return_value=dict(category='buyer', analysis_method='model'))
+        self.analysis = patch('monitoring.observation_analysis', return_value=dict(category='buyer', game=app.TARGET_GAME, analysis_method='model'))
         self.analysis.start()
         self.addCleanup(self.analysis.stop)
 
@@ -181,6 +181,55 @@ class OutreachTests(unittest.TestCase):
         with app.db() as c:
             self.assertEqual(c.execute('SELECT contact_basis FROM people').fetchone()[0], '')
             self.assertIn('policy_revision', c.execute('SELECT evidence FROM uid_message_attempts').fetchone()[0])
+
+    def test_unknown_game_mentions_valorant_and_preserves_unknown_classification(self):
+        outreach.replace_greeting('合成：游戏待确认时明确介绍瓦陪陪')
+        with patch('monitoring.observation_analysis', return_value=dict(category='buyer', game='', analysis_method='model')), patch('uid_transport.send', wraps=self.accepted) as transport:
+            outreach.tick();outreach.tick()
+        transport.assert_called_once()
+        self.assertEqual(transport.call_args.args[2], '你好呀，想点个瓦陪陪吗？感兴趣可以看看我主业～')
+
+    def test_other_game_is_excluded_and_unknown_does_not_use_legacy_copy(self):
+        for game in ['', '王者荣耀', '三角洲行动']:
+            with self.subTest(game=game), patch('monitoring.observation_analysis', return_value=dict(category='buyer', game=game, analysis_method='model')), patch('uid_transport.send') as transport:
+                outreach.tick();transport.assert_not_called()
+        outreach.replace_greeting('合成：游戏待确认时介绍瓦陪陪')
+        with patch('monitoring.observation_analysis', return_value=dict(category='buyer', game='王者荣耀', analysis_method='model')), patch('uid_transport.send') as transport:
+            outreach.tick();transport.assert_not_called()
+
+    def test_channel_contention_keeps_waiting_and_reuses_draft_once(self):
+        channel.GUARD.acquire()
+        try:
+            with patch('uid_transport.send') as transport:outreach.tick();transport.assert_not_called()
+            self.assertEqual(outreach.state()['status'],'waiting')
+            with app.db() as c:
+                self.assertEqual(c.execute('SELECT COUNT(*) FROM uid_message_attempts').fetchone()[0],0)
+                first=c.execute("SELECT id FROM message_jobs WHERE request_id LIKE 'intent-outreach-v1-%'").fetchone()[0]
+        finally:channel.GUARD.release()
+        with patch('uid_transport.send', wraps=self.accepted) as transport:outreach.tick();outreach.tick()
+        transport.assert_called_once()
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT job_id FROM uid_message_attempts').fetchone()[0],first)
+
+    def test_final_gate_requires_unknown_game_copy_and_excludes_other_games(self):
+        for game,content,allowed in [('', '你好呀，想点个瓦陪陪吗？感兴趣可以看看我主业～', True),
+                ('','你好呀，想点个陪陪吗？感兴趣可以看看我主业～',False),
+                (app.TARGET_GAME,'你好呀，想点个陪陪吗？感兴趣可以看看我主业～',True),
+                ('王者荣耀','你好呀，想点个瓦陪陪吗？感兴趣可以看看我主业～',False)]:
+            self.assertEqual(channel.eligible_demand_copy(dict(category='buyer',game=game,analysis_method='model'),content),allowed)
+
+    def test_unattempted_draft_can_adopt_game_specific_copy_without_duplicate_job(self):
+        outreach.replace_greeting('合成：待确认游戏说明瓦陪陪')
+        channel.GUARD.acquire()
+        try:outreach.tick()
+        finally:channel.GUARD.release()
+        with app.db() as c:
+            job_id=c.execute("SELECT id FROM message_jobs WHERE request_id LIKE 'intent-outreach-v1-%'").fetchone()[0]
+        with patch('monitoring.observation_analysis',return_value=dict(category='buyer',game='',analysis_method='model')),patch('uid_transport.send',wraps=self.accepted) as transport:
+            outreach.tick();outreach.tick()
+        transport.assert_called_once()
+        self.assertIn('瓦陪陪',transport.call_args.args[2])
+        with app.db() as c:self.assertEqual(c.execute('SELECT job_id FROM uid_message_attempts').fetchone()[0],job_id)
 
     def test_disabled_or_do_not_contact_never_sends(self):
         with patch('uid_transport.send') as transport:

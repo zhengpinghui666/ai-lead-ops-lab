@@ -146,12 +146,16 @@ def routing(c,kind,record_id,*,refresh_asset=False):
     # general game work/room. This grants model admission, never buyer status.
     direct=kind=='comment' and profile['matched']
     contextual=game_confirmed and keyword['passed']
-    allowed=bool(not row['filter_reason'] and (direct or contextual))
+    import author_roles
+    author=author_roles.context(c,kind,record_id)
+    author_hint=bool(author and game_confirmed)
+    allowed=bool(not row['filter_reason'] and (direct or contextual or author_hint))
     reason=('垂直作品的新评论直接分析意图。' if direct else
             '原文通过需求初筛，且上下文确认瓦范围；交由模型判断。') if allowed else (
         '弹幕未通过本批采集关键词配置。' if row['filter_reason'] else
         '原文和上下文尚未确认无畏契约范围。' if not game_confirmed else
         '原文未通过陪玩或游戏邀约初筛。')
+    if author_hint and allowed:reason='作者资料含陪玩／打手或俱乐部线索，共用初筛后由模型区分身份与意图。'
     if excluded:allowed=False;reason=excluded
     return dict(version=ROUTING_VERSION,model_allowed=allowed,route='model' if allowed else 'keywords',reason=reason,
                 asset_kind=asset_kind,asset_key=row['asset_key'],asset=profile,keyword_match=None if direct else keyword,learned_keywords=learned)

@@ -24,7 +24,7 @@ SERVICE_TYPES = ('娱乐开黑', '排位组队', '新手陪练', '对局复盘')
 REVIEW_FIELDS = ('game', 'service_type', 'region', 'rank_label', 'time', 'budget', 'party_size')
 from game_scope import ALIASES as VALORANT_ALIASES
 GAMES = {'三角洲行动': ['三角洲', 'delta'], '无畏契约': list(VALORANT_ALIASES), '王者荣耀': ['王者荣耀', '王者'], '英雄联盟': ['英雄联盟', 'lol'], '和平精英': ['和平精英']}
-LABELS = {'buyer': '客户需求', 'seller': '陪玩接单', 'recruit': '招募需求', 'social': '免费组队', 'noise': '无关讨论', 'uncertain': '待判断'}
+LABELS = {'buyer': '客户需求', 'club': '俱乐部', 'seller': '陪玩／打手接单', 'recruit': '陪玩／打手招募', 'social': '找搭子／免费组队', 'noise': '无关讨论', 'uncertain': '待判断'}
 
 
 def now():
@@ -143,6 +143,8 @@ def init(mode='live'):
     with LOCKS[mode], db(mode) as c:
         c.execute('PRAGMA journal_mode=WAL')
         c.executescript(SCHEMA)
+        import author_roles
+        c.executescript(author_roles.SCHEMA)
         person_columns={r[1] for r in c.execute('PRAGMA table_info(people)')}
         if 'profile_gender' not in person_columns:
             c.execute('ALTER TABLE people ADD COLUMN profile_gender INTEGER NOT NULL DEFAULT 0')

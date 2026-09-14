@@ -207,7 +207,10 @@ def ingest(c,group,result):
         group_profiles.remember(c,group['account_uid'],message['uid'],message.get('sec_uid',''))
         if int(message['index'])<=int(group['watermark']):continue
         published=uid_inbox_store.message_timestamp(message['created_at_raw'])
+        import author_roles
+        author_roles.remember(c,message['uid'],text=message['raw_text'],source='group_message')
         text=message['raw_text'];title=group['name'];relevance=asset_keywords.message_relevance(c,text,title)
+        if author_roles.related(c,message['uid']):relevance={**relevance,'passed':True,'reason':'作者资料含服务身份线索，交模型区分客户、个人陪玩／打手或俱乐部。'}
         filtered=('自己发送的消息' if message['uid']==group['account_uid'] else demand_freshness.assess(published)['detail'] if not demand_freshness.assess(published)['eligible']
                   else '未通过陪玩需求初筛' if not relevance['passed'] else '')
         classification=app.classify(text,title)
@@ -236,14 +239,14 @@ def project(c,raw,*,engine=None):
     return row
 
 
-def eligible(c,raw,engine,account):
+def eligible(c,raw,engine,account,*,allow_unknown=False):
     grant=policy(c)
     if not grant.get('outreach_enabled') or grant.get('account_uid')!=account or raw['account_uid']!=account:return False
     group=c.execute('SELECT notice FROM monitored_groups WHERE id=?',(raw['group_id'],)).fetchone()
     if not group or outreach_restriction(dict(group)):return False
     if not routing(c,raw['id'])['model_allowed']:return False
     row=project(c,raw,engine=engine)
-    return row['analysis_method']=='model' and row['category']=='buyer' and row['game']==app.TARGET_GAME
+    return row['analysis_method']=='model' and row['category']=='buyer' and (row['game']==app.TARGET_GAME or allow_unknown and not row['game'])
 
 
 def tick(*,reader=None,catalog_reader=None):
@@ -382,12 +385,13 @@ def reconsider_keyword_filters():
     return changed
 
 
-def state(mode='live',before=0):
+def state(mode='live',before=0,category_filter='all'):
     import semantic
     import group_discovery
     import group_profiles
     if mode!='live':return dict(groups=[],messages=[],enabled=0)
     before=uid_inbox_store._integer(before,0)
+    if category_filter not in ('all','valuable','supply','club'):raise ValueError('群消息筛选条件无效')
     try:account=uid_inbox_store._account()
     except ValueError:return dict(groups=[],messages=[],enabled=0,issue='请先在私信通道配置中核对账号')
     engine=semantic.state()['engine']
@@ -404,14 +408,22 @@ def state(mode='live',before=0):
             anchor=previous['published_at'] or ''
         rows=c.execute(SELECT+''' WHERE g.account_uid=? AND (?=0 OR COALESCE(m.published_at,'')<?
           OR COALESCE(m.published_at,'')=? AND m.id<?)
-          ORDER BY COALESCE(m.published_at,'') DESC,m.id DESC LIMIT 51''',(account,before,anchor,anchor,before)).fetchall()
-        messages=[project(c,r,engine=engine) for r in rows[:50]]
+          ORDER BY COALESCE(m.published_at,'') DESC,m.id DESC''',(account,before,anchor,anchor,before))
+        selected=[]
+        for raw in rows:
+            item=project(c,raw,engine=engine)
+            if category_filter=='club' and item['category']!='club':continue
+            if category_filter=='supply' and (item['filter_reason'] or item['category'] not in ('seller','recruit')):continue
+            if category_filter=='valuable' and (item['filter_reason'] or item['category']!='buyer' or item['analysis_method'] not in ('model','human')):continue
+            selected.append(item)
+            if len(selected)>=51:break
+        messages=selected[:50]
         for row in messages:
             attempt=c.execute('SELECT job_id,status,detail FROM uid_message_attempts WHERE sender_uid=? AND recipient_uid=? ORDER BY job_id DESC LIMIT 1',(account,row['uid'])).fetchone()
             row['outreach']=dict(attempt) if attempt else None
         profiles=group_profiles.state(c,account)
     return dict(account_uid=account,groups=groups,messages=messages,enabled=sum(g['enabled'] for g in groups),
-                has_more=len(rows)>50,next_before=messages[-1]['id'] if len(rows)>50 else None,
+                has_more=len(selected)>50,next_before=messages[-1]['id'] if len(selected)>50 else None,category_filter=category_filter,
                 group_speaking=False,discovery_scope='public_and_joined',public_join_available=True,
                 discovery=group_discovery.state(),profiles=profiles)
 

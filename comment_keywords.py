@@ -12,7 +12,7 @@ SCHEMA = '''CREATE TABLE IF NOT EXISTS comment_keyword_sources (
  first_seen_at TEXT NOT NULL,last_seen_at TEXT NOT NULL,PRIMARY KEY(term,comment_id)
 );
 CREATE INDEX IF NOT EXISTS idx_comment_keyword_record ON comment_keyword_sources(comment_id);'''
-POSITIVE = ('buyer', 'seller', 'recruit')
+POSITIVE = ('buyer', 'seller', 'recruit', 'club')
 
 
 def phrases(text, result):

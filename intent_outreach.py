@@ -18,7 +18,32 @@ GREETING_TEMPLATE = '你好{称呼}，想点个陪陪吗？感兴趣可以看看
 LEGACY_CONTENT = '点陪🥣看我主业'
 
 
-def rendered_content(c, policy, recipient):
+def evidence_game(c, evidence):
+    """Bind copy to the chosen demand, not the user's latest unrelated comment."""
+    import monitoring
+    import semantic
+    kind = evidence.get('evidence_type') or next((k for k in ('comment', 'live', 'group') if k+'_id' in evidence), None)
+    rid = evidence.get(kind+'_id', evidence.get('id')) if kind else None
+    if kind == 'comment':
+        row = c.execute('SELECT raw_text FROM comments WHERE id=?', (rid,)).fetchone()
+        return monitoring.observation_analysis(c, rid, row['raw_text'], semantic.state()['engine']).get('game', '') if row else ''
+    if kind == 'live':
+        import live_workflow
+        row = c.execute(live_workflow.SELECT+' WHERE m.id=?', (rid,)).fetchone()
+        return live_workflow.project(c, row, history=False).get('game', '') if row else ''
+    if kind == 'group':
+        import group_monitor
+        row = c.execute(group_monitor.SELECT+' WHERE m.id=?', (rid,)).fetchone()
+        return group_monitor.project(c, row).get('game', '') if row else ''
+    return ''
+
+
+def game_allowed(game, policy):
+    # Unknown-game outreach needs the approved explicit Valorant greeting.
+    return game == app.TARGET_GAME or (not game and policy.get('template') == 'public_gender_greeting_v1')
+
+
+def rendered_content(c, policy, recipient, *, game=None):
     if policy.get('template') != 'public_gender_greeting_v1':
         return policy['content']
     # Only an explicit profile field collected with a numeric UID is usable.
@@ -31,7 +56,8 @@ def rendered_content(c, policy, recipient):
         (recipient, since)).fetchall()
     genders = {r['profile_gender'] for r in rows if r['profile_gender_observed_at']==rows[0]['profile_gender_observed_at']} if rows else set()
     gender = next(iter(genders)) if len(genders)==1 else 0
-    return GREETING_TEMPLATE.replace('{称呼}', {1:'小哥哥', 2:'小姐姐'}.get(gender, '呀'))
+    template = GREETING_TEMPLATE if game == app.TARGET_GAME else GREETING_TEMPLATE.replace('陪陪', '瓦陪陪')
+    return template.replace('{称呼}', {1:'小哥哥', 2:'小姐姐'}.get(gender, '呀'))
 
 
 def replace_greeting(instruction):
@@ -215,25 +241,39 @@ def candidate(c, policy):
     import group_monitor
     for raw in c.execute(group_monitor.SELECT + " JOIN people eligible_person ON eligible_person.id=m.person_id WHERE "
             + eligible.replace('p.', 'eligible_person.') + ' ORDER BY m.id DESC', args):
-        if group_monitor.eligible(c,raw,engine,policy['sender_uid']):
-            return dict(raw,recipient_uid=raw['uid'],evidence_type='group')
+        if group_monitor.eligible(c,raw,engine,policy['sender_uid'],allow_unknown=game_allowed('', policy)):
+            return dict(raw,recipient_uid=raw['uid'],evidence_type='group',outreach_game=group_monitor.project(c,raw,engine=engine).get('game',''))
     for row in c.execute('''SELECT x.*,p.external_id AS recipient_uid,l.id AS lead_id
             FROM comments x JOIN people p ON p.id=x.person_id JOIN leads l ON l.person_id=p.id
             JOIN sources s ON s.id=p.source_id WHERE s.kind='browser' AND ''' + eligible + ' ORDER BY x.id DESC', args):
         if record_exclusion(c,'comment',row['id']):continue
         if not demand_freshness.assess(row['published_at'])['eligible']:continue
         analysis = monitoring.observation_analysis(c, row['id'], row['raw_text'], engine)
-        if analysis.get('category') == 'buyer' and analysis.get('analysis_method') in ('model', 'human'):
-            return dict(row, evidence_type='comment')
+        if analysis.get('category') == 'buyer' and game_allowed(analysis.get('game'), policy) and analysis.get('analysis_method') in ('model', 'human'):
+            return dict(row, evidence_type='comment', outreach_game=analysis.get('game',''))
     ids = [r[0] for r in c.execute('''SELECT m.id FROM live_messages m JOIN live_links k ON k.message_id=m.id
         JOIN people p ON p.id=k.person_id WHERE m.filter_reason='' AND ''' + eligible + ' ORDER BY m.id DESC', args)]
     for rid in ids:
         if record_exclusion(c,'live',rid):continue
         if not demand_freshness.record(c,'live',rid)['eligible']:continue
         row = live_workflow.project(c, c.execute(live_workflow.SELECT + ' WHERE m.id=?', (rid,)).fetchone(), history=False, model_engine=engine)
-        if row['category'] == 'buyer' and row['analysis_method'] in ('model', 'human'):
-            return dict(row, recipient_uid=row['uid'], evidence_type='live')
+        if row['category'] == 'buyer' and game_allowed(row.get('game'), policy) and row['analysis_method'] in ('model', 'human'):
+            return dict(row, recipient_uid=row['uid'], evidence_type='live', outreach_game=row.get('game',''))
     return None
+
+
+def prepare_draft(row, policy, content):
+    request_id = 'intent-outreach-v1-'+policy['sender_uid']+'-'+row['recipient_uid']
+    with app.LOCKS['live'], app.db() as c:
+        old = c.execute('''SELECT j.*,p.external_id AS recipient FROM message_jobs j
+            JOIN leads l ON l.id=j.lead_id JOIN people p ON p.id=l.person_id WHERE j.request_id=?''', (request_id,)).fetchone()
+        if old and old['status'] == 'draft' and old['recipient'] == row['recipient_uid'] and not c.execute(
+                'SELECT 1 FROM uid_message_attempts WHERE job_id=?', (old['id'],)).fetchone():
+            if old['content'] != content or old['lead_id'] != row['lead_id']:
+                c.execute('UPDATE message_jobs SET content=?,lead_id=?,updated_at=? WHERE id=?', (content,row['lead_id'],app.now(),old['id']))
+                app.event(c,'intent_outreach','未提交草稿已按当前需求更新文案；发送记录 #'+str(old['id']))
+            return dict(c.execute('SELECT * FROM message_jobs WHERE id=?', (old['id'],)).fetchone())
+    return app.mutate('draft',dict(lead_id=row['lead_id'],request_id=request_id,content=content))
 
 
 def tick():
@@ -255,14 +295,13 @@ def tick():
             retry = retry_candidate(c, policy)
             if retry and retry.get('cooldown'):return
             row = None if retry else candidate(c, policy)
-            content = rendered_content(c,policy,row['recipient_uid']) if row else None
+            content = rendered_content(c,policy,row['recipient_uid'],game=row['outreach_game']) if row else None
         if (not row and not retry) or STOP.is_set():
             return
         if retry:
             job,grant=retry['job'],retry['grant']
         else:
-            job = app.mutate('draft', dict(lead_id=row['lead_id'],
-                request_id='intent-outreach-v1-'+policy['sender_uid']+'-'+row['recipient_uid'], content=content))
+            job = prepare_draft(row, policy, content)
             kind = row['evidence_type']
             grant = dict(job_id=job['id'], sender_uid=policy['sender_uid'], recipient_uid=row['recipient_uid'],
                 content_sha256=hashlib.sha256(content.encode()).hexdigest(),
@@ -272,6 +311,13 @@ def tick():
         try:
             result = uid_messaging.send_one(job['id'], operator_authorization=grant,
                 retry_note=policy['retry_instruction'] if retry else None)
+        except uid_messaging.ChannelBusy:
+            # No platform attempt was registered. Keep the same draft and let
+            # the normal bounded loop retry after the channel owner releases it.
+            with app.LOCKS['live'], app.db() as c:
+                write(c, RUNTIME_KEY, dict(status='waiting', checked_at=app.now(), last_job_id=job['id'],
+                    detail='私信通道正在处理其他任务，等待下一次发送检查'))
+            return
         except demand_freshness.FreshnessError as exc:
             # The source can expire between selection and preparation. This is
             # a per-lead stop, not a channel failure or permission to use old text.
@@ -303,10 +349,11 @@ def start_service():
         while not STOP.wait(15):
             try:
                 tick()
-            except Exception:
+            except Exception as exc:
                 with app.LOCKS['live'], app.db() as c:
                     write(c, RUNTIME_KEY, dict(status='attention', checked_at=app.now(),
-                        detail='自动私信处理未完成，请查看记录；不会重发已有尝试'))
+                        error_type=type(exc).__name__, detail='自动私信处理未完成，请查看记录；不会重发已有尝试'))
+                    app.event(c, 'intent-outreach-error', '自动私信处理异常：'+type(exc).__name__)
     THREAD = threading.Thread(target=loop, name='intent-outreach', daemon=True)
     THREAD.start()
 

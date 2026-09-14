@@ -224,6 +224,8 @@ def parse_page(body, operation, video='', parent='', title=''):
                    'text': raw.strip()[:5000], 'user_id': numeric(user.get('uid')),
                    'sec_uid': user.get('sec_uid') if isinstance(user.get('sec_uid'), str) else '',
                    'nickname': str(user.get('nickname') or '')[:120], 'parent_comment_id': reference,
+                   'profile_signature': user.get('signature')[:1000] if isinstance(user.get('signature'),str) else None,
+                   'profile_sec_uid': user.get('sec_uid')[:200] if isinstance(user.get('sec_uid'),str) else '',
                    'profile_gender': user.get('gender') if type(user.get('gender')) is int and user['gender'] in (0,1,2) else None,
                    'published_at': created if type(created) is int and 0 < created < 32503680000 else None}
             identity = cid

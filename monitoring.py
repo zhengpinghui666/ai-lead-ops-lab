@@ -111,7 +111,7 @@ def observation_analysis(c, comment_id, text, model_engine, *, summary=False):
                      parent_context={'status': 'available', 'raw_text': source['parent']})
     analysis_store.project(c, projected, model_engine=model_engine,details=not summary)
     method = projected['analysis_method']
-    if summary:return dict(category=projected['category'],analysis_method=method)
+    if summary:return dict(category=projected['category'],analysis_method=method,game=projected.get('game',''))
     state = method
     if method not in ('human', 'pending', 'model') and model_engine:
         model = projected.get('model_result')
@@ -139,7 +139,7 @@ def observation_analysis(c, comment_id, text, model_engine, *, summary=False):
     category_quotes = [e for e in evidence if isinstance(e, dict)
         and e.get('kind') == 'category' and e.get('source') == 'comment'
         and isinstance(e.get('text'), str) and e['text'] and e['text'] in text]
-    return dict(category=projected['category'], analysis_method=method, analysis_state=state,
+    return dict(category=projected['category'], game=projected.get('game',''),author_profile=projected.get('author_profile'),author_role=projected.get('author_role'), analysis_method=method, analysis_state=state,
         analysis_reason=projected.get('reason') if method in ('model', 'rules', 'human') else None,
         analysis_evidence=category_quotes, companion_relevance=relevance,model_routing=projected['model_routing'],
         rule_finished_at=rule.get('finished_at'),

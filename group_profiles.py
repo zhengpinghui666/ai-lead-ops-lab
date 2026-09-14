@@ -66,7 +66,7 @@ def profiles(account,targets,*,client=None):
         if not isinstance(name,str) or not name.strip() or len(name)>200:continue
         gender=row.get('gender')
         follow=row.get('follow_status')
-        output.append(dict(uid=uid,sec_uid=sec,nickname=name,
+        output.append(dict(uid=uid,sec_uid=sec,nickname=name,signature=row.get('signature')[:1000] if isinstance(row.get('signature'),str) else None,
                            gender=gender if type(gender) is int and gender in (0,1,2) else None,
                            follow_status=follow if type(follow) is int and follow in (0,1,2) else None))
     return dict(profiles=output,proof=dict(http_status=200,response_bytes=len(raw),response_sha256=hashlib.sha256(raw).hexdigest()))
@@ -89,8 +89,10 @@ def tick(*,member_reader=None,profile_reader=None):
             if cfg and json.loads(cfg[0])>app.now():return
             seed_observed(c,account)
             targets=[dict(r) for r in c.execute('''SELECT DISTINCT p.* FROM group_profiles p
-                JOIN group_messages m ON m.uid=p.uid JOIN monitored_groups g ON g.id=m.group_id AND g.account_uid=p.account_uid
-                WHERE p.account_uid=? AND g.enabled=1 AND g.member=1 AND g.matched=1
+                WHERE p.account_uid=? AND (EXISTS(SELECT 1 FROM group_messages m JOIN monitored_groups g ON g.id=m.group_id
+                  WHERE m.uid=p.uid AND g.account_uid=p.account_uid AND g.enabled=1 AND g.member=1 AND g.matched=1)
+                  OR EXISTS(SELECT 1 FROM people u JOIN comments x ON x.person_id=u.id WHERE u.external_id=p.uid
+                    AND julianday(x.published_at)>=julianday('now','-1 day')))
                 AND p.sec_uid!='' AND p.next_check_at<=?
                 ORDER BY (p.nickname='') DESC, EXISTS(SELECT 1 FROM people u JOIN leads l ON l.person_id=u.id
                   JOIN message_jobs j ON j.lead_id=l.id WHERE u.external_id=p.uid) DESC,p.checked_at,p.uid LIMIT 20''',(account,app.now()))]
@@ -128,6 +130,12 @@ def tick(*,member_reader=None,profile_reader=None):
                               (monitor.stamp_after(21600),account,target['uid']))
                     continue
                 if value['sec_uid']!=target['sec_uid']:raise ValueError('资料身份已经改变')
+                import author_roles
+                author_roles.remember(c,value['uid'],nickname=value['nickname'],signature=value.get('signature'),source='public_profile')
+                if author_roles.related(c,value['uid']):
+                    for m in c.execute("SELECT id,relevance FROM group_messages WHERE uid=? AND filter_reason='未通过陪玩需求初筛' AND julianday(published_at)>=julianday(?,'-1 day')",(value['uid'],stamp)).fetchall():
+                        relevance=json.loads(m['relevance']);relevance.update(passed=True,reason='作者资料含陪玩／打手或俱乐部线索，交模型区分身份。')
+                        c.execute("UPDATE group_messages SET filter_reason='',relevance=? WHERE id=?",(json.dumps(relevance,ensure_ascii=False),m['id']))
                 c.execute('''UPDATE group_profiles SET nickname=?,gender=?,checked_at=?,next_check_at=?,status='ready',
                     failures=0,proof=? WHERE account_uid=? AND uid=? AND sec_uid=?''',
                     (value['nickname'],value['gender'],stamp,monitor.stamp_after(86400),json.dumps(result['proof']),account,value['uid'],value['sec_uid']))

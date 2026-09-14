@@ -1,8 +1,9 @@
 """Auditable local rules, not a semantic model or a calibrated probability model."""
 import re
 from game_scope import GAME_PATTERN, exclusion_reason
+from service_roles import SUPPLY, RECRUIT, ordinary_teamup
 
-RULESET_VERSION = 'rules-v6-cn-pc'
+RULESET_VERSION = 'rules-v7-service-roles'
 SEPARATOR = re.compile(r'[，,。.!?！？；;\n]')
 NEGATIVE_BEFORE = re.compile(r'(?:不(?:是|再|要|想|用|需要|打算|考虑)?|没(?:有|想|打算)?|并非|无需|拒绝|谢绝)(?:再|去|找)?\s*$')
 NEGATIVE_AFTER = re.compile(r'^\s*(?:不要|不行|没空|不方便|不考虑|不用|不需要|不合适|取消|太贵)')
@@ -44,6 +45,9 @@ def companion_relevance(raw, video_context='', parent_context=''):
         hits=matches(raw,pattern,'companion_relevance')
         if hits:
             return decision(True,reason,hits)
+    supply=positive(matches(raw,SUPPLY+'|'+RECRUIT,'service_role'))
+    if supply:
+        return decision(True,'原文有陪玩或打手招募、找老板接单表达；区分供应方与需求方。',supply)
     play=matches(raw,r'组队|[双三五]排|开黑|上分|练枪','companion_play')
     payment=matches(raw,r'付费|有偿|预算\s*\d|花钱|付钱','companion_payment')
     if play and payment:
@@ -119,7 +123,7 @@ def classify_comment(raw, video_context, parent_context, games, target_game):
     requested = read(REQUEST, 'request')
     pricing = read(r'怎么收费|如何收费|多少钱|什么价格|价格多少|怎么下单|如何下单|在哪下单|可以预约|想预约|接单[吗么]', 'pricing')
     supplied = read(rf'接单|可接(?:单|订单|陪玩|陪练|复盘)|接(?:陪玩|陪练|复盘)订单|找(?:个|位)?老板|有老板吗|来(?:个|位)?老板|老板来|应聘|求职'
-                    rf'|(?:提供|承接){CLAUSE}{{0,12}}?(?:{SERVICE})|(?:本人|我|我们)(?:做|教){CLAUSE}{{0,12}}?(?:{SERVICE})', 'supply')
+                    rf'|(?:提供|承接){CLAUSE}{{0,12}}?(?:{SERVICE})|(?:本人|我|我们)(?:做|教){CLAUSE}{{0,12}}?(?:{SERVICE})|{SUPPLY}', 'supply')
     # Asking whether the other person takes orders is not advertising one's service.
     for item in supplied:
         is_question = bool(re.match(r'^[吗么]', raw[item['end']:]) or
@@ -128,7 +132,7 @@ def classify_comment(raw, video_context, parent_context, games, target_game):
         if is_question:
             item['kind'] = 'availability_question'
     supplied = [x for x in supplied if x['kind'] == 'supply']
-    recruited = read(rf'招聘|招募|招(?:[一二两三四五六七八九十\d]+[名位个])?{CLAUSE}{{0,10}}?(?:陪玩|陪练|教练|复盘老师|队员|打手|人)', 'recruit')
+    recruited = read(rf'招聘|招募|招(?:[一二两三四五六七八九十\d]+[名位个])?{CLAUSE}{{0,10}}?(?:陪玩|陪练|教练|复盘老师|队员|打手|人)|{RECRUIT}', 'recruit')
     grouped = read(GROUP, 'group')
     free = read(r'免费|只找队友|只找搭子|不找收费|不花钱|不收费|不付费|不付钱|不要收费|谢绝收费|白嫖', 'free')
     paid = read(r'付费|有偿|付钱|收费|花\s*\d+\s*[元块]', 'payment')
@@ -172,6 +176,8 @@ def classify_comment(raw, video_context, parent_context, games, target_game):
         category, explanation = 'uncertain', '免费与付费/预算表达同时出现，需要人工核对。'
     elif free and (grouped or requested or service_scope):
         category, explanation = 'social', '原文明示不付费或只找队友，不视为付费客户。'
+    elif ordinary_teamup(raw):
+        category, explanation = 'social', '普通找搭子、组队邀约，未表达陪玩服务需求。'
     elif buyer_signal:
         category, explanation = 'buyer', '原文表达服务需求或询价；仅为潜在需求，不等于已付费或同意联系。'
     elif off_topic_price:

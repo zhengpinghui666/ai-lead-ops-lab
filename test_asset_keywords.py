@@ -26,7 +26,7 @@ class KeywordTests(unittest.TestCase):
         self.assertEqual(next(r for r in state['rows'] if r['term']=='瓦搭')['source_count'],2)
         self.assertFalse(assets.classify('无畏契约 #瓦搭',[])['matched'])
 
-    def test_approved_service_updates_classification_and_live_gate_only_in_vertical_rooms(self):
+    def test_approved_service_keeps_literal_demand_in_game_context_and_excludes_plain_chat(self):
         record,_=self.comment('普通聊天','无畏契约 #瓦搭')
         self.approve('瓦搭',scope='both')
         with app.db() as c:self.assertTrue(assets.routing(c,'comment',record)['model_allowed'])
@@ -35,7 +35,9 @@ class KeywordTests(unittest.TestCase):
             self.assertFalse(assets.routing(c,'live',plain)['model_allowed'])
             route=assets.routing(c,'live',hit);self.assertTrue(route['model_allowed']);self.assertEqual(route['learned_keywords'],['瓦搭'])
             c.execute("UPDATE live_rooms SET title='无畏契约赛事'")
-            self.assertFalse(assets.routing(c,'live',hit,refresh_asset=True)['model_allowed'])
+            # Confirmed game context plus a literal service request is useful
+            # even when the whole room is not a companion-service room.
+            self.assertTrue(assets.routing(c,'live',hit,refresh_asset=True)['model_allowed'])
         self.approve('瓦搭',status='rejected')
         with app.db() as c:
             self.assertFalse(assets.routing(c,'comment',record)['model_allowed'])

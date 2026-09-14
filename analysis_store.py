@@ -37,8 +37,11 @@ def inputs(c, kind, record_id):
           WHERE m.id=?''', (record_id,)).fetchone()
     if not row:
         raise ValueError('原文记录不存在')
-    return dict(kind=kind, text=row['raw_text'], parent=(row['parent_text'] or '') if kind == 'comment' else '',
-                title=row['title']), row
+    source=dict(kind=kind, text=row['raw_text'], parent=(row['parent_text'] or '') if kind == 'comment' else '',title=row['title'])
+    import author_roles
+    author=author_roles.context(c,kind,record_id)
+    if author:source['author']=author
+    return source,row
 
 
 def capture_rule(c, kind, record_id):
@@ -91,7 +94,7 @@ def compatible_engine(recorded, current):
         return True
     return any(f':intent-prompt-v{old}:' in recorded and
                recorded.replace(f':intent-prompt-v{old}:', f':intent-prompt-v{new}:') == current
-               for old, new in ((6, 7), (6, 8), (7, 8)))
+               for old, new in ((6, 7), (6, 8), (7, 8), (6, 9), (7, 9), (8, 9)))
 
 
 def project(c, row, *, model_engine=None, details=True):
@@ -104,6 +107,9 @@ def project(c, row, *, model_engine=None, details=True):
             source['parent'] = parent['raw_text']
     elif kind=='group':source['title']=row['group_title']
     else:source['title']=row.get('room_title','')
+    import author_roles
+    author=author_roles.context(c,kind,row['id'])
+    if author:source['author']=author
     fingerprint = digest(source)
     row['analysis_input_hash'] = fingerprint
     rule = latest(c, kind, row['id'], 'rules', fingerprint) if details else None
@@ -119,6 +125,10 @@ def project(c, row, *, model_engine=None, details=True):
     row['model_result'] = model
     if model and model['status'] == 'completed' and compatible_engine(model['engine'], model_engine) and row['analysis_method'] not in ('human', 'pending'):
         row.update(model['result'])
+    import service_roles
+    service_roles.project(row,source)
+    author_roles.project(c,row,source)
+    row['author_profile']=source.get('author')
     if not details:return row
     if kind == 'comment':
         import asset_keywords

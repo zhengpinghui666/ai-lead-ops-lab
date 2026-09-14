@@ -32,3 +32,10 @@ run('rememberViewScroll();restoreViewScroll("detail-17")');assert.deepEqual(cont
 run('restoreViewScroll("list-filter-A")');assert.deepEqual(context.scrollNodes.map(n=>n.scrollTop),[120,560]);
 assert.equal(context.scrollNodes[1].scrollLeft,25);
 console.log('PASS: list/detail scroll restoration and a new filter starting at the top.');
+
+// Both HTML entry points must show the same navigation before data arrives.
+const navOf=file=>fs.readFileSync(file,'utf8').match(/<nav id="nav"[\s\S]*?<\/nav>/)[0];
+const navEntries=html=>[...html.matchAll(/<a href="([^"]+)"[^>]*><i data-lucide="([^"]+)"><\/i>([^<]+)<\/a>/g)].map(([,href,icon,label])=>[href.replace('/#','#'),icon,label]);
+assert.deepEqual(navEntries(navOf('static/app.html')),navEntries(navOf('static/login.html')));
+assert.equal([...navOf('static/login.html').matchAll(/aria-current="page"/g)].length,1);
+assert.ok(!navEntries(navOf('static/login.html')).some(([href])=>['#live','#groups'].includes(href)));

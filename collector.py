@@ -392,6 +392,13 @@ def observe(task_id, source_id, message):
             else:
                 result = app.ingest({'source_id': source_id, 'records': [{**row, 'video_url': url}]}, allow_browser_source=True, connection=c)
                 counts = {'comments': task['comments'] + 1, **{k: task[k] + result[k] for k in ('inserted', 'duplicate', 'revised')}}
+        if kind=='comment':
+            import author_roles
+            author_roles.remember(c,row.get('user_id'),text=row.get('text') or row.get('content') or '',nickname=row.get('nickname',''),signature=row.get('profile_signature'))
+            if row.get('profile_sec_uid'):
+                import group_profiles,uid_inbox_store
+                try:group_profiles.remember(c,uid_inbox_store._account(),row.get('user_id'),row['profile_sec_uid'])
+                except ValueError:pass
         digest = hashlib.sha256(json.dumps(row, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         published_at = None
         if kind == 'comment':

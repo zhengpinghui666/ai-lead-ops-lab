@@ -56,7 +56,7 @@ def history(query, mode='live'):
     video = query.get('video', '')
     search = query.get('q', '')
     state = query.get('filter', 'all')
-    if not isinstance(video, str) or len(video)>300 or not isinstance(search, str) or len(search)>200 or state not in ('all','accepted','filtered','valuable'):
+    if not isinstance(video, str) or len(video)>300 or not isinstance(search, str) or len(search)>200 or state not in ('all','accepted','filtered','valuable','supply','club'):
         raise ValueError('评论筛选参数无效')
     engine = semantic.state()['engine'] if mode=='live' else None
     with app.db(mode) as c:
@@ -74,18 +74,22 @@ def history(query, mode='live'):
         counts = c.execute("SELECT COUNT(*) AS observed,COALESCE(SUM(filter_reason=''),0) AS accepted,COALESCE(SUM(filter_reason!=''),0) AS filtered FROM monitor_comment_scope").fetchone()
         # Use the same current, input-bound projection as the visible judgment.
         # Evaluate eligibility before pagination; manual corrections take priority.
-        current, valuable = {}, set()
+        current, valuable, supply, clubs = {}, set(), set(), set()
         for accepted in c.execute("SELECT * FROM monitor_comment_scope WHERE filter_reason=''"):
             key = (accepted['video_url'],accepted['external_id'])
             current[key] = monitoring.observation_analysis(c,accepted['comment_id'],accepted['text'],engine,summary=True)
             if current[key].get('category') == 'buyer' and current[key].get('analysis_method') in ('model','human'):
                 valuable.add(key)
-        where = " WHERE (:state='all' OR (:state IN ('accepted','valuable') AND filter_reason='') OR (:state='filtered' AND filter_reason!='')) AND (:query='' OR instr(lower(text || ' ' || nickname || ' ' || COALESCE(user_identifier,'') || ' ' || external_id),lower(:query))>0)"
+            if current[key].get('category') in ('seller','recruit'):
+                supply.add(key)
+            if current[key].get('category')=='club':clubs.add(key)
+        where = " WHERE (:state='all' OR (:state IN ('accepted','valuable','supply','club') AND filter_reason='') OR (:state='filtered' AND filter_reason!='')) AND (:query='' OR instr(lower(text || ' ' || nickname || ' ' || COALESCE(user_identifier,'') || ' ' || external_id),lower(:query))>0)"
         total = c.execute('SELECT COUNT(*) FROM monitor_comment_scope'+where,params).fetchone()[0]
         ordered = 'SELECT * FROM monitor_comment_scope'+where+' ORDER BY julianday(collected_at) DESC,video_url,external_id'
         valuable_source = None
-        if state == 'valuable':
-            valuable_source = [r for r in c.execute(ordered,params) if (r['video_url'],r['external_id']) in valuable]
+        if state in ('valuable','supply','club'):
+            chosen = valuable if state=='valuable' else clubs if state=='club' else supply
+            valuable_source = [r for r in c.execute(ordered,params) if (r['video_url'],r['external_id']) in chosen]
             total = len(valuable_source)
         pages = max(1,(total+24)//25)
         page = min(page,pages)
@@ -101,5 +105,5 @@ def history(query, mode='live'):
             row['exclude_matches'] = comment_filters.matches(row['text'],row.pop('exclude_keywords'))
             row['timing'] = monitoring.timing(row,target)
             rows.append(row)
-        return dict(rows=rows,counts=dict(counts),valuable_count=len(valuable),total=total,page=page,pages=pages,page_size=25,
+        return dict(rows=rows,counts=dict(counts),valuable_count=len(valuable),supply_count=len(supply),club_count=len(clubs),total=total,page=page,pages=pages,page_size=25,
                     video_url=video,scope='all_local_comment_history',sort='collected_at_desc',target_seconds=target)

@@ -173,7 +173,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(collection_state(self.mode(), view, section))
             if path == '/api/groups':
                 query=parse_qs(urlparse(self.path).query)
-                return self.respond(group_monitor.state(self.mode(),int(query.get('before',['0'])[0])))
+                return self.respond(group_monitor.state(self.mode(),int(query.get('before',['0'])[0]),query.get('filter',['all'])[0]))
             if path == '/api/monitor-comments':
                 import monitor_comments
                 query = {k:v[0] for k,v in parse_qs(urlparse(self.path).query).items()}

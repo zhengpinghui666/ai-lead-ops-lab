@@ -130,7 +130,7 @@ def history(query, mode='live'):
     limit = integer(query.get('limit', 25), '每页条数', 1, 100)
     search = query.get('q', '')
     status = query.get('filter', 'all')
-    if not isinstance(search, str) or len(search) > 200 or status not in ('all', 'accepted', 'filtered', 'valuable'):
+    if not isinstance(search, str) or len(search) > 200 or status not in ('all', 'accepted', 'filtered', 'valuable', 'supply', 'club'):
         raise ValueError('弹幕筛选条件无效')
     clauses, args = ['1=1'], []
     sid = query.get('session_id', '')
@@ -150,16 +150,21 @@ def history(query, mode='live'):
         counts = dict(c.execute("SELECT COUNT(*) AS observed,COALESCE(SUM(m.filter_reason=''),0) AS accepted,COALESCE(SUM(m.filter_reason<>''),0) AS filtered FROM live_messages m" + where, args).fetchone())
         # Resolve the model once for this response, not once for every message.
         engine = live_workflow.connection_engine(c)
-        projected, valuable = {}, []
+        projected, valuable, supply, clubs = {}, [], [], []
         for raw in c.execute(live_workflow.SELECT + where + " AND m.filter_reason='' ORDER BY m.id DESC", args):
             row = live_workflow.project(c, raw, history=False, model_engine=engine)
             projected[row['id']] = row
             if row['category'] == 'buyer' and row['analysis_method'] in ('rules','model','human'):
                 valuable.append(row)
+            if row['category'] in ('seller','recruit'):
+                supply.append(row)
+            if row['category']=='club':clubs.append(row)
+        counts['supply'] = len(supply)
+        counts['club'] = len(clubs)
         counts['valuable'] = len(valuable)
-        total = counts[{'all':'observed','accepted':'accepted','filtered':'filtered','valuable':'valuable'}[status]]
-        if status == 'valuable':
-            rows = valuable[offset:offset+limit]
+        total = counts[{'all':'observed','accepted':'accepted','filtered':'filtered','valuable':'valuable','supply':'supply','club':'club'}[status]]
+        if status in ('valuable','supply','club'):
+            rows = (valuable if status=='valuable' else clubs if status=='club' else supply)[offset:offset+limit]
         else:
             if status != 'all':
                 where += " AND m.filter_reason=''" if status == 'accepted' else " AND m.filter_reason<>''"
@@ -279,6 +284,8 @@ def receive(session_id, message):
             counter = 'duplicate' if previous[0] == digest else 'invalid'
             c.execute(f'UPDATE live_sessions SET observed=observed+1,{counter}={counter}+1,updated_at=? WHERE id=?', (app.now(), session_id))
             return
+        import author_roles
+        author_roles.remember(c,uid,text=text,nickname=row.get('nickname',''),source='live_message')
         rejected = comment_filters.rejection(text, config['include_keywords'], config['exclude_keywords']) or ''
         import live_rules
         result = live_rules.classify(text) if not rejected else dict(category='uncertain', analysis_method='not_analyzed', reason='按本次固定关键词配置过滤，未作需求判断', facts={})
