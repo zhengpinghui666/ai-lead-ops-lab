@@ -52,11 +52,36 @@ class DailyDashboardTests(unittest.TestCase):
             self.event(c,previous,'2026-09-12T23:59:00+08:00','needs_review',1)
         v=dashboard.snapshot(reference=NOON);r=v['captcha']
         self.assertEqual((r['encounters'],r['submitted'],r['passed'],r['unknown']), (3,3,1,2))
-        self.assertEqual(r['pass_rate'],33.3)
+        self.assertEqual(r['pass_rate'],100.0)
+        self.assertEqual(r['confirmed'],1)
+        self.assertEqual(r['rate_status'],'partial')
         self.assertEqual(r['legacy_accepted'],1)
         self.assertEqual(r['all_time']['submitted'],4)
         self.assertEqual(v['series']['captcha_passed'][-1],1)
         self.assertEqual(v['series']['captcha_submitted'][-2:],[1,3])
+
+    def test_unknown_only_is_not_zero_but_explicit_failure_is(self):
+        with app.db() as c:
+            unknown=self.task(c);failed=self.task(c)
+            self.event(c,unknown,'2026-09-12T12:00:00+08:00','needs_review',1,adapter='douyin_same_shape_pair',platform_verdict='unknown')
+            self.event(c,failed,'2026-09-13T01:00:00+08:00','needs_review',1,adapter='douyin_same_shape_pair',platform_verdict='failed')
+        v=dashboard.snapshot(reference=NOON)
+        self.assertEqual(v['series']['captcha_rate_same_shape'][-2:],[None,0.0])
+        previous=v['captcha']['daily'][-2]['types'][1]
+        self.assertEqual((previous['submitted'],previous['unknown'],previous['rate_status']),(1,1,'unconfirmed'))
+        self.assertEqual(v['captcha']['rate_status'],'confirmed')
+        self.assertEqual(v['captcha']['all_time']['pass_rate'],0.0)
+        self.assertEqual(v['captcha']['all_time']['confirmed'],1)
+
+    def test_after_midnight_no_attempt_keeps_historical_unknown(self):
+        with app.db() as c:
+            task=self.task(c)
+            self.event(c,task,'2026-09-12T23:59:00+08:00','needs_review',1)
+        v=dashboard.snapshot(reference=NOON)
+        self.assertEqual(v['captcha']['rate_status'],'not_attempted')
+        self.assertIsNone(v['captcha']['pass_rate'])
+        self.assertEqual(v['captcha']['all_time']['unknown'],1)
+        self.assertIsNone(v['captcha']['all_time']['pass_rate'])
 
     def test_first_observation_and_first_buyer_survive_repeated_reads_and_reanalysis(self):
         with app.db() as c:

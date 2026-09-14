@@ -18,8 +18,8 @@
     },
     {
       "name": "AFTERNOON_REQUIREMENTS_20260914.md",
-      "sha256": "3b0e4059f01bd17ec8bac7c3e8bc4ae5d021077c975e11f7cdab6c5fae5b7399",
-      "bytes": 9284
+      "sha256": "995fff88cfc4edd78ae70f08ac39011993d24647ae042936084d7ac9d19d8cbb",
+      "bytes": 9863
     },
     {
       "name": "ASSET_VERTICALITY.md",
@@ -63,8 +63,8 @@
     },
     {
       "name": "DAILY_DASHBOARD.md",
-      "sha256": "766c31e52179f2fe003b5e25bdc1b70315140bd46c5dee5d90bda63628f785f1",
-      "bytes": 6586
+      "sha256": "c5e35324247c8af3681b2b9c54525742bd17fe6f982e8df9f17fec3b524cd4f7",
+      "bytes": 8085
     },
     {
       "name": "DELIVERY.md",
@@ -198,8 +198,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "f605f9de0a0f2fad06d4ebb1ee20079668911ca5abbf3ab4761352ff4fa5dbe8",
-      "bytes": 161448
+      "sha256": "3fd6afd8ab65b68c98094a536e3bd4b3d2e1698028c8804b1b3df50fc280f9dd",
+      "bytes": 164817
     },
     {
       "name": "UID_HTTP.md",
@@ -453,8 +453,8 @@
     },
     {
       "name": "daily_dashboard.py",
-      "sha256": "4edb49033b4683bdaee92c61cee799bf464e1f37d213cb3559888d76042cd2dd",
-      "bytes": 12683
+      "sha256": "fbc7a8198a8efdff508ce8692c8e90af9a1986dddfaa20008b22b6ec6444e458",
+      "bytes": 13100
     },
     {
       "name": "demand_freshness.py",
@@ -978,8 +978,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "33475403d84e9cc4fd9b0659c97074d7c9615bc0d53e7ec193ba4fccbd4ed411",
-      "bytes": 9934
+      "sha256": "e7f9c1dbadd9acbb8d62600a3398701ac2dbc34dbea70573e228a01cc59be425",
+      "bytes": 9976
     },
     {
       "name": "start.ps1",
@@ -993,8 +993,8 @@
     },
     {
       "name": "static/app.css",
-      "sha256": "3e52aa08d31e938961fcca07485fcf9bb5304b3c56d3b3ff38146ad62f2e65b4",
-      "bytes": 87296
+      "sha256": "4e5ec209a7e3e5865cf3935d14f8dce079d479ff6e33fdaa36d3f82c7593d028",
+      "bytes": 87512
     },
     {
       "name": "static/app.html",
@@ -1003,8 +1003,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "151deb6ad4c0281dbe2df708e43a223203edde2850456a8b335c26a63004c618",
-      "bytes": 236287
+      "sha256": "c708101151a944332ae84bf797c3ee209829da668cd66f0b99ab3cb3ab102e08",
+      "bytes": 237747
     },
     {
       "name": "static/bark.js",
@@ -1090,6 +1090,11 @@
       "name": "test_captcha_browser.cjs",
       "sha256": "6e88717037fbad7d551e162d464e9b5f7deac64149fe93821ed275a3695db815",
       "bytes": 8841
+    },
+    {
+      "name": "test_captcha_dashboard_frontend.cjs",
+      "sha256": "b2b47f0c910f6f9c1eed2c8f6dd8be904b376035994aeee571dfe3d1dc837b9c",
+      "bytes": 2996
     },
     {
       "name": "test_captcha_learning.cjs",
@@ -1183,8 +1188,8 @@
     },
     {
       "name": "test_daily_dashboard.py",
-      "sha256": "a2b55fc7451db0945ca41bf103811dc36db66805e2834b89f7d781f920e12d38",
-      "bytes": 9104
+      "sha256": "0771e2b740983fa7e2a3f2a3cb72bcb5d50a959fff91f92256086ce7121697be",
+      "bytes": 10626
     },
     {
       "name": "test_demand_freshness.py",
@@ -1383,8 +1388,8 @@
     },
     {
       "name": "test_login_metrics.py",
-      "sha256": "99fcae2d2c5f572571f438e2bcd8d8377123a184e7ac5d428ed93e10e873e7a6",
-      "bytes": 4094
+      "sha256": "695ea5d1a080f1b8a7e44f023833ac08fce7fe4b433adc77fc79a03d5aa62744",
+      "bytes": 4210
     },
     {
       "name": "test_login_migration.py",

@@ -70,11 +70,17 @@ def captcha_summary(c, start, end, event_start=None):
         submitted = [b for b in selected if b['submitted_at'] and begin <= b['submitted_at'] <= finish]
         passed = sum(b['passed'] for b in submitted)
         failed = sum(b['failed'] and not b['passed'] for b in submitted)
+        confirmed = passed + failed
+        unknown = len(submitted) - confirmed
         return dict(encounters=len(encounters), submitted=len(submitted), passed=passed,
-                    failed=failed, unknown=len(submitted)-passed-failed,
+                    failed=failed, unknown=unknown, confirmed=confirmed,
                     not_submitted=sum(b['submitted_at'] is None for b in encounters),
                     legacy_accepted=sum(b['legacy'] and not b['passed'] for b in submitted),
-                    pass_rate=round(passed/len(submitted)*100, 1) if submitted else None)
+                    # Missing verdicts are neither failed attempts nor a measured 0%.
+                    # Report the resolved sample size next to its rate in the UI.
+                    rate_status=('not_attempted' if not submitted else 'unconfirmed' if not confirmed
+                                 else 'partial' if unknown else 'confirmed'),
+                    pass_rate=round(passed/confirmed*100, 1) if confirmed else None)
     today = summarize(start)
     today['all_time'] = summarize(datetime.min.replace(tzinfo=timezone.utc))
     today['types']=[dict(key=key,name=name,**summarize(start,kind=key)) for key,name in CAPTCHA_TYPES.items()]

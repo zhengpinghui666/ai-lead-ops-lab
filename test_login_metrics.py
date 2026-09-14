@@ -43,13 +43,14 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(view['captcha']['all_time']['unknown'],1)
         with app.db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM login_verification_metrics').fetchone()[0],1)
 
-    def test_only_allowlisted_metadata_retained_and_type_series_include_zero(self):
+    def test_only_allowlisted_metadata_retained_and_unconfirmed_rate_stays_null(self):
         metrics.record(dict(self.row,status='code_filled',code='123456',secret='should-never-be-stored'))
         with app.db() as c:
             raw=json.dumps(dict(c.execute('SELECT * FROM login_verification_metrics').fetchone()))
             self.assertNotIn('123456"',raw);self.assertNotIn('secret',raw)
         view=dashboard.snapshot(reference=datetime.fromisoformat('2026-09-13T23:59:59+08:00'))
-        self.assertEqual(view['series']['captcha_rate_sms'][-1],0.0)
+        self.assertIsNone(view['series']['captcha_rate_sms'][-1])
+        self.assertEqual(next(t for t in view['captcha']['types'] if t['key']=='sms')['rate_status'],'unconfirmed')
         self.assertTrue(all(v is None for v in view['series']['captcha_rate_slider']))
 
     def test_sms_backfill_idempotent_and_explicit_about_historical_time(self):

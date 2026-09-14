@@ -1,3 +1,12 @@
+## 2026-09-15 00:45 验证码0%误导已修正，并发两路持续运行
+
+- 最新用户问“首页验证码为什么都是0”。真实IAB看板今日09-15未尝试，历史同形点选画成0%线。只读审计27个遇验证任务、6次提交、0明确通过/失败、6未知（含1旧accepted）；实际今日0次提交。短信metrics表空，jobs.json为phone_test或未用短信的登录恢复；不能把合成转发、Cookie恢复、后续普通批次成功回填为短信/图形验证码通过。
+- daily_dashboard通过率改为 passed/(passed+failed)，没有确定结果为null；补confirmed与rate_status（not_attempted/unconfirmed/partial/confirmed）。真实0%只存在明确失败；未知数与提交数保留，部分已确认不假装全部提交已知。首页无提交提示历史6次未确认；曲线从首个有事件日期开始，未知日不画零，整段未知显示说明和每日明细，按日各类型/短信口径同步。原始诊断、账本没有重写。
+- 52项统计/短信/登录Python回归及前端全页/新增验证码渲染用例通过。初次测试命令多写不存在test_api_views模块，52项实际通过但整命令报错；去掉该模块后52项正式通过。浏览器用独立headless Edge，只允许本机GET，不访问平台。1920×960、1280×720、390×844预览及生产均验证，桌面无整页滚动/横向溢出、无假0点、明细可打开/点击外部关闭。真实小窗口验证发现empty遮挡明细按钮，限定其容器高度后通过。手机保留既有内部滚动，未声称所有内容同屏。
+- 部署8文件（统计、JS/CSS、3测试、2文档），source-files现340。源码ZIP+两库SQLite备份，正常退出264972→托管271144。维护第一次旧脚本未带群所属账号，API拒绝并停止流程；补显式account_id后继续。群9517原19+7446原1恢复共20；7446发现原继承main enabled=true（并发00:17冻结库无独立配置），本次暂停生成独立配置，恢复时两账号均明确还原enabled=true。初次service-stop因在途任务拒绝，等其收尾后正常停止，没有强杀。恢复前稳定业务计数逐项一致，原inbox暂停、9517授权outreach经独立身份核对后恢复，无新增测试私信/历史补发。恢复后3102/3103/3104等真实自动完成，三路health healthy，详见artifacts/captcha-stats-20260915-0025/runtime-final.json。
+- 并发任务已补实际证据：3066一路/3067两路在同2个既有垂直作品对照，HTTP有效评论请求窗口687→406ms，跨作品并行390ms，均0新增、2条窗口内+1旧观察；总批次秒级时间1→3不能声称整体提速。00:19仅page_concurrency改2，原7446/24h/目标/预算保留；截至3092有25个后续自动completed，25个HTTP诊断有跨作品重叠。artifacts/concurrency-20260915-0014/automatic-verification.json和comparison.json保存证据。现2路，未测更高边界/搜索浏览器真实对照，分钟覆盖不算完成。
+- 私有源码备份在本条后执行，以data/github-backup/last-run.json为准。完整需求仍有未完成项，不能mark完整Goal完成；本次只解决验证码统计含义与页面显示，不宣称提高了验证码实测通过率。优先继续新旧评论拆队列、全站加载、多游戏等AFTERNOON清单。
+
 ## 2026-09-14 23:55 权重分频已上线，冷群误报已完成回执
 
 - 本轮为progress，完整Goal仍active。用户最新截图三句普通组队已再次只读复核：8条当前投影均social，原28/34历史平台accepted和29failed保留；不补发、不改历史模型。复核脚本check_teamup_current.py与teamup-current-recheck.json位于artifacts/lead-list-paging-20260914-2138。第一次临时-c执行因缺__file__未运行，后改为真实脚本成功，未变更业务库。
