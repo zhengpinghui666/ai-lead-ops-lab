@@ -190,13 +190,15 @@ class DiscoveryTrackingTests(unittest.TestCase):
             self.assertEqual(after,{**before,'relevant':1})
             self.assertEqual(c.execute('SELECT enabled FROM videos WHERE external_id=?',(row['video_id'],)).fetchone()[0],0)
 
-    def test_recent_comment_keeps_priority_after_many_quiet_checks(self):
+    def test_multiple_recent_comments_keep_priority_after_many_quiet_checks(self):
         self.save()
         for start in range(0,600,50):self.record([work(i) for i in range(start,start+50)])
         active=work(599)['video_id']
         with app.db() as c:c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=?,quiet_streak=5 WHERE video_id=?',
                                       (discovery.future(NOW,-300),discovery.future(NOW,-60),active))
         self.activity(active,discovery.future(NOW,-900))
+        self.activity(active,discovery.future(NOW,-901),suffix='-second')
+        self.activity(active,discovery.future(NOW,-902),suffix='-third')
         _,job=self.choose()
         self.assertIn(active,job['target'].splitlines())
         slot=next(r for r in job['work_selection']['slots'] if r['video_id']==active)
@@ -204,6 +206,24 @@ class DiscoveryTrackingTests(unittest.TestCase):
         self.assertEqual(slot['latest_comment_at'],discovery.future(NOW,-900))
         self.assertEqual(len(job['work_selection']['slots']),3)
         self.assertTrue(any(r['group']!='active' for r in job['work_selection']['slots']))
+
+    def test_single_recent_comment_cannot_reserve_priority_after_quiet_checks(self):
+        self.save();self.record([work()])
+        self.activity(VID,discovery.future(NOW,-900))
+        with app.db() as c:
+            c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=?,quiet_streak=2 WHERE video_id=?',
+                      (discovery.future(NOW,-120),discovery.future(NOW,-60),VID))
+            selected,_=discovery.select_work_targets(c,self.plan(),NOW,set(),set())
+            self.assertFalse(selected,'A sparse quiet work respects its backed-off due time')
+            c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=? WHERE video_id=?',
+                      (discovery.future(NOW,-4000),discovery.future(NOW,-3000),VID))
+            selected,audit=discovery.select_work_targets(c,self.plan(),NOW,set(),set())
+            self.assertEqual(len(selected),1,'It stays monitored and returns when due')
+            self.assertEqual(audit['slots'][0]['group'],'rotation')
+            self.assertTrue(audit['slots'][0]['cadence']['quiet_priority_expired'])
+            c.execute('UPDATE discovery_works SET quiet_streak=0 WHERE video_id=?',(VID,))
+            selected,audit=discovery.select_work_targets(c,self.plan(),NOW,set(),set())
+            self.assertEqual(audit['slots'][0]['group'],'active','A new unique recent comment resets the quiet streak in settle')
 
     def test_old_counts_and_invalid_times_do_not_prove_recent_activity(self):
         self.save();self.record([work(i) for i in range(6)])
@@ -243,15 +263,15 @@ class DiscoveryTrackingTests(unittest.TestCase):
             self.assertEqual(c.execute('SELECT COUNT(*) FROM comments').fetchone()[0],before)
             self.assertEqual(c.execute('SELECT COUNT(*) FROM semantic_jobs').fetchone()[0],0)
 
-    def test_quiet_check_retains_base_interval_until_activity_expires(self):
+    def test_quiet_check_backs_off_before_sparse_activity_expires(self):
         self.save();self.record([work()])
         with app.db() as c:c.execute('UPDATE discovery_works SET quiet_streak=4,new_recent_comments=7 WHERE video_id=?',(VID,))
         self.activity(VID,discovery.future(NOW,-3500))
         _,job=self.choose();self.finish_work_job(job,'still-active')
         with app.db() as c:row=c.execute('SELECT * FROM discovery_works WHERE video_id=?',(VID,)).fetchone()
-        self.assertEqual(row['next_check_at'],discovery.future(NOW,60))
+        self.assertEqual(row['next_check_at'],discovery.future(NOW,60*32))
         self.assertEqual((row['quiet_streak'],row['new_recent_comments']),(5,7))
-        later=discovery.future(NOW,120)
+        later=discovery.future(NOW,60*32+1)
         _,job=self.choose(instant=later);self.finish_work_job(job,'expired',later)
         with app.db() as c:row=c.execute('SELECT * FROM discovery_works WHERE video_id=?',(VID,)).fetchone()
         self.assertEqual(row['next_check_at'],discovery.future(later,60*32))
@@ -807,7 +827,8 @@ class DiscoveryTrackingTests(unittest.TestCase):
 
     def cadence_fixture(self):
         self.save();self.record([work(i) for i in range(10)])
-        for i in range(2):self.activity(work(i)['video_id'],discovery.future(NOW,-60))
+        for i in range(2):
+            for j in range(3):self.activity(work(i)['video_id'],discovery.future(NOW,-60-j),suffix='-'+str(j))
         ordinary=work(100);ordinary['video_title']='无畏契约合成普通集锦';self.record([ordinary])
         return {work(i)['video_id'] for i in range(2)}
 

@@ -59,13 +59,28 @@ def messages(account,group,*,cursor=0,limit=20,provider=None,exchange=None):
     body=wire.field(301,wire.field(1,cid)+wire.field(2,2)+wire.field(3,short)
                     +wire.field(4,1 if cursor else 3)+wire.field(5,cursor)+wire.field(6,limit))
     info=inbox._read('messages',body,account,provider,exchange,evidence)
-    output=[];indices=[];seen=set();skipped=0
+    output=[];indices=[];seen={};skipped=0;duplicates=0
     for row in inbox._items(info,1,limit):
         if wire.text(row,1)!=cid or wire.one(row,2,0)!=2 or wire.one(row,5,0)!=short:
             raise inbox.ReadError('message_conversation_mismatch')
         mid=str(inbox._number(wire.one(row,3,0),1));index=inbox._number(wire.one(row,4,0,0))
-        if mid in seen:raise inbox.ReadError('duplicate_message_id')
-        seen.add(mid);indices.append(index)
+        indices.append(index)
+        if mid in seen:
+            previous=seen[mid]
+            # A verified group page can repeat an event with a new sequence
+            # index and envelope metadata. Accept only identical business
+            # fields; content, author, timestamp and deletion/type conflicts
+            # still reject the entire page before any store write.
+            metadata={4,9,13,17}
+            if any(row.get(k)!=previous.get(k) for k in (set(row)|set(previous))-metadata):
+                raise inbox.ReadError('duplicate_message_id')
+            duplicates+=1
+            for message in output:
+                if message['message_id']==mid:
+                    message['index']=str(max(int(message['index']),index))
+                    break
+            continue
+        seen[mid]=row
         if wire.one(row,6,0)!=7 or wire.one(row,12,0,0)!=0:
             skipped+=1;continue
         uid=str(inbox._number(wire.one(row,7,0),1));wire.numeric_uid(uid)
@@ -80,7 +95,7 @@ def messages(account,group,*,cursor=0,limit=20,provider=None,exchange=None):
                            created_at_raw=str(inbox._number(wire.one(row,10,0,0)))))
     more=inbox._flag(info,3);next_cursor=inbox._number(wire.one(info,2,0,0))
     if more and (not next_cursor or cursor and next_cursor>=cursor):raise inbox.ReadError('nonadvancing_cursor')
-    return dict(messages=output,skipped=skipped,has_more=more,next_cursor=str(next_cursor),
+    return dict(messages=output,skipped=skipped,duplicates=duplicates,has_more=more,next_cursor=str(next_cursor),
                 minimum_index=str(min(indices)) if indices else None,maximum_index=str(max(indices)) if indices else None,
                 evidence=evidence,group_sent=False,read_marker_requested=False)
 

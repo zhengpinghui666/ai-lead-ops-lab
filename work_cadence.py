@@ -8,6 +8,7 @@ import re
 from datetime import datetime, timezone
 
 VERSION = 'work-cadence-v1'
+POLICY_VERSION = 'work-cadence-v2-quiet-decay'
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS work_comment_signals (
  video_id TEXT NOT NULL, external_id TEXT NOT NULL,
@@ -112,9 +113,10 @@ def assess(*,vertical,quiet,base_interval,stats):
     boost='none'
     if burst:interval=min(interval,max(30,base//2));boost='burst';score=max(score,95)
     elif related and activity>=3:interval=min(interval,base);boost='active';score=max(score,80)
-    elif vertical and not confidence and activity:interval=min(interval,base)
-    return dict(version=VERSION,tier=tier,score=score,interval_seconds=min(2592000,int(interval)),
+    elif vertical and not confidence and activity and quiet<2:interval=min(interval,base)
+    return dict(version=POLICY_VERSION,tier=tier,score=score,interval_seconds=min(2592000,int(interval)),
                 ratio=round(ratio,4) if ratio is not None else None,sample_count=n,service_hits=hits,
                 sample_basis=basis,sufficient_samples=confidence,
                 recent_five_minutes=five,recent_hour=activity,previous_hour=previous,boost=boost,
+                quiet_priority_expired=bool(activity and boost=='none' and quiet>=2),
                 complete_comment_coverage=False)

@@ -237,6 +237,10 @@ def select_work_targets(c,plan,instant,focused,paused):
         row=dict(raw)
         policy=work_cadence.assess(vertical=bool(row['vertical']),quiet=row['quiet_streak'],
             base_interval=cfg['work_interval'],stats=stats.get(row['video_id'],{}))
+        if row['selection_group']=='active' and policy['quiet_priority_expired']:
+            # Recent but repeatedly quiet work loses its reserved active slot.
+            # It remains monitored and ranked by relevance and time overdue.
+            row['selection_group']='rotation'
         checked=work_cadence.epoch(row['last_checked_at'])
         stored_due=work_cadence.epoch(row['next_check_at'])
         if checked is not None and stored_due is not None:
@@ -300,7 +304,7 @@ def select_work_targets(c,plan,instant,focused,paused):
         selected=select_pool(vertical or ordinary,limit)
     # Two of three rotation reservations revisit already checked work. The
     # third retains oldest-due exploration so an old unseen backlog also moves.
-    audit=dict(version='work-vertical-priority-v6-cadence',turn=turn,activity_window_seconds=3600,
+    audit=dict(version='work-vertical-priority-v7-quiet-decay',turn=turn,activity_window_seconds=3600,
                exploration_phase='revisit_due' if turn%9 in (2,5) else 'oldest_due' if turn%3==2 else 'newer_first_coverage',
                slots=[dict(video_id=r['video_id'],group=r['selection_group'],
                            vertical=bool(r['vertical']),

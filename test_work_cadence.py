@@ -78,6 +78,27 @@ class WorkCadenceTests(unittest.TestCase):
         p=self.policy(self.stats(at(4000)),vertical=True,quiet=5)
         self.assertEqual(p['boost'],'none');self.assertGreater(p['interval_seconds'],30)
 
+    def test_sparse_recent_comment_yields_after_two_quiet_checks(self):
+        stats=dict(total_samples=1,total_hits=0,samples=1,hits=0,recent_hour=1)
+        first=self.policy(stats,vertical=True,quiet=0)
+        second=self.policy(stats,vertical=True,quiet=1)
+        quiet=self.policy(stats,vertical=True,quiet=2)
+        self.assertEqual((first['interval_seconds'],second['interval_seconds']),(60,60))
+        self.assertEqual(quiet['interval_seconds'],240)
+        self.assertTrue(quiet['quiet_priority_expired'])
+        self.assertFalse(second['quiet_priority_expired'])
+        self.assertLessEqual(self.policy(stats,vertical=True,quiet=5)['interval_seconds'],3600)
+        # A new unique recent comment resets quiet, restoring the first probe.
+        self.assertEqual(self.policy(dict(stats,recent_hour=2),vertical=True,quiet=0)['interval_seconds'],60)
+
+    def test_sustained_activity_and_strong_relevance_keep_their_cadence(self):
+        busy=self.policy(dict(samples=3,hits=0,total_samples=3,recent_hour=3),vertical=True,quiet=5)
+        self.assertEqual(busy['boost'],'active');self.assertEqual(busy['interval_seconds'],60)
+        self.assertFalse(busy['quiet_priority_expired'])
+        strong=self.policy(dict(samples=100,hits=30,recent_hour=1),vertical=True,quiet=5)
+        self.assertEqual(strong['interval_seconds'],60,'Strong service evidence keeps its weight interval even after leaving the active pool')
+        self.assertTrue(strong['quiet_priority_expired'])
+
     def test_fast_irrelevant_chatter_cannot_get_a_burst_boost(self):
         p=self.policy(dict(samples=100,hits=0,recent_five_minutes=50,recent_hour=100,previous_hour=2))
         self.assertEqual(p['boost'],'none');self.assertEqual(p['tier'],'monthly')
