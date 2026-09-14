@@ -14,6 +14,8 @@ TRANSIENT = {'ERR_FAILED', 'ERR_CONNECTION_CLOSED', 'ERR_CONNECTION_RESET',
 def eligible(c, session):
     if not session or session['status'] != 'failed' or not session['finished_at']:
         return False
+    import collection_session_refresh
+    if collection_session_refresh.legacy_expiry(c,session):return True
     row = c.execute("SELECT detail FROM live_session_events WHERE session_id=? AND status='diagnostic' ORDER BY id DESC LIMIT 1", (session['id'],)).fetchone()
     try:
         info = json.loads(row[0].split('：', 1)[1])

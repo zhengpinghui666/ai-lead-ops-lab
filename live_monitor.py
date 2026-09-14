@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 import clubops as app
 import collector
 import comment_filters
+import collection_session_refresh
 
 GUARD = threading.RLock()
 ACTIVE = {}
@@ -385,6 +386,14 @@ def worker(session_id, config, control):
     process, deadline = None, None
     final = 'interrupted'
     counts = {}
+    stage='local_session'
+    def preflight(reason,evidence):
+        # Values are whitelisted by the session verifier; never exception text,
+        # cookies, response bodies or credentials.
+        with app.LOCKS['live'],app.db() as c:
+            c.execute('INSERT INTO live_session_events(session_id,status,detail,observed_at) VALUES(?,?,?,?)',
+                (session_id,'preflight',json.dumps(dict(version='live-preflight-v1',stage=stage,
+                  reason=reason,**evidence),ensure_ascii=False),app.now()))
     try:
         import collection_accounts,collector_http_session,uid_bootstrap
         assigned=config.get('collection_account')
@@ -392,21 +401,29 @@ def worker(session_id, config, control):
         payload=dict(config)
         if assigned:
             directory=collection_accounts.directory(assigned)
-            session=collector_http_session.load(directory)
-            identity=uid_bootstrap.probe(dict(expected_account=assigned['account_id'],cookie=collector_http_session.cookie_header(session,'identity'),user_agent=session['user_agent']))
+            session,renewed=collection_session_refresh.ensure(directory,assigned,cancelled=lambda:control['stop'])
+            stage='identity'
+            if control['stop']:return
+            identity=renewed or uid_bootstrap.probe(dict(expected_account=assigned['account_id'],cookie=collector_http_session.cookie_header(session,'identity'),user_agent=session['user_agent']))
+            preflight('session_revalidated' if renewed else 'identity_checked',
+                {k:identity[k] for k in collection_session_refresh.SAFE_FIELDS if k in identity})
             if identity.get('status')!='identity_verified' or identity.get('sender_uid')!=assigned['sender_uid']:
-                final='needs_login'
+                final=collection_session_refresh.failure_status('identity_unverified',identity)
+                if identity.get('status')=='identity_verified':final='needs_login'
                 return
             profile=directory/'live-browser-profile'
             cookies={}
             for group in session['cookies'].values():
                 for cookie in group:cookies[(cookie['name'],cookie['domain'],cookie['path'])]=cookie
             payload['session_cookies']=list(cookies.values())
+        if control['stop']:return
+        stage='dependencies'
         node, package = collector.dependencies()
         if not node or not package.is_dir():
             final = 'dependency_missing'
             return
         env = {**os.environ, 'CLUBOPS_PLAYWRIGHT': str(package)}
+        stage='worker_start'
         process = subprocess.Popen([node, str(collector.BASE / 'live_runner.cjs')], cwd=collector.BASE, env=env,
                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding='utf-8',
                                    creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
@@ -419,6 +436,7 @@ def worker(session_id, config, control):
             if control['stop']:
                 process.stdin.write('{"command":"stop"}\n')
             process.stdin.flush()
+        stage='worker_output'
         while True:
             line = process.stdout.readline(65537)
             if not line:
@@ -440,7 +458,11 @@ def worker(session_id, config, control):
         process.wait(timeout=5)
     except FileNotFoundError:
         final = 'dependency_missing'
-    except Exception:
+    except collection_session_refresh.RefreshError as exc:
+        preflight(exc.reason,exc.evidence)
+        final=collection_session_refresh.failure_status(exc.reason,exc.evidence)
+    except Exception as exc:
+        preflight('local_exception',dict(error_type=type(exc).__name__))
         final = 'failed'
     finally:
         if deadline:

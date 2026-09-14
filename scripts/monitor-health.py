@@ -65,6 +65,24 @@ def assess_inbox(rows, now):
     return result
 
 
+def assess_groups(rows, now):
+    result = {'configured': len(rows), 'enabled': sum(bool(r['enabled']) for r in rows), 'issues': []}
+    for row in rows:
+        if not row['enabled']:continue
+        reason = None
+        if row['failures'] >= 3:
+            reason = row['status']
+        else:
+            # Cold groups intentionally wait 15 minutes. Their last successful
+            # read age is not a stall while the next scheduled read is not due.
+            try:
+                if not row.get('next_run_at'):reason = 'schedule_missing'
+                elif overdue(row['next_run_at'], now, 120):reason = 'scheduler_overdue'
+            except (ValueError,TypeError):reason = 'invalid_clock'
+        if reason:result['issues'].append(f"groups:{row['id']}:{reason}")
+    return result
+
+
 def check(data_dir=BASE / 'data', port=8765):
     now = datetime.now(timezone.utc)
     # A fresh listener heartbeat alone is not proof that Codex received a message.
@@ -112,11 +130,8 @@ def check(data_dir=BASE / 'data', port=8765):
             report['issues'].extend(report['inbox_sync']['issues'])
             if connection.execute("SELECT 1 FROM sqlite_master WHERE name='monitored_groups'").fetchone():
                 groups=[dict(r) for r in connection.execute('SELECT id,enabled,status,failures,next_run_at,last_read_at FROM monitored_groups')]
-                report['groups']={'configured':len(groups),'enabled':sum(r['enabled'] for r in groups)}
-                for group in groups:
-                    if group['enabled'] and (group['failures']>=3 or overdue(group['next_run_at'],now,120)
-                            or group['last_read_at'] and overdue(group['last_read_at'],now,600)):
-                        report['issues'].append(f"groups:{group['id']}:{group['status']}")
+                report['groups']=assess_groups(groups,now)
+                report['issues'].extend(report['groups']['issues'])
     except Exception as error:
         # Do not serialize exceptions containing response bodies or account data.
         report['issues'].append('probe:' + type(error).__name__)

@@ -37,6 +37,35 @@ class RecoveryTests(unittest.TestCase):
         tracking.tick()
         self.assertEqual(tracking.state()['status'], 'attention')
 
+    def test_legacy_expired_preflight_requires_matching_local_age_and_zero_data(self):
+        import time,collector_http_session
+        with app.db() as c:
+            c.execute("DELETE FROM live_session_events WHERE session_id=? AND status='diagnostic'",(self.sid,))
+            row=dict(c.execute('SELECT * FROM live_sessions WHERE id=?',(self.sid,)).fetchone())
+            row['finished_at']=row['started_at']
+            value=dict(account='100',sender_uid='111',captured_at=time.time()-collector_http_session.MAX_AGE-120)
+            with patch('collector_http_session.load',return_value=value):
+                self.assertTrue(recovery.eligible(c,row))
+                self.assertFalse(recovery.eligible(c,dict(row,frames=1)))
+                self.assertFalse(recovery.eligible(c,dict(row,observed=1)))
+            for changed in [dict(value,account='200'),dict(value,sender_uid='222'),dict(value,captured_at=time.time())]:
+                with patch('collector_http_session.load',return_value=changed):self.assertFalse(recovery.eligible(c,row))
+            with patch('collector_http_session.load',side_effect=ValueError('invalid credential')):self.assertFalse(recovery.eligible(c,row))
+
+    def test_legacy_expired_retry_retains_original_account_and_request_id(self):
+        import time,collector_http_session
+        with app.db() as c:
+            c.execute("DELETE FROM live_session_events WHERE session_id=? AND status='diagnostic'",(self.sid,))
+            c.execute('UPDATE live_sessions SET finished_at=started_at WHERE id=?',(self.sid,))
+        value=dict(account='100',sender_uid='111',captured_at=time.time()-collector_http_session.MAX_AGE-120)
+        with patch('collector_http_session.load',return_value=value):
+            child=self.retry()['id'];self.assertEqual(self.retry()['id'],child)
+        with app.db() as c:
+            old=json.loads(c.execute('SELECT config FROM live_sessions WHERE id=?',(self.sid,)).fetchone()[0])
+            new=json.loads(c.execute('SELECT config FROM live_sessions WHERE id=?',(child,)).fetchone()[0])
+            self.assertEqual(new,old)
+            self.assertEqual(c.execute('SELECT status FROM live_sessions WHERE id=?',(self.sid,)).fetchone()[0],'failed')
+
     def diagnostic(self):
         with app.db() as c:
             c.execute('INSERT INTO live_session_events(session_id,status,detail,observed_at) VALUES(?,?,?,?)',

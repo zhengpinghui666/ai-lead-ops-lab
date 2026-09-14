@@ -475,6 +475,9 @@ def observe(task_id, source_id, message):
              app.clean(row.get('text') or row.get('content'), 5000) if kind == 'comment' else '', published_at,
              app.clean(row.get('nickname'), 120) if kind == 'comment' else '', app.clean(row.get('user_id'), 300) if kind == 'comment' else '', disposition))
         c.execute("UPDATE sources SET status='observed',last_received=? WHERE id=?", (app.now(), source_id))
+        if kind == 'comment':
+            import work_cadence
+            work_cadence.record(c,row['video_id'],external,row.get('text') or row.get('content') or '',published_at,app.now())
         import asset_verticality
         import asset_references
         if not c.execute('SELECT 1 FROM work_content WHERE asset_key=?',(row['video_id'],)).fetchone():

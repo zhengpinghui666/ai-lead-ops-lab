@@ -214,13 +214,13 @@ def record(c,rows,*,source,target,task=None):
 
 
 def select_work_targets(c,plan,instant,focused,paused):
-    """Prioritize vertical assets; retain ordinary monitoring and fair exploration."""
+    """Allocate due work by observed relevance, activity and overdue intervals."""
+    import work_cadence
     blocked_sql=','.join('?' for _ in paused) or "''"
     focused_sql=','.join('?' for _ in focused) or "''"
-    limit=plan['video_limit']
+    limit=plan['video_limit'];cfg=config(c)
     turn=c.execute("SELECT COUNT(*) FROM discovery_jobs WHERE kind='work' AND settled=1").fetchone()[0]
-    # Only return at most limit rows per group, even for a large durable library.
-    rows=c.execute(f'''WITH activity AS ({RECENT_ACTIVITY}), eligible AS (
+    candidates=c.execute(f"""WITH activity AS ({RECENT_ACTIVITY})
       SELECT DISTINCT w.*,activity.latest_comment_at,
         COALESCE(json_extract(a.result,'$.matched'),0) AS vertical,CASE
         WHEN activity.latest_comment_at IS NOT NULL THEN 'active'
@@ -231,18 +231,38 @@ def select_work_targets(c,plan,instant,focused,paused):
       LEFT JOIN activity ON activity.page_url='https://www.douyin.com/video/'||w.video_id
       WHERE w.relevant=1 AND w.enabled=1 AND v.enabled=1 AND (w.author_sec_uid IS NULL OR NOT EXISTS
         (SELECT 1 FROM discovery_authors a WHERE a.sec_uid=w.author_sec_uid AND a.enabled=0))
-      AND w.video_id NOT IN ({blocked_sql})
-      AND (w.next_check_at IS NULL OR julianday(w.next_check_at)<=julianday(?))
-    ), ranked AS (
-      SELECT *,ROW_NUMBER() OVER(PARTITION BY vertical,selection_group ORDER BY
-        CASE WHEN vertical=1 AND selection_group='rotation' AND ?%9 IN (2,5)
-          THEN last_checked_at IS NULL ELSE 0 END,
-        CASE WHEN vertical=1 AND last_checked_at IS NULL AND ?%3!=2
-          THEN julianday(published_at) END DESC,
-        julianday(COALESCE(next_check_at,first_seen_at)),julianday(published_at) DESC,video_id) AS selection_rank
-      FROM eligible
-    ) SELECT * FROM ranked WHERE selection_rank<=? ORDER BY selection_group,selection_rank''',
-      (instant,instant,instant,*focused,*paused,instant,turn,turn,limit)).fetchall()
+      AND w.video_id NOT IN ({blocked_sql})""",(instant,instant,instant,*focused,*paused)).fetchall()
+    stats=work_cadence.statistics(c,instant);now=work_cadence.epoch(instant);eligible=[]
+    for raw in candidates:
+        row=dict(raw)
+        policy=work_cadence.assess(vertical=bool(row['vertical']),quiet=row['quiet_streak'],
+            base_interval=cfg['work_interval'],stats=stats.get(row['video_id'],{}))
+        checked=work_cadence.epoch(row['last_checked_at'])
+        stored_due=work_cadence.epoch(row['next_check_at'])
+        if checked is not None and stored_due is not None:
+            due=checked+policy['interval_seconds']
+            promoted=policy['boost']!='none' or policy['sufficient_samples'] and policy['ratio']>=.03
+            if not promoted:due=max(due,stored_due)
+        else:
+            # NULL retains the existing explicit "due now" reset semantics.
+            due=stored_due or work_cadence.epoch(row['first_seen_at'])
+        if due is None or due>now:continue
+        row['cadence']=policy;row['due_epoch']=due
+        row['overdue_intervals']=(now-due)/policy['interval_seconds']
+        eligible.append(row)
+    def rank(row):
+        rotation=row['vertical'] and row['selection_group']=='rotation'
+        revisit=rotation and turn%9 in (2,5)
+        newer=row['vertical'] and not row['last_checked_at'] and turn%3!=2
+        # Preserve the existing exploration reservations. Within each pool,
+        # elapsed intervals prevent a busy work from perpetually taking slots.
+        return (bool(revisit and not row['last_checked_at']),
+                -(work_cadence.epoch(row['published_at']) or 0) if newer else 0,
+                -row['overdue_intervals'], -row['cadence']['score'],row['due_epoch'],row['video_id'])
+    eligible.sort(key=rank);rows=[];counts={}
+    for row in eligible:
+        key=(row['vertical'],row['selection_group']);counts[key]=counts.get(key,0)+1
+        if counts[key]<=limit:rows.append(row)
     def select_pool(pool,budget,*,reserve_exploration=True):
         queues={name:deque(r for r in pool if r['selection_group']==name) for name in ('active','focused_new','rotation')}
         selected=[]
@@ -280,12 +300,12 @@ def select_work_targets(c,plan,instant,focused,paused):
         selected=select_pool(vertical or ordinary,limit)
     # Two of three rotation reservations revisit already checked work. The
     # third retains oldest-due exploration so an old unseen backlog also moves.
-    audit=dict(version='work-vertical-priority-v5',turn=turn,activity_window_seconds=3600,
+    audit=dict(version='work-vertical-priority-v6-cadence',turn=turn,activity_window_seconds=3600,
                exploration_phase='revisit_due' if turn%9 in (2,5) else 'oldest_due' if turn%3==2 else 'newer_first_coverage',
                slots=[dict(video_id=r['video_id'],group=r['selection_group'],
                            vertical=bool(r['vertical']),
                            previously_checked=r['last_checked_at'] is not None,
-                           latest_comment_at=r['latest_comment_at']) for r in selected])
+                           latest_comment_at=r['latest_comment_at'],cadence=r['cadence']) for r in selected])
     return selected,audit
 
 
@@ -347,6 +367,7 @@ def choose(c,plan,instant):
     # model judgments, to prioritize a refresh. Failed jobs returned above stay
     # frozen and all due/disabled checks were applied by select_work_targets.
     active=sum(s['vertical'] and s['group']=='active' for s in selection['slots'])
+    high_weight=sum(s['cadence']['sufficient_samples'] and s['cadence']['score']>=70 for s in selection['slots'])
     recent=c.execute("""SELECT j.kind FROM discovery_jobs j JOIN collection_tasks t ON t.id=j.task_id
         WHERE j.settled=1 AND t.status='completed' ORDER BY j.task_id DESC LIMIT 3""").fetchall()
     streak=0
@@ -354,10 +375,10 @@ def choose(c,plan,instant):
         if row['kind']!='work':break
         streak+=1
     reason='balanced_rotation'
-    if active:
+    if active or high_weight:
         available=[name for name in ('author','search') if name in jobs]
         if streak<3 or not available:
-            chosen=jobs['work'];reason='due_vertical_activity'
+            chosen=jobs['work'];reason='due_vertical_activity' if active else 'due_high_weight_work'
         else:
             last=c.execute("""SELECT j.kind FROM discovery_jobs j JOIN collection_tasks t ON t.id=j.task_id
                 WHERE j.kind IN ('author','search') AND j.settled=1 AND t.status='completed'
@@ -366,7 +387,7 @@ def choose(c,plan,instant):
             chosen=jobs[preferred if preferred in available else available[0]];reason='reserved_discovery'
     if chosen:
         chosen={**chosen,'dispatch_selection':dict(version='active-work-cadence-v1',reason=reason,
-            due_vertical_active_slots=active,consecutive_work_batches=streak,max_work_streak=3)}
+            due_vertical_active_slots=active,due_high_weight_slots=high_weight,consecutive_work_batches=streak,max_work_streak=3)}
     return True,{**chosen,'policy':cfg} if chosen else None
 
 
@@ -498,9 +519,10 @@ def settle(c,task):
             if a:c.execute('UPDATE discovery_authors SET last_checked_at=?,next_check_at=? WHERE sec_uid=?',
                 (stamp,future(stamp,cfg['focus_interval'] if a['focused'] else cfg['author_interval']),sec))
     # Even in a partial batch, completed work checkpoints remain verifiable.
-    recent=dict(c.execute(RECENT_ACTIVITY,(stamp,stamp,stamp)).fetchall())
+    import work_cadence
+    activity=work_cadence.statistics(c,stamp)
     for cp in c.execute("SELECT video_id FROM collection_checkpoints WHERE task_id=? AND status='done'",(task['id'],)).fetchall():
-        vid=cp[0];row=c.execute('SELECT quiet_streak FROM discovery_works WHERE video_id=?',(vid,)).fetchone()
+        vid=cp[0];row=c.execute('''SELECT w.quiet_streak,COALESCE(json_extract(a.result,'$.matched'),0) vertical FROM discovery_works w LEFT JOIN asset_verticality a ON a.kind='work' AND a.asset_key=w.video_id WHERE w.video_id=?''',(vid,)).fetchone()
         if not row:continue
         new=c.execute('''SELECT COUNT(*) FROM collection_observations o WHERE task_id=? AND kind='comment' AND page_url=?
           AND julianday(published_at)>=julianday(?,'-1 hour') AND julianday(published_at)<=julianday(observed_at)
@@ -509,7 +531,7 @@ def settle(c,task):
         quiet=0 if new else min(row[0]+1,5)
         # A quiet read is still recorded, but cannot immediately demote work
         # with genuinely recent comments. Re-reading old text never extends it.
-        interval=cfg['work_interval']*(1 if f'https://www.douyin.com/video/{vid}' in recent else 2**quiet)
+        interval=work_cadence.assess(vertical=bool(row['vertical']),quiet=quiet,base_interval=cfg['work_interval'],stats=activity.get(vid,{}))['interval_seconds']
         c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=?,quiet_streak=?,new_recent_comments=new_recent_comments+? WHERE video_id=?',
             (stamp,future(stamp,interval),quiet,new,vid))
     c.execute('UPDATE discovery_jobs SET settled=1 WHERE task_id=?',(task['id'],))

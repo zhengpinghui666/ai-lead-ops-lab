@@ -39,13 +39,16 @@ def path(directory=None):
     return (Path(directory) if directory is not None else Path(os.environ['CLUBOPS_COLLECTION_ACCOUNT_DATA_DIR']) if os.environ.get('CLUBOPS_COLLECTION_ACCOUNT_DATA_DIR') else runtime.data_dir()) / 'private' / 'collection-http' / 'session.dpapi'
 
 
-def validate(value):
+def validate(value, *, check_age=True):
     if not isinstance(value, dict) or value.get('format') != 'clubops-collection-session-1':
         raise ValueError('采集会话结构无效')
     uid_bootstrap.account(value.get('account'))
-    age = value.get('captured_at')
-    if type(age) not in (int, float) or not math.isfinite(age) or not -60 <= time.time() - age <= MAX_AGE:
-        raise ValueError('采集会话已超过本地复用期限，请手动准备会话')
+    captured=value.get('captured_at');verified=value.get('last_verified_at',captured)
+    if (any(type(t) not in (int,float) or not math.isfinite(t) or t<=0 or t>time.time()+60 for t in (captured,verified))
+            or verified<captured):
+        raise ValueError('采集会话核验时间无效')
+    if check_age and time.time()-verified>MAX_AGE:
+        raise ValueError('采集会话已超过本地复用期限，请核验原账号会话')
     uid_session.header_value(value.get('user_agent'), 512)
     if not isinstance(value.get('cookies'), dict) or set(value['cookies']) != set(PATHS):
         raise ValueError('采集会话缺少按接口作用域保存的 Cookie')
@@ -78,8 +81,8 @@ def validate(value):
     return value
 
 
-def cookie_header(value, operation):
-    validate(value)
+def cookie_header(value, operation, *, check_age=True):
+    validate(value,check_age=check_age)
     if operation not in READ_PATHS:
         raise ValueError('接口无效')
     if operation in PATHS:
@@ -105,7 +108,7 @@ def cookie_header(value, operation):
     return result
 
 
-def load(directory=None):
+def load(directory=None, *, check_age=True):
     file = path(directory)
     if file.is_symlink():
         raise ValueError('采集会话文件不能是符号链接')
@@ -113,7 +116,7 @@ def load(directory=None):
         raw = stream.read(131073)
     if len(raw) > 131072 or not raw.startswith(MAGIC):
         raise ValueError('采集会话文件无效')
-    return validate(json.loads(uid_session.crypt(raw[len(MAGIC):], decrypt=True)))
+    return validate(json.loads(uid_session.crypt(raw[len(MAGIC):], decrypt=True)),check_age=check_age)
 
 
 def status(directory=None):
@@ -121,7 +124,7 @@ def status(directory=None):
         value = load(directory)
         identity = identity_state(value, directory)
         return {'ready': identity['status'] != 'identity_failed', 'status': identity['status'],
-                'account': value['account'], 'expires_at': value['captured_at'] + MAX_AGE,
+                'account': value['account'], 'expires_at': value.get('last_verified_at',value['captured_at']) + MAX_AGE,
                 'endpoints': {operation: endpoint_status(value, operation, directory) for operation in READ_OPERATIONS},
                 'browser_used_for_read': False}
     except FileNotFoundError:
@@ -254,6 +257,7 @@ def bootstrap(value, *, probe=None):
         reasons = {'采集会话结构无效':'invalid_structure',
                    '会话元数据无效':'invalid_metadata', 'invalid account':'invalid_account',
                    '采集会话已超过本地复用期限，请手动准备会话':'local_expiry',
+                   '采集会话已超过本地复用期限，请核验原账号会话':'local_expiry',
                    '采集会话缺少按接口作用域保存的 Cookie':'missing_cookie_scopes',
                    '采集会话 Cookie 格式无效':'invalid_cookie_list', 'Cookie 无效':'invalid_cookie',
                    'Cookie 值无效':'invalid_cookie_value', 'Cookie 域不匹配':'cookie_domain_mismatch',

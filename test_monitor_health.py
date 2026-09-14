@@ -16,6 +16,28 @@ NOW = datetime(2026, 9, 13, 0, 0, tzinfo=timezone.utc)
 
 
 class HealthTests(unittest.TestCase):
+    def group(self,**changes):
+        return dict(dict(id=20,enabled=1,status='running',failures=0,
+                    last_read_at='2026-09-12T23:49:00Z',next_run_at='2026-09-13T00:04:00Z'),**changes)
+
+    def test_cold_group_future_schedule_is_not_failed_after_ten_minutes(self):
+        row=self.group();before=dict(row)
+        self.assertEqual(health.assess_groups([row],NOW)['issues'],[])
+        self.assertEqual(row,before)
+
+    def test_due_group_gets_two_minute_grace_then_is_stalled(self):
+        self.assertEqual(health.assess_groups([self.group(next_run_at='2026-09-12T23:58:00Z')],NOW)['issues'],[])
+        self.assertEqual(health.assess_groups([self.group(next_run_at='2026-09-12T23:57:59Z')],NOW)['issues'],['groups:20:scheduler_overdue'])
+
+    def test_repeated_group_failures_are_not_hidden_by_future_retry(self):
+        self.assertEqual(health.assess_groups([self.group(status='retrying',failures=3)],NOW)['issues'],['groups:20:retrying'])
+        self.assertEqual(health.assess_groups([self.group(status='retrying',failures=2)],NOW)['issues'],[])
+
+    def test_group_missing_invalid_schedule_and_manual_pause(self):
+        self.assertEqual(health.assess_groups([self.group(next_run_at=None)],NOW)['issues'],['groups:20:schedule_missing'])
+        self.assertEqual(health.assess_groups([self.group(next_run_at='invalid')],NOW)['issues'],['groups:20:invalid_clock'])
+        self.assertEqual(health.assess_groups([self.group(enabled=0,failures=3,next_run_at=None)],NOW)['issues'],[])
+
     def test_pause_is_reported_without_recovery(self):
         plan = {'status': 'paused', 'last_task_id': 9}
         self.assertEqual(health.assess('comments', plan, None, NOW)['issue'], 'comments:paused')

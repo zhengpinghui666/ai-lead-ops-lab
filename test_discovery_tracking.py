@@ -49,6 +49,8 @@ class DiscoveryTrackingTests(unittest.TestCase):
               (task_id,kind,external_id,page_url,observed_at,payload_hash,comment_text,published_at,filter_reason)
               VALUES(?,'comment',?,?,?,?,?,?,?)''',
               (self.base,'activity-'+vid+suffix,'https://www.douyin.com/video/'+vid,observed,'synthetic',text,published,reason))
+            import work_cadence
+            work_cadence.record(c,vid,'activity-'+vid+suffix,text,published,observed)
 
     def checkpoint_history(self,c,task_id,video_id,*,finished=NOW,status='done'):
         c.execute('''INSERT INTO collection_tasks
@@ -852,6 +854,54 @@ class DiscoveryTrackingTests(unittest.TestCase):
         col.update(task,status='needs_verification',finished_at=NOW);col.ACTIVE.clear()
         self.activity(VID,discovery.future(NOW,-30))
         self.assertEqual(self.choose(self.plan(last_task_id=task))[1],job)
+
+    def test_observed_ratio_sets_real_next_check_and_excludes_cold_work(self):
+        self.save(work_interval=60)
+        values=[work(i) for i in range(3)]
+        for row in values[1:]:row['video_title']='无畏契约普通集锦'
+        self.record(values)
+        for i,hits in enumerate((30,2,1)):
+            for n in range(100):
+                self.activity(values[i]['video_id'],discovery.future(NOW,-7201),suffix=str(n),
+                              text='点个陪玩' if n<hits else '合成普通聊天')
+        _,job=self.choose()
+        self.assertEqual(set(job['target'].splitlines()),{r['video_id'] for r in values})
+        self.finish_work_job(job,'ratio-levels')
+        with app.db() as c:
+            next_checks={r['video_id']:r['next_check_at'] for r in c.execute('SELECT * FROM discovery_works')}
+            for row,seconds in zip(values,(60,21600,2592000)):
+                self.assertEqual(next_checks[row['video_id']],discovery.future(NOW,seconds))
+            selected,_=discovery.select_work_targets(c,self.plan(),discovery.future(NOW,61),set(),set())
+            self.assertEqual([r['video_id'] for r in selected],[VID])
+
+    def test_high_weight_without_recent_activity_reserves_discovery(self):
+        self.save(work_interval=60);self.record([work()])
+        for n in range(40):
+            self.activity(VID,discovery.future(NOW,-7201),suffix=str(n),
+                          text='娱乐陪怎么点' if n<12 else '合成普通聊天')
+        channels=[]
+        for turn in range(4):
+            instant=discovery.future(NOW,turn*61)
+            _,job=self.choose(self.plan(run_count=1),instant)
+            channels.append(job['channel'])
+            if turn<3:
+                self.assertEqual(job['dispatch_selection']['reason'],'due_high_weight_work')
+                self.finish_work_job(job,'ratio-reservation-'+str(turn),instant)
+        self.assertEqual(channels,['work','work','work','author'])
+
+    def test_signal_migration_has_backup_and_preserves_business_records(self):
+        self.save();self.record([work()]);self.activity(VID,discovery.future(NOW,-60))
+        with app.db() as c:
+            before=[tuple(r) for r in c.execute('SELECT * FROM collection_observations')]
+            c.execute('DROP TABLE work_comment_signals');c.execute('DROP TABLE work_cadence_migrations')
+        app.init()
+        backups=list((app.DATA_DIR/'backups').glob('*before-work-cadence-*'))
+        self.assertEqual(len(backups),1)
+        with app.db() as c:
+            self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM collection_observations')],before)
+            self.assertGreater(c.execute('SELECT COUNT(*) FROM work_comment_signals').fetchone()[0],0)
+        app.init()
+        self.assertEqual(len(list((app.DATA_DIR/'backups').glob('*before-work-cadence-*'))),1)
 
 
 if __name__=='__main__':unittest.main()
