@@ -8,6 +8,16 @@ const SHA=/^[a-f0-9]{64}$/;
 const SCHEMA='clubops-captcha-learning-v1';
 const DEFAULTS={enabled:false,max_cases:200,max_attempts:1000,max_bytes:128*1024*1024};
 const dataRoot=options=>path.resolve(options?.dataDir||process.env.CLUBOPS_DATA_DIR||path.join(__dirname,'data'));
+function ownsProfile(config,root){
+  if(!config?.profile_dir)return false;
+  const binding=config.collection_account;
+  if(binding?.storage==='isolated'){
+    if(!/^[0-9A-Za-z_.-]{1,32}$/.test(binding.account_id||''))return false;
+    const parent=path.resolve(root,'collection-accounts'),dir=path.resolve(parent,binding.account_id);
+    return path.dirname(dir)===parent&&path.resolve(config.profile_dir)===path.join(dir,'browser-profile');
+  }
+  return (!binding||binding.storage==='primary')&&path.resolve(config.profile_dir)===path.join(root,'browser-profile');
+}
 const paths=root=>({settings:path.join(root,'private/captcha-learning.json'),archive:path.join(root,'private/captcha-learning')});
 async function settings(root){
   let raw;try{raw=await fs.readFile(paths(root).settings,'utf8');}catch(error){if(error.code==='ENOENT')return {...DEFAULTS};throw error;}
@@ -84,8 +94,7 @@ async function version(){
 }
 async function begin(challenge,config,attemptId,options={}){
   const root=dataRoot(options);
-  if(!UUID.test(attemptId||'')||!Number.isInteger(config.id)||config.id<1||!config.profile_dir||
-     path.resolve(config.profile_dir)!==path.join(root,'browser-profile'))return null;
+  if(!UUID.test(attemptId||'')||!Number.isInteger(config.id)||config.id<1||!ownsProfile(config,root))return null;
   try{
     const limits=await settings(root);if(!limits.enabled)return null;
     const sample=images(challenge),archive=paths(root).archive;
@@ -174,7 +183,7 @@ async function status(options={}){
 }
 async function recalled(challenge,config,options={}){
   const root=dataRoot(options);
-  if(!config.profile_dir||path.resolve(config.profile_dir)!==path.join(root,'browser-profile'))return null;
+  if(!ownsProfile(config,root))return null;
   try{
     if(!(await settings(root)).enabled)return null;
     const sample=images(challenge);

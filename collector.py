@@ -112,6 +112,10 @@ def state(mode='live'):
         import collection_accounts
         for task in tasks:
             task['collection_account']=collection_accounts.binding(c,task['id'])
+            import collection_recovery
+            task['manual_verification_available'] = collection_recovery.eligible(c, task)
+            task['manual_recovery'] = collection_recovery.public(c, task['id'])
+            task['verification_retry'] = collection_recovery.retry_state(c, task['id'])
             verification = verification_by_task.get(task['id'], [])
             task['verification'] = verification[-1] if verification else None
             task['verification_counts'] = {
@@ -164,9 +168,10 @@ def recover():
     """Restart never silently resumes collection or starts network traffic."""
     with app.LOCKS['live'], app.db() as c:
         c.execute("UPDATE collection_tasks SET status='interrupted',active_pages=0,detail='服务已重启；已入库记录保留，请手动新建一批采集',finished_at=?,updated_at=? WHERE finished_at IS NULL", (app.now(), app.now()))
+        c.execute("UPDATE collection_manual_recoveries SET state='stopped',detail='服务已重启，人工处理已结束，监控未自动恢复',settled_at=? WHERE settled_at IS NULL", (app.now(),))
 
 
-def start(body, mode='live', *, resume_from=None, lookback_hours=None, include_keywords='', exclude_keywords='', recovery_since=None, recovery_plan=None, discovery_job=None):
+def start(body, mode='live', *, resume_from=None, lookback_hours=None, include_keywords='', exclude_keywords='', recovery_since=None, recovery_plan=None, discovery_job=None, manual_from=None, verification_from=None):
     if mode != 'live':
         raise ValueError('演示区不访问抖音；请切换正式数据')
     kind, target, videos, comments, interactive, request_id = options(body)
@@ -181,6 +186,29 @@ def start(body, mode='live', *, resume_from=None, lookback_hours=None, include_k
     with GUARD, app.LOCKS['live'], app.db() as c:
         pending = []
         comment_since = app.timestamp(recovery_since) if recovery_since is not None else None
+        original_verification = manual_from if manual_from is not None else verification_from
+        if original_verification is not None:
+            import collection_recovery
+            if resume_from is not None or recovery_plan is not None or manual_from is not None and verification_from is not None:
+                raise ValueError('人工验证不能混用其他恢复流程')
+            parent = c.execute('SELECT * FROM collection_tasks WHERE id=?', (original_verification,)).fetchone()
+            if verification_from is not None:
+                import collection_scheduler
+                valid = bool(parent and collection_scheduler.verification_retry_seconds(c, parent))
+            else:
+                valid = collection_recovery.eligible(c, parent)
+            if not valid or original_verification in ACTIVE:
+                raise ValueError('仅支持已关闭且身份已绑定的浏览器验证码批次；其他限制请按原提示处理')
+            kind, target, videos, comments, interactive = parent['kind'], parent['target'], parent['video_limit'], parent['comment_limit'], int(manual_from is not None)
+            concurrency, transport = parent['page_concurrency'], parent['transport']
+            lookback_hours, comment_since = parent['lookback_hours'], parent['comment_since']
+            include_keywords, exclude_keywords = parent['include_keywords'], parent['exclude_keywords']
+            pending = c.execute("SELECT * FROM collection_checkpoints WHERE task_id=? AND status NOT IN ('done','unavailable') ORDER BY rowid", (original_verification,)).fetchall()
+            if pending:
+                videos = len(pending)
+                concurrency = min(concurrency, videos)
+            import discovery_tracking
+            discovery_job = discovery_tracking.worker_config(c, original_verification)
         if resume_from is not None:
             parent = c.execute('SELECT * FROM collection_tasks WHERE id=?', (int(resume_from),)).fetchone()
             if not parent or not parent['finished_at'] or int(resume_from) in ACTIVE:
@@ -195,8 +223,15 @@ def start(body, mode='live', *, resume_from=None, lookback_hours=None, include_k
             transport = parent['transport']
         old = c.execute('SELECT * FROM collection_tasks WHERE request_id=?', (request_id,)).fetchone()
         if old:
+            import collection_recovery
+            old_manual = collection_recovery.record(c, old['id'])
+            if (old_manual['parent_task_id'] if old_manual else None) != manual_from:
+                raise ValueError('同一请求 ID 的人工验证来源不一致')
+            old_retry = c.execute('SELECT parent_task_id FROM collection_verification_retries WHERE task_id=?',(old['id'],)).fetchone()
+            if (old_retry[0] if old_retry else None) != verification_from:
+                raise ValueError('同一请求 ID 的验证码重采来源不一致')
             old_parent = c.execute('SELECT parent_task_id FROM collection_resumes WHERE task_id=?', (old['id'],)).fetchone()
-            if (old_parent[0] if old_parent else None) != resume_from:
+            if (old_parent[0] if old_parent else None) != (original_verification if original_verification is not None and pending else resume_from):
                 raise ValueError('同一请求 ID 的恢复来源不一致')
             if tuple(old[x] for x in ('kind', 'target', 'video_limit', 'comment_limit', 'interactive', 'page_concurrency')) != (kind, target, videos, comments, interactive, concurrency):
                 raise ValueError('同一请求 ID 的采集参数不一致')
@@ -222,20 +257,25 @@ def start(body, mode='live', *, resume_from=None, lookback_hours=None, include_k
         task_id = c.execute('INSERT INTO collection_tasks(request_id,kind,target,video_limit,comment_limit,interactive,status,detail,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)', (request_id, kind, target, videos, comments, interactive, 'queued', '等待后端 HTTP 读取' if transport == 'http' else '等待本机浏览器启动', t, t)).lastrowid
         c.execute('UPDATE collection_tasks SET transport=? WHERE id=?', (transport, task_id))
         import collection_accounts
-        collection_accounts.bind(c,task_id,kind,resume_from=resume_from)
+        collection_accounts.bind(c,task_id,kind,resume_from=original_verification if original_verification is not None else resume_from)
         c.execute('UPDATE collection_tasks SET page_concurrency=?,lookback_hours=?,comment_since=?,include_keywords=?,exclude_keywords=? WHERE id=?', (concurrency, lookback_hours, comment_since, include_keywords, exclude_keywords, task_id))
         if discovery_job:
             import discovery_tracking
             discovery_tracking.attach(c,task_id,discovery_job)
         if pending:
-            c.execute('INSERT INTO collection_resumes VALUES(?,?)', (task_id, resume_from))
+            c.execute('INSERT INTO collection_resumes VALUES(?,?)', (task_id, original_verification if original_verification is not None else resume_from))
             for row in pending:
                 c.execute('INSERT INTO collection_checkpoints(task_id,video_id,video_title,video_url,updated_at) VALUES(?,?,?,?,?)', (task_id, row['video_id'], row['video_title'], row['video_url'], t))
         if recovery_plan is not None:
             import collection_scheduler
             collection_scheduler.attach_login_continuation(c, recovery_plan, task_id)
+        if manual_from is not None:
+            collection_recovery.attach(c, manual_from, task_id)
+        if verification_from is not None:
+            collection_recovery.attach_retry(c, verification_from, task_id)
         app.event(c, 'collector', f'创建自建采集任务 #{task_id}：{target}')
-        control = {'process': None, 'cancel': False, 'source_id': source_id, 'cancel_at': None, 'timeout': False}
+        control = {'process': None, 'cancel': False, 'source_id': source_id, 'cancel_at': None, 'timeout': False,
+                   'manual_verification': manual_from is not None}
         ACTIVE[task_id] = control
     # Transaction must commit before the worker can read this task.
     thread = threading.Thread(target=run, args=(task_id, control), daemon=True, name=f'collector-{task_id}')
@@ -531,7 +571,7 @@ def run(task_id, control):
                   'candidate_policy': candidate_policy, 'discovery_job': discovery_job,
                   'resolve_video_titles': True, 'known_video_titles': known_titles,
                   'refresh_video_metrics': True, 'known_video_metrics': known_metrics,
-                  'captcha': captcha_runtime.configuration()}
+                  'captcha': {'mode':'manual'} if control.get('manual_verification') else captcha_runtime.configuration()}
         paging_tag=None
         if task['transport']=='http':
             import comment_paging
@@ -655,6 +695,9 @@ def run(task_id, control):
                 app.event(c, 'candidate-pool', f'任务 #{task_id} 候选反馈未完成：{type(error).__name__}；已有采集结果保留')
         with GUARD:
             ACTIVE.pop(task_id, None)
+            with app.LOCKS['live'], app.db() as c:
+                import collection_recovery
+                collection_recovery.settle(c, task_id)
         with app.db() as c:
             row = c.execute('SELECT status,comments FROM collection_tasks WHERE id=?', (task_id,)).fetchone()
             app.event(c, 'collector', f"采集任务 #{task_id} 结束：{row['status']}，观察到 {row['comments']} 条评论")

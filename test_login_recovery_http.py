@@ -64,6 +64,18 @@ class LoginHTTPTests(unittest.TestCase):
         self.assertEqual(self.request('/bark.js')[0],200)
         self.assertEqual(self.request('/data/private/phone-notify/bark.dpapi')[0],404)
 
+    def test_manual_verification_endpoint_requires_csrf_and_explicit_batch(self):
+        import collection_recovery
+        status,raw,_=self.request('/api/login-recovery');self.assertEqual(status,200)
+        csrf=json.loads(raw)['csrf'];headers={'X-ClubOps-Token':csrf,'Origin':self.base}
+        payload={'id':7446,'request_id':'synthetic-manual'}
+        with patch.object(collection_recovery,'request',return_value={'id':99,'status':'queued'}) as start:
+            self.assertEqual(self.request('/api/collector-verify',payload)[0],403)
+            self.assertEqual(self.request('/api/collector-verify',payload,**{**headers,'Origin':'https://evil.invalid'})[0],403)
+            start.assert_not_called()
+            self.assertEqual(self.request('/api/collector-verify',payload,**headers)[0],200)
+            start.assert_called_once_with(payload,'live')
+
     def test_credentials_require_explicit_post_with_csrf_and_origin(self):
         private = login_relay.provision()
         login_relay.bind('https://fixture.example.test')

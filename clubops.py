@@ -152,6 +152,8 @@ def init(mode='live'):
             c.execute("ALTER TABLE people ADD COLUMN profile_gender_observed_at TEXT NOT NULL DEFAULT ''")
         import collection_accounts
         c.executescript(collection_accounts.SCHEMA)
+        import collection_recovery
+        c.executescript(collection_recovery.SCHEMA)
         import candidate_pool
         c.executescript(candidate_pool.SCHEMA)
         import discovery_tracking

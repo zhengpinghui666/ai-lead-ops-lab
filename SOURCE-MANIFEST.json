@@ -178,8 +178,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "08b7427ff9e50ac8ebdcc0ddaf0adaab92bd228c33f89e132273a473a2e3fe18",
-      "bytes": 125262
+      "sha256": "7acf1afbdd46f918c783eb5aca1fd0984274008caa04e3d9f17df7ad7409974f",
+      "bytes": 132761
     },
     {
       "name": "UID_HTTP.md",
@@ -200,6 +200,11 @@
       "name": "VALIDATION.md",
       "sha256": "e30f525c4fcf8a0638c1ca3260bf500c64e1cd952cd5383b32388764953f8b71",
       "bytes": 50817
+    },
+    {
+      "name": "VERIFICATION_RECOVERY.md",
+      "sha256": "1defa9b42ae07d16c087651cd43ed4a2762fcd5537479987d48caf285549cf05",
+      "bytes": 2096
     },
     {
       "name": "analysis_store.py",
@@ -258,8 +263,8 @@
     },
     {
       "name": "captcha_learning.cjs",
-      "sha256": "d9acfaa3e0295acd45c88e4035456370f2c9fadfd846fb97af8ca6b1ce0d695a",
-      "bytes": 13861
+      "sha256": "6716bf9a6a54507fb8af59ccbdd13ef6c604b3489f501a7693b4d40f2d0ba9ca",
+      "bytes": 14295
     },
     {
       "name": "captcha_point.py",
@@ -298,8 +303,8 @@
     },
     {
       "name": "clubops.py",
-      "sha256": "59d988c6b991561bc0e57ca68056bf69751bd850098813b5638c575a639b624c",
-      "bytes": 60843
+      "sha256": "4abcdaf24c764c5ded1e7741c84738d68d14de4a3446c1b6731dc5be1b7dcd0c",
+      "bytes": 60929
     },
     {
       "name": "collection_accounts.py",
@@ -307,14 +312,19 @@
       "bytes": 5948
     },
     {
+      "name": "collection_recovery.py",
+      "sha256": "b8ea309422c8f7184e9248ede1a27b7346d0859494e0ac577760dcd8f7ef4e49",
+      "bytes": 6604
+    },
+    {
       "name": "collection_scheduler.py",
-      "sha256": "2d7c18b8b1ae46978a602942b8341d68ce29e21d779984acc7343c4310277ecf",
-      "bytes": 42864
+      "sha256": "842ecfafa7da86c901e6d7b8d4fda72a149558e3f9342dd7400fa84468e82fc9",
+      "bytes": 44173
     },
     {
       "name": "collector.py",
-      "sha256": "5fb220c4fea889c318a8060239f409ad876a1e3a19ef9998f61649a6dcfe57f9",
-      "bytes": 43886
+      "sha256": "7e0e01229d2c6fbf5553f04a72c757e373c1a724d532c155705b35a59d2ffffd",
+      "bytes": 47586
     },
     {
       "name": "collector_http.py",
@@ -703,8 +713,8 @@
     },
     {
       "name": "monitoring.py",
-      "sha256": "1bd7bae36ff5e925eef8f38b2754220eef2059eb9a213ce3b6ad5f18db9b25df",
-      "bytes": 15713
+      "sha256": "fb7090dd242282cf6fe7cc0a7d65dc45ebd32e11037cf217c824553a38e18533",
+      "bytes": 16349
     },
     {
       "name": "package.json",
@@ -893,8 +903,8 @@
     },
     {
       "name": "server.py",
-      "sha256": "27ffe9d2ff5ccb3ccdb407858bc9e0c859661e8637300bbf1f8471e97898519a",
-      "bytes": 28590
+      "sha256": "23a81b1878748aeca4d7aa75c4b62b001f892a33fe0f585f17e9b3afe71037f3",
+      "bytes": 28743
     },
     {
       "name": "service_roles.py",
@@ -903,8 +913,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "a656335c40d0e57600d1faa7ebb71b43d6ba6795965a3d0418657b99477dfb8c",
-      "bytes": 9114
+      "sha256": "9ae8ea9b82e98c9d9ba48e4c10512caf5bf6533c4d919e16f28a88be5e17d375",
+      "bytes": 9208
     },
     {
       "name": "start.ps1",
@@ -923,8 +933,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "a2e452fefcbeb4a8771d8266643f43e8d78a4c2a852ad9d7f19da29362840f7a",
-      "bytes": 229166
+      "sha256": "1081390beb8ccd76d44b596713b9320d529c36b5dd4869d588d7cfe24ba2ca25",
+      "bytes": 231897
     },
     {
       "name": "static/bark.js",
@@ -1008,8 +1018,8 @@
     },
     {
       "name": "test_captcha_learning.cjs",
-      "sha256": "d7e6e3f47f3993ffa5cb36b11cd22f32d54a95b8da99373965470747a947e90d",
-      "bytes": 13396
+      "sha256": "16eecefccdcf077984b13dca69957d2f865f6db36649add18f2fa063f639345c",
+      "bytes": 14631
     },
     {
       "name": "test_captcha_point.py",
@@ -1050,6 +1060,11 @@
       "name": "test_collection_freshness.py",
       "sha256": "33a163e527006a921796e29639064ab72d7ef620a1de41ac1a64b3d24411968d",
       "bytes": 12516
+    },
+    {
+      "name": "test_collection_recovery.py",
+      "sha256": "9e1e009da577ac5c0f3476a765283d9eb0736a9d5eab10d4bd646ae37b2f644e",
+      "bytes": 14706
     },
     {
       "name": "test_collection_session.cjs",
@@ -1108,8 +1123,8 @@
     },
     {
       "name": "test_frontend.cjs",
-      "sha256": "97baf251e1f29c277fca4609de2282427d945fbd7abe181ae1d118fc56cdd0c5",
-      "bytes": 50656
+      "sha256": "03ed4c77e2d32f3942269cbd8a8d5cfc8ee83759b8b144afeaaf95784690c832",
+      "bytes": 51132
     },
     {
       "name": "test_frontend_live_history.cjs",
@@ -1283,8 +1298,8 @@
     },
     {
       "name": "test_login_recovery_http.py",
-      "sha256": "17895792e7dd43f050b43f2d6b2be103cc5875a6f0662eb8641bd3e71375bb91",
-      "bytes": 5314
+      "sha256": "48f366440c78f6d2ea398f38c016508c37b060f315c7be82ac81dda7554826f5",
+      "bytes": 6188
     },
     {
       "name": "test_login_relay.py",

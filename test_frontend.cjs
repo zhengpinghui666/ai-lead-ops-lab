@@ -244,6 +244,14 @@ function checkHtml(html){assert.ok(html.length>100);assert.ok(!html.includes('un
   assert.ok(element('#main').innerHTML.includes('data-action="collector-cancel"'));
   assert.ok(!element('#main').innerHTML.includes('<img src=x>'));
   run("S.collector.tasks[0].active=false;render()");
+  const beforeReadOnly=posts.length;
+  await run("handleAction({dataset:{action:'work-log'}})");
+  assert.match(element('#modal-content').innerHTML,/当前运行记录 · #7/);
+  assert.match(element('#modal-content').innerHTML,/data-action="collector-retry"/);
+  assert.match(element('#modal-content').innerHTML,/id='dialog-task-metrics-7'/);
+  assert.equal(posts.length,beforeReadOnly,'Viewing current run must not start a collection');
+  run('closeModal()');
+
   assert.ok(element('#main').innerHTML.includes('浏览器会话已关闭'));
   assert.ok(!element('#main').innerHTML.includes('已处理，继续读取'));
   assert.ok(!element('#main').innerHTML.includes('Alt + Tab'));

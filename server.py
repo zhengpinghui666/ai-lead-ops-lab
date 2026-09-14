@@ -380,6 +380,9 @@ class Handler(BaseHTTPRequestHandler):
                 result=collection_accounts.save(body,mode)
             elif action == 'collector-start':
                 result = collector.start(body, mode)
+            elif action == 'collector-verify':
+                import collection_recovery
+                result = collection_recovery.request(body, mode)
             elif action == 'monitor-save':
                 result = monitoring.save(body, mode)
             elif action in ('monitor-start', 'monitor-stop'):

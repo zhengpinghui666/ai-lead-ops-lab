@@ -1,4 +1,29 @@
+## 2026-09-14 18:52 验证码额外重采上限与人工恢复入口已部署
+
+- 最新用户明确“下次验证码不通过最多再试两次，和刚刚重新采集一个逻辑”。已部署每轮最多2次额外浏览器批次（总计3批）、原5分钟退避；每批自动提交最多1次不变。collection_verification_retries持久化root/parent/retry_number，原父批次只能一个child，重启不清次数。调度重采不再重新选发现目标或轮换账号；冻结原账号/目录、绝对comment_since、24h、过滤、预算及未完成断点。第三次仍失败→attention，其他平台gate不进入验证码重采。
+- 同时修复7446隔离profile未能归档：captcha_learning.begin/recalled原来只接受data/browser-profile，导致2875–2877没有私有attempt文件，旧重试条件不成立。现接受与后端frozen collection_account精确匹配的data/collection-accounts/<id>/browser-profile，拒绝其他账号/路径；不补造这些旧样本/通过率。新的真实样本尚未验证归档。
+- 新collection_recovery.py人工入口 POST collector-verify仅id/request_id，CSRF/Origin仍受控。页面“处理验证码”先展示原账号/批次，点击“打开原账号验证窗口”才创建任务，captcha mode固定manual由本人操作，不自动解题。直到child实际completed且原plan intent_version/activated_at/last_task_id未变才接原监控；关闭监控会取消真正child，修改/重启不重新开启。未取得明确平台通过证据不增加验证码通过计数。
+- 用户自己于18:33:54启动#2877（旧生产代码的一次普通重新采集），7446、interactive1、captcha submissions1、platform_verdict_unobserved，存在新的有效读取迹象但没有明确平台回执。18:44等待人工10分钟到期，session_expired，未采到评论。随后一次有状态保护的collector-resume脚本检测它已终结，仅no_op，未发任何resume/新建任务。未将它改completed或补造样本。异步询问“验证码是否消失”尚未收到答复；现在窗口已超时，问题已过期，不要继续等待那个窗口。
+- 111项Python采集/账号/调度/恢复回归最终通过（首次4个失败因stage未连node_modules，另新测试传int而非task已修正，日志保留）；另1项HTTP边界、21项本地合成图片归档/隔离账号路径、20页前端结构通过。真实headless Edge 1366x768/390x844合成UI：外点关闭、原账号说明、只提交id/request_id、pending显示/停止按钮均通过，每次POST全stub；不是实际验证码/平台验收。截图已查看。artifacts/verification-recovery-20260914包含源码stage、12文件安装哈希、source-before.zip、两库SQLite在线备份、测试日志/UI截图。
+- 正常维护部署12文件，服务PID270964。18群、1直播track、原找群及授权自动私信恢复；原inbox暂停/评论attention保持。uid-http-probe第一次400因已有核对忙，第二次实际200 identity_verified UID358898446378682于10:49:46UTC，之后恢复原outreach，未发送测试/补历史私信。监听maintenance hold清0，既有needs_user事件不标resolved。
+- 已刷新现有IAB标签8并实际打开正式“处理验证码”说明，准确绑定#2875/1267597446，未点击启动窗口（不重试先前被拒绝的创建/打开人工验证helper操作）。当前请用户点击现有弹窗“打开原账号验证窗口”、本人通过后点工作台“已处理，继续读取”。之后必须核对真实child completed及后续自动调度，再resolved故障。先前窗口创建被拒绝只针对那次操作，不修改审批设置，不换渠道绕行。
+- 新source清单314文件，新增VERIFICATION_RECOVERY.md/collection_recovery.py/test_collection_recovery.py。旧多账户stage和手机远程人工验证码stage仍未部署，不能全覆盖。当前完整Goal仍active；本轮是progress，不是获客系统整体完成。
 # ClubOps 接续说明
+
+## 2026-09-14 运行记录按钮无响应已修复（验证码仍待本人操作）
+
+- 收到旧实时事件7cbf0585-95cb-4d6f-beab-70545fc7b38f（#2810 schema_changed）。按通知首先ack received返回Delivery already completed；只读账本确认此事件已resolved，received_at1789369716、finished_at1789370529，不改回执/不重启。当前故障仍#2875/#2876验证码，不能混称旧schema_changed复发。
+- 用户在IAB http://127.0.0.1:8765/#monitor/runs 点击“查看运行记录”无响应。根因work-log只navigate同一路由，hash不变且navigate比较page而非完整route，页面无动作。已热更新生产static/app.js：该按钮直接showModal当前active或最新批次；collectionTask新增scope参数供弹窗details唯一id，修正map调用不传index。没有启动真实采集或验证窗口、没有重启服务。
+- 真实headless Edge + GET读取生产状态fixture复现before同址无弹窗；fixed打开#2876详情→重新采集显示collector-form，transport local_browser、target国服瓦组队，0 POST、无JS错误或重复id。只填写表单未提交，未绕过先前被拒绝的打开实际验证窗口操作。20页前端结构回归通过，并加入当前页按钮弹窗/无写入回归。回退和截图 artifacts/run-record-button-20260914。已告知用户刷新网页点击，等待本人启动窗口并通过验证码，再核对实际完成批次及后续自动调度。现不能称评论已恢复。
+
+
+## 2026-09-14 18:10 用户明确先处理现有验证码暂停
+
+- 最新指令“我们先处理现在暂停导致的验证码问题”。暂停Bark/手机远程验证开发，先恢复7446评论。只读确认当前仍#2876 local_browser search“国服瓦组队”、needs_verification、finished08:17:26UTC、point_character_uncertain、submissions0；计划attention last2875、无active登录/采集，原窗口已关闭。实时故障监听connected、needs_user旧回执，不是修复完成。
+- 已向用户提供直接运行记录链接 http://127.0.0.1:8765/#monitor/runs ，请本人点击#2876→重新采集→浏览器通道→开始本批采集，在弹出窗口手工完成验证码，再工作台点“已处理，继续读取”。说明此前创建/打开人工验证窗口被自动审批 blocked by policy（无进一步理由），禁止绕渠道重试该被拒操作。
+- async待用户回复当前进度：验证码已完成并继续／窗口已打开正在验证／没找到入口或未弹窗。暂未收到回复，不得假定已过。下一步只读追踪新批次>2876、精确7446绑定；完成实际批次后按原授权恢复monitor-start并验证后续自动批次，再反馈/修复回执。不要在验证前强制开启、切账号或改transport以绕过验证。Bark手机待配置问题暂放下。
+- Bark源码311文件已备份成功 d3e9ddf47371641130785baefb4a473263765068（2026-09-14T10:09:19Z）。后面本接续注记尚未备份，不为此反复重跑完整备份。
+
 
 ## 2026-09-14 Bark 锁屏通知入口已上线，手机人工验证页尚未完成
 
@@ -557,3 +582,9 @@ collection_scheduler.transient_browser_body_wait现在对唯一一次body_timeou
 用户要求入群问题正常回答，随后明确“以后有问题就给到模型，让他来回复合适的答案”。本轮读到瓦瓦乱鲨2群问“多少岁？”，真实年龄仍未提供，不编造。group_answers 按现有模型拟答、已知事实约束、未知年龄如实答复，独立线程共享 semantic.GUARD。自动公开发现开启才运行，旧回答题目变动后不能复用。问答不等于已加入，必须核对成员目录。
 
 v2 邀约初筛、v8 潜在需求定义、相同来源的旧模型结果保持显示；只重新考虑一天内 uncertain。188项Python回归与20状态Node检查通过（有重叠的前序测试不相加）。实际模型14例：13完成符合预期，1超时；非生产准确率，未发送测试私信。相邻群聊上下文、双机本地模型、真实报价文案、故障事件实时唤醒与全面需求对齐仍有工作，完整Goal继续。
+
+### 当前页面实测补充（2026-09-14 18:26）
+- 复用用户现有 IAB 标签8（#monitor/runs），刷新前点击“查看运行记录”无变化；刷新加载已部署脚本后，点击明确打开“当前运行记录 · #2876”弹窗，含“重新采集”按钮。
+- 当前页面已替用户刷新并停留该详情弹窗。没有提交采集、启动验证窗口、填写验证码或更改业务开关。
+- 当前评论仍 needs_verification，不能因详情按钮修复就声称采集恢复。
+

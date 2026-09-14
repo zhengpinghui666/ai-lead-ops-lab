@@ -19,6 +19,16 @@ let passed=0;const pass=name=>{passed++;console.log('PASS '+name);};
     await learning.configure(true,options);
     assert.equal(await learning.begin(slider,{...config,profile_dir:'some-other-profile'},randomUUID(),options),null);
     assert.equal(await learning.begin(slider,config,'../escape',options),null);pass('dedicated profile and attempt identity required');
+    const isolatedDir=await fs.mkdtemp(path.join(os.tmpdir(),'clubops-learning-account-'));
+    try{
+      const isoOptions={dataDir:isolatedDir};await learning.configure(true,isoOptions);
+      const bound={id:7446,profile_dir:path.join(isolatedDir,'collection-accounts/7446/browser-profile'),collection_account:{account_id:'7446',storage:'isolated'}};
+      const receipt=await learning.begin(slider,bound,randomUUID(),isoOptions);assert.ok(receipt?.attemptId);
+      await learning.finish(receipt,{outcome:'needs_review',reason:'recognition_declined',submissions:0});
+      assert.equal((await learning.status(isoOptions)).attempts,1);
+      for(const bad of [{...bound,collection_account:{account_id:'9517',storage:'isolated'}},{...bound,collection_account:{account_id:'..',storage:'isolated'}},{...bound,profile_dir:path.join(isolatedDir,'outside/browser-profile')}])assert.equal(await learning.begin(slider,bad,randomUUID(),isoOptions),null);
+      pass('isolated account profile archived; wrong account and path rejected');
+    }finally{await fs.rm(isolatedDir,{recursive:true,force:true});}
     const first=await learning.begin(slider,config,randomUUID(),options);assert.ok(first.attemptId);
     assert.equal((await learning.status(options)).cases,1);
     assert.equal((await fs.readdir(path.join(archive,'cases'))).length,3);

@@ -309,6 +309,8 @@ def verification_retry_seconds(connection, task):
     """Explicit local policy; only a finished, archived browser challenge qualifies."""
     if not task or task['status'] != 'needs_verification' or task['transport'] != 'local_browser' or not task['finished_at']:
         return 0
+    import collection_recovery
+    if collection_recovery.retry_state(connection, task['id'])['remaining'] <= 0 or collection_recovery.record(connection, task['id']):return 0
     try:
         policy=json.loads((app.DATA_DIR/'private/monitor-policy.json').read_text(encoding='utf-8'))
         if policy.get('captcha_retry_seconds') != 300:return 0
@@ -538,7 +540,9 @@ def tick(instant=None):
                             '浏览器发现暂时连接失败，保留失败记录并延后搜索；已验证的 HTTP 作品评论继续轮询' if task['status']=='network_error' else '本次搜索未取得合适作品，保留本批记录并延后搜索；已有作品评论继续轮询')
                 elif p['continuous'] and p['status']=='running' and verification_retry_seconds(c,task):
                     due=(datetime.fromisoformat(task['finished_at'])+timedelta(seconds=300)).astimezone(timezone.utc).isoformat(timespec='seconds')
-                    detail='验证码未通过，样本已记录；暂停 5 分钟后在后台重新加载原监控目标。可随时关闭监控。'
+                    import collection_recovery
+                    retry_number=collection_recovery.retry_state(c,task['id'])['retry_number']+1
+                    detail=f'验证码待处理；5 分钟后额外重采第 {retry_number}/2 次，保持原账号和目标。仍不通过则转人工，可随时关闭监控。'
                 elif task['status'] != 'completed':
                     bound=discovery_tracking.worker_config(c,task['id'])
                     retry_plan={**dict(p),**{key:task[key] for key in ('kind','target','transport')}} if bound else p
@@ -565,14 +569,16 @@ def tick(instant=None):
             # Stored timestamps may use UTC or +08:00. Compare instants, never ISO strings.
             plan = c.execute("SELECT * FROM collection_plans WHERE status='running' AND (continuous=1 OR run_count<run_limit) AND julianday(next_run_at)<=julianday(?) AND (last_task_id IS NULL OR settled_task_id=last_task_id) ORDER BY priority DESC,julianday(next_run_at),id LIMIT 1", (instant,)).fetchone()
             import discovery_tracking
-            discovery_enabled,discovery_job=discovery_tracking.choose(c,plan,instant) if plan else (False,None)
+            retry_task=c.execute('SELECT * FROM collection_tasks WHERE id=?',(plan['last_task_id'],)).fetchone() if plan and plan['last_task_id'] else None
+            verification_from=retry_task['id'] if retry_task and verification_retry_seconds(c,retry_task) else None
+            discovery_enabled,discovery_job=discovery_tracking.choose(c,plan,instant) if plan and verification_from is None else (False,None)
         if not plan:
             return None
         if discovery_enabled and not discovery_job:return None
         try:
             # Scheduled reads never raise a window; explicit one-off tasks may.
             selected=discovery_job or plan
-            result = collector.start({'kind': selected['kind'], 'target': selected['target'], 'transport': selected['transport'], 'video_limit': plan['video_limit'], 'comment_limit': plan['comment_limit'], 'page_concurrency': plan['page_concurrency'], 'interactive': False, 'request_id': f'plan-{plan["id"]}-run-{plan["run_count"]+1}'}, lookback_hours=plan['lookback_hours'], include_keywords=plan['include_keywords'], exclude_keywords=plan['exclude_keywords'],discovery_job=discovery_job)
+            result = collector.start({'kind': selected['kind'], 'target': selected['target'], 'transport': selected['transport'], 'video_limit': plan['video_limit'], 'comment_limit': plan['comment_limit'], 'page_concurrency': plan['page_concurrency'], 'interactive': False, 'request_id': f'plan-{plan["id"]}-run-{plan["run_count"]+1}'}, lookback_hours=plan['lookback_hours'], include_keywords=plan['include_keywords'], exclude_keywords=plan['exclude_keywords'],discovery_job=discovery_job,verification_from=verification_from)
             with app.LOCKS['live'], app.db() as c:
                 c.execute('UPDATE collection_plans SET run_count=run_count+1,last_task_id=?,next_run_at=NULL,detail=?,updated_at=? WHERE id=?', (result['id'], f'正在执行任务 #{result["id"]}', instant, plan['id']))
             return result['id']

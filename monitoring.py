@@ -36,9 +36,19 @@ def state(mode='live'):
         import collection_accounts
         result['collection_account']=collection_accounts.binding(c,task_id) if task_id else None
         control = collector.ACTIVE.get(task_id) if mode == 'live' else None
+        recovery = c.execute('''SELECT r.task_id FROM collection_manual_recoveries r
+            JOIN collection_tasks t ON t.id=r.task_id
+            WHERE r.parent_task_id=? AND r.settled_at IS NULL AND t.finished_at IS NULL
+            ORDER BY r.task_id DESC LIMIT 1''', (task_id,)).fetchone() if mode == 'live' else None
+        recovery_id = recovery['task_id'] if recovery and recovery['task_id'] in collector.ACTIVE else None
+        if recovery_id:
+            control = collector.ACTIVE[recovery_id]
         result.update(enabled=result['status'] == 'running', active_task_id=task_id if control else None,
             freshness_target_seconds=freshness_target(c),
             stopping=bool(control and control['cancel']), transport=result.get('transport', 'local_browser'))
+        result['verification_recovery'] = recovery_id
+        if recovery_id:
+            result['active_task_id'] = recovery_id
         if task_id:
             row = c.execute('SELECT status,comments,comment_since,filtered_old,filtered_unknown,filtered_future,filtered_keyword,filtered_blocked FROM collection_tasks WHERE id=?', (task_id,)).fetchone()
             result['last_batch'] = dict(row) if row else None
