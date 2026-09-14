@@ -18,8 +18,8 @@
     },
     {
       "name": "AFTERNOON_REQUIREMENTS_20260914.md",
-      "sha256": "4a4f028ee0904b8e06151d3c1fdbd44e809ec71f32ab8c47facf8582f585c69c",
-      "bytes": 11466
+      "sha256": "a2d14418fa470411b806004d51f3528956146a12aa72165deeb4b04a531de3c4",
+      "bytes": 12042
     },
     {
       "name": "ASSET_VERTICALITY.md",
@@ -148,8 +148,8 @@
     },
     {
       "name": "MODEL_API.md",
-      "sha256": "df2c3811d3d45ace8ef21b9ed741db9e391b4926284d00c95f7da1f4b96d031c",
-      "bytes": 9284
+      "sha256": "6bb779a26fb9ced876148700de077b5aefeb26273b5a28f0be18c06e326ae94b",
+      "bytes": 10575
     },
     {
       "name": "MODEL_QUEUE.md",
@@ -203,8 +203,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "4615bb4b27e9839aa7d897a1a5f95ba61945c43f429f5e08014208c265a86d17",
-      "bytes": 180708
+      "sha256": "6507f08ec1fb8db10ca18dcae04d42d799a7b43644bd8a6f77e21aeb049d91e2",
+      "bytes": 188228
     },
     {
       "name": "UID_HTTP.md",
@@ -963,13 +963,13 @@
     },
     {
       "name": "semantic.py",
-      "sha256": "1797e28e3d7f91f3df920801b47656fda1b69626d4015c35154fc53a6ee0aaf7",
-      "bytes": 40887
+      "sha256": "b583ea2f270cf67f4979a0aa4b20ed39c932af07fbcc87f99c1814989dfd2ce4",
+      "bytes": 42876
     },
     {
       "name": "semantic_api.py",
-      "sha256": "6db267a0470eab870c17b376fac72867f6b6b1b2e842ff72d831864ff106cc31",
-      "bytes": 3426
+      "sha256": "e6209cc5843c45085f1dafc0a0334eefbb97891fd3f35757237c10e3d0c527eb",
+      "bytes": 3444
     },
     {
       "name": "semantic_queue.py",
@@ -1203,8 +1203,8 @@
     },
     {
       "name": "test_demand_freshness.py",
-      "sha256": "732d6d2815a319f9abeb545b1fdf47df491b347b37bc2764b7ce77f13667dfc3",
-      "bytes": 10642
+      "sha256": "3936980e6ddaac3ec84c5d061f7a6be878c0bbc04860a148093e635426eb5bd1",
+      "bytes": 10852
     },
     {
       "name": "test_discovery_tracking.py",
@@ -1518,8 +1518,8 @@
     },
     {
       "name": "test_semantic_api.py",
-      "sha256": "1390e4f52ce7533edf078e4af93bfa9195ca7de63ab96c24df0f12da160e9ab2",
-      "bytes": 8872
+      "sha256": "c45b3cb1be3e04e359c1510a189dda962d8f5831370fe83d59c8f07bc7e8af7b",
+      "bytes": 14434
     },
     {
       "name": "test_semantic_concurrency.py",

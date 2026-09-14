@@ -1,3 +1,11 @@
+## 2026-09-15 作者资料传递与身份分类证据
+
+远程API旧适配器只传kind/text/parent/title，虽然提示词要求结合作者资料，实际author已被过滤。现在API与本地适配器共同白名单传递已观察的nickname、signature、self_description，裁定长度；UID、手机号、cookie、令牌及其他字段不进入模型请求。数据库中UID仍用于将资料严格绑定实际发言者。
+
+分类输出新增classification_source，缺失时兼容旧输出的text。仅club/seller/recruit身份分类可引用author_nickname/author_signature/author_self_description；引文须与已保存资料逐字匹配。点单buyer必须保留发言原文依据；游戏、预算、区服、段位等客户需求不得从简介推断。仅名字含电竞、个人在俱乐部工作、转述等原有俱乐部证据保护继续执行。
+
+这是对现有v10“结合作者资料”行为的适配器修复与兼容证据扩展。保持原engine/config标识，不批量抹掉、重跑旧模型结果，不重发历史私信；旧输出没有classification_source仍按原文核验。新调用才使用该适配器。真实分类准确率和历史错误修正不因此宣称完成。回归、部署及实际传输验证见对应artifact与接续记录。
+
 ## 2026-09-12：评论结论直接显示判断理由
 
 监控当前批次及跨批历史列表现在直接展示当前结论的“模型理由”，有已校验的当前评论分类引文时另显示“原文依据”。复用已有 reason／facts.evidence；不改变 intent-prompt-v5、模型配置或分析队列，不补跑历史，也不因查看理由增加推理调用。reason 继续要求简短、可审查的判断说明；不展示隐藏思考过程或把模型自报当准确率。

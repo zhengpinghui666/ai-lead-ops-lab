@@ -155,5 +155,78 @@ class APITests(unittest.TestCase):
         self.assertEqual(app.state()['jobs'],[])
 
 
+    def author_prediction(self,category='club',origin='author_nickname',quote='合成陪玩店'):
+        value=ollama_prediction(SOURCE)
+        value.update(category=category,classification_quote=quote,classification_source=origin)
+        return value
+
+    def test_author_context_crosses_api_without_identifiers_or_secrets(self):
+        source=dict(SOURCE,author={'uid':'987654321','nickname':'合成陪玩店','signature':'本店提供国服陪玩',
+                    'self_description':'我们是陪玩俱乐部','cookie':'secret','phone':'private'},cookie='secret')
+        adapter=semantic_api.ChatAPIAdapter(self.settings)
+        with patch.object(adapter,'request',return_value=response()) as request:adapter.predict(source)
+        sent=json.loads(request.call_args.args[1]['messages'][1]['content'])
+        self.assertIn('author',sent)
+        self.assertEqual(sent['author'],{k:source['author'][k] for k in ('nickname','signature','self_description')})
+        self.assertNotIn('uid',sent['author']);self.assertNotIn('cookie',json.dumps(sent))
+        self.assertEqual(source['author']['uid'],'987654321')
+
+    def test_author_quote_classifies_supplier_not_customer_facts(self):
+        source=dict(SOURCE,text='你好',author={'nickname':'合成陪玩店','signature':'陪玩接单 预算200元','self_description':''})
+        result=semantic.validate_result(semantic.normalize_ollama_result(self.author_prediction()),source)
+        self.assertEqual(result['category'],'club')
+        proof=result['facts']['evidence'][0]
+        self.assertEqual((proof['source'],proof['text']),('author_nickname','合成陪玩店'))
+        for category in ('buyer','social','noise'):
+            with self.subTest(category=category),self.assertRaises(ValueError):
+                semantic.validate_result(semantic.normalize_ollama_result(self.author_prediction(category)),source)
+        for origin,quote in [('author_signature','捏造的原文'),('title','合成陪玩店'),('author_uid','987654321')]:
+            with self.subTest(origin=origin),self.assertRaises(ValueError):
+                semantic.validate_result(semantic.normalize_ollama_result(self.author_prediction(origin=origin,quote=quote)),source)
+        raw=semantic.normalize_ollama_result(self.author_prediction())
+        raw['facts']['budget']='预算200元';raw['evidence'].append(dict(field='budget',source='author_signature',text='预算200元'))
+        with self.assertRaises(ValueError):semantic.validate_result(raw,source)
+        self.assertEqual(semantic.normalize_ollama_result(ollama_prediction(SOURCE))['evidence'][0]['source'],'text')
+
+    def test_local_model_uses_same_minimized_author_payload(self):
+        source=dict(SOURCE,author={'uid':'123456','nickname':'合成陪玩店','signature':'本店提供陪玩','self_description':'','token':'secret'})
+        adapter=semantic.OllamaAdapter(semantic.DEFAULTS)
+        replies=[{'cloud':{'disabled':True}},{'model_info':{'synthetic':True}},
+                 {'done':True,'done_reason':'stop','message':{'content':json.dumps(ollama_prediction(SOURCE))}}]
+        with patch.object(adapter,'request',side_effect=replies) as request:adapter.predict(source)
+        sent=json.loads(request.call_args_list[-1].args[1]['messages'][1]['content'])
+        self.assertEqual(sent['author'],{'nickname':'合成陪玩店','signature':'本店提供陪玩'})
+        self.assertNotIn('123456',json.dumps(sent));self.assertNotIn('secret',json.dumps(sent))
+
+
+
+    def test_profile_payload_is_bounded_and_missing_profile_is_not_invented(self):
+        source=dict(SOURCE,author={'nickname':'a'*500,'signature':'b'*2000,'self_description':None,'uid':'12345'})
+        value=semantic.model_input(source)
+        self.assertEqual({k:len(v) for k,v in value['author'].items()},{'nickname':200,'signature':1000})
+        for raw in (None,[],{'nickname':42},{'signature':'  '}):
+            self.assertNotIn('author',semantic.model_input(dict(SOURCE,author=raw)))
+
+    def test_profile_club_result_reaches_queue_and_bound_role_without_contact(self):
+        semantic.save(dict(self.settings,auto_analyze=True))
+        app.ingest({'records':[dict(comment_id='1',video_id='1',video_title='无畏契约陪玩服务',
+            user_id='123456',text='陪玩接单')]})
+        import author_roles
+        with app.db() as c:author_roles.remember(c,'123456',nickname='合成陪玩店')
+        self.assertEqual(app.analyze()['model_queue']['queued'],1)
+        reply=response();reply['choices'][0]['message']['content']=json.dumps(self.author_prediction(),ensure_ascii=False)
+        with patch.object(semantic_api.ChatAPIAdapter,'request',return_value=reply) as request:
+            self.assertTrue(queue.run_one())
+        sent=json.loads(request.call_args.args[1]['messages'][1]['content'])
+        self.assertEqual(sent['author'],{'nickname':'合成陪玩店'})
+        with app.db() as c:
+            self.assertEqual(tuple(c.execute('SELECT uid,role FROM service_author_roles').fetchone()),('123456','club'))
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM uid_message_attempts').fetchone()[0],0)
+        self.assertEqual(queue.state()['counts'],{'completed':1})
+        self.assertEqual(app.state()['comments'][0]['category'],'club')
+        self.assertEqual(app.state()['messages'],[])
+
+
+
 if __name__=='__main__':
     unittest.main()

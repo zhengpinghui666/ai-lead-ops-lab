@@ -36,7 +36,7 @@ class ChatAPIAdapter(semantic.OllamaAdapter):
 
     def predict(self, source):
         # Keep identity, cookies and unrelated record fields outside the request.
-        source = {field: source[field] for field in ('kind', 'text', 'parent', 'title')}
+        source = semantic.model_input(source)
         response = self.request('/chat/completions',dict(model=self.settings['model'],stream=False,
             temperature=0,max_tokens=2048,response_format={'type':'json_object'},
             messages=[{'role':'system','content':semantic.PROMPT+semantic.game_prompt(source)+

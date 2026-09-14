@@ -39,7 +39,7 @@ class OutreachWindowTests(unittest.TestCase):
             c.execute("UPDATE sources SET kind='browser'")
         outreach.STOP.clear()
         outreach.authorize('点陪🥣看我主业', '合成测试', SENDER)
-        analysis = patch('monitoring.observation_analysis', return_value=dict(category='buyer', analysis_method='model'))
+        analysis = patch('monitoring.observation_analysis', return_value=dict(category='buyer', game=app.TARGET_GAME, analysis_method='model'))
         analysis.start()
         self.addCleanup(analysis.stop)
 
