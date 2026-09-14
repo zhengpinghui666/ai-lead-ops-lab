@@ -18,8 +18,8 @@
     },
     {
       "name": "AFTERNOON_REQUIREMENTS_20260914.md",
-      "sha256": "de18e8fa55b88ef0adfff9a2c4b35db8a69e71b642c5683cd01d5522b25fc1ef",
-      "bytes": 10611
+      "sha256": "9d99036f05bcde86d8d807dde06c6c6a86b5a2db82bcc81165a61c34848197f6",
+      "bytes": 10937
     },
     {
       "name": "ASSET_VERTICALITY.md",
@@ -60,6 +60,11 @@
       "name": "COLLECTION_SESSION_LEASE.md",
       "sha256": "9f5d936061d63081fc8317055a9530f8c88f77c046a68b8984150b07a24852c8",
       "bytes": 2016
+    },
+    {
+      "name": "COMMENT_READ_PRIORITY.md",
+      "sha256": "046ffcc2465cdf214621d65af36aebcdfc08f6238e855d5fb02df0e73e37283c",
+      "bytes": 1994
     },
     {
       "name": "DAILY_DASHBOARD.md",
@@ -198,8 +203,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "62ec9e0d5f20042732cd528c499beff707bb75acacbc658defe6b1d9ae57cad1",
-      "bytes": 172108
+      "sha256": "dad97f0b73e1345746f853e3613b29565072ec59abacf7a4687240ce5d6dc55f",
+      "bytes": 174668
     },
     {
       "name": "UID_HTTP.md",
@@ -378,8 +383,8 @@
     },
     {
       "name": "collector_http_worker.py",
-      "sha256": "dfbeb829362c3226621e4db1ecefbe990f95a1d176fde0fd951e350817fd07cd",
-      "bytes": 21752
+      "sha256": "f7732307b37dd193b484d80177759016bb096fbf733cabda1ddb76c582a6612c",
+      "bytes": 23276
     },
     {
       "name": "collector_parser.cjs",
@@ -983,8 +988,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "9e809f151777eabdacfc6e9d3c61240c62f574f78fcb4f33eba3bf7daebd9ea1",
-      "bytes": 10057
+      "sha256": "52fa633f74031914cdb5813163ef65fa4e19e297a462c6282b8b30b04e56ef02",
+      "bytes": 9774
     },
     {
       "name": "start.ps1",
@@ -1178,8 +1183,8 @@
     },
     {
       "name": "test_collector_http.py",
-      "sha256": "4cc9e610ccdcf57eb22fdf5d5f36a023dfe429bc4bf87cd8eedde040998d16d4",
-      "bytes": 54117
+      "sha256": "846e1edd17f5ed0d03148a0b978bf67e86fcd4e1664274637b4d407293331b02",
+      "bytes": 54224
     },
     {
       "name": "test_comment_keywords.py",
@@ -1280,6 +1285,11 @@
       "name": "test_group_public.py",
       "sha256": "c2d08bc64c5b128d089b7810cbd27249e1e8fedd316630a99df627fc6e2c18d1",
       "bytes": 23250
+    },
+    {
+      "name": "test_http_head_priority.py",
+      "sha256": "aaa482a10340795cfe96f499d8dd83a95a86e5144edd7f5ed0ad034773f55763",
+      "bytes": 5048
     },
     {
       "name": "test_http_probe.cjs",

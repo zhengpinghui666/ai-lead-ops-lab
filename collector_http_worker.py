@@ -153,9 +153,11 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                 return
             vid, title = target['video_id'], target['video_title']
             progress(1)
+            active = True
             seen = set()
             skipped = unsupported = 0
             read_comment_page = False
+            head_pending = True
             def remaining():
                 return max(0, config['comment_limit'] - len(seen) - skipped)
             try:
@@ -225,6 +227,15 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                         revision+=1
                         emit(dict(type='comment_paging',video_id=vid,session_tag=tag,revision=revision,
                                   state=rotation.snapshot(),page=receipt))
+                    if head_pending and operation=='comments' and cursor==0:
+                        head_pending=False
+                        # Release this slot before any history/reply read so
+                        # the next work can inspect its own front page first.
+                        progress(-1);active=False
+                        yield
+                        if cancel.is_set() or stopped.is_set():
+                            raise http.ReadError('cancelled')
+                        progress(1);active=True
                     if not remaining() or not complete:break
                 emit({'type': 'checkpoint', 'video_id': vid, 'status': 'partial' if unsupported else 'done',
                       'detail': '达到本批观察预算或已读取响应可见末页；无文字内容计入跳过，不代表全量评论' if not unsupported else '部分记录结构不支持，保留已读取数据'})
@@ -265,11 +276,27 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                     counts['unsupported'] += unsupported
                 if skipped:
                     emit({'type': 'skipped', 'count': skipped})
-                progress(-1)
-        with ThreadPoolExecutor(max_workers=limit) as pool:
-            futures = [pool.submit(read_video, row) for row in targets]
-            for future in as_completed(futures):
-                future.result()
+                if active:progress(-1)
+        readers=[read_video(row) for row in targets]
+        def queue_phase(phase):
+            emit({'type':'diagnostic','stage':'work_read_queue','snapshot':{'processing':dict(
+                version='front-page-priority-v1',phase=phase,works=len(targets),page_concurrency=limit,
+                newest_order_verified=False)}})
+        def drain(reader):
+            for _ in reader:pass
+        try:
+            with ThreadPoolExecutor(max_workers=limit) as pool:
+                queue_phase('front_pages')
+                futures=[pool.submit(next,reader,None) for reader in readers]
+                for future in as_completed(futures):future.result()
+                if not cancel.is_set() and not stopped.is_set():
+                    queue_phase('history_and_replies')
+                    futures=[pool.submit(drain,reader) for reader in readers]
+                    for future in as_completed(futures):future.result()
+        finally:
+            # Executor exit joins every in-flight reader before closing any
+            # suspended generator, including on cancellation or protocol gates.
+            for reader in readers:reader.close()
         if cancel.is_set():
             raise http.ReadError('cancelled')
         if failure:

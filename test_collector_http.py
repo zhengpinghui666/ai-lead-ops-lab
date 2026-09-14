@@ -160,20 +160,22 @@ class HTTPReadTests(unittest.TestCase):
         def exchange(url, headers, cancelled):
             query=parse_qs(urlsplit(url).query);calls.append(query)
             cursor=int(query['cursor'][0])
-            payload=body([record(cid=str(int(PARENT)+cursor))],has_more=1,cursor=cursor+10)
+            video=query['aweme_id'][0]
+            payload=body([record(cid=str(int(video)+cursor+1000),aweme_id=video)],has_more=1,cursor=cursor+10)
             return 200,'application/json',json.dumps(payload).encode()
-        client=http.Client(session(),signer=FakeSigner(),transport=exchange,diagnostic=log.append,request_limit=3)
+        client=http.Client(session(),signer=FakeSigner(),transport=exchange,diagnostic=log.append,request_limit=2)
         events=[];videos=[VIDEO,'7619966169662950656','7684255202639121691']
         worker.collect({'kind':'video','target':'\n'.join(videos),'video_limit':3,'comment_limit':30,'page_concurrency':1},
                        events.append,threading.Event(),client=client)
-        self.assertEqual(len(calls),3)
+        self.assertEqual(len(calls),2)
         self.assertEqual(events[-1]['status'],'completed')
         self.assertIn('请求预算',events[-1]['detail'])
         checkpoints={e['video_id']:e for e in events if e['type']=='checkpoint'}
         self.assertEqual(checkpoints[VIDEO]['status'],'done')
-        self.assertTrue(all(checkpoints[v]['status']=='partial' for v in videos[1:]))
-        self.assertEqual(len([e for e in events if e['type']=='comment']),3)
-        self.assertTrue(any(e.get('reason')=='request_budget' and e['requests_used']==3 for e in log))
+        self.assertEqual(checkpoints[videos[1]]['status'],'done')
+        self.assertEqual(checkpoints[videos[2]]['status'],'partial')
+        self.assertEqual(len([e for e in events if e['type']=='comment']),2)
+        self.assertTrue(any(e.get('reason')=='request_budget' and e['requests_used']==2 for e in log))
 
     def test_zero_budget_and_response_size_limit_are_not_healthy_batches(self):
         for limit,raw in ((0,b'{}'),(3,b'x'*(http.MAX_BODY+1))):
