@@ -52,6 +52,55 @@ class RecoveryTests(unittest.TestCase):
         col.update(task, status=status, finished_at=app.now()); col.ACTIVE.pop(task, None)
         with app.db() as c: recovery.settle(c, task)
 
+    def partial_evidence(self, task):
+        url='https://www.douyin.com/video/76000000000002'
+        with app.db() as c:
+            c.execute('UPDATE collection_tasks SET comments=1,videos=1 WHERE id=?',(task,))
+            c.execute('INSERT INTO collection_checkpoints(task_id,video_id,video_title,video_url,status,detail,updated_at) VALUES(?,?,?,?,?,?,?)',
+                (task,'76000000000002','synthetic fixture',url,'partial','取得部分评论，但页面未能继续加载',app.now()))
+            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                (task,'comment-read',json.dumps(dict(page_url=url,processing=dict(version='comment-quality-v1',recognized=True,skipped=0,non_text_skipped=0,invalid_records=0,parse_errors=0),
+                 responses=[dict(kind='comment',status=200,status_code=0,comments_type='array',comments_count=1)])),app.now()))
+
+    def test_verified_partial_read_restores_plan_without_claiming_complete_coverage(self):
+        parent=self.original();pid=self.plan(parent);child=self.start(parent)
+        self.partial_evidence(child);self.finish(child,'partial')
+        with app.db() as c:
+            self.assertEqual(recovery.record(c,child)['state'],'recovered')
+            p=c.execute('SELECT * FROM collection_plans WHERE id=?',(pid,)).fetchone()
+            self.assertEqual((p['status'],p['last_task_id'],p['settled_task_id'],p['settled_count']),('running',child,child,1))
+            self.assertIsNotNone(p['next_run_at'])
+            self.assertEqual(c.execute('SELECT status FROM collection_tasks WHERE id=?',(child,)).fetchone()[0],'partial')
+        self.assertIsNone(scheduler.tick(app.now()))
+        self.assertEqual(monitoring.state()['status'],'running')
+
+    def test_partial_missing_evidence_or_captcha_never_restores(self):
+        parent=self.original();pid=self.plan(parent);child=self.start(parent)
+        self.partial_evidence(child)
+        with app.db() as c:
+            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(child,'captcha_workflow','{}',app.now()))
+        self.finish(child,'partial')
+        with app.db() as c:
+            self.assertEqual(recovery.record(c,child)['state'],'needs_user')
+            p=c.execute('SELECT status,detail FROM collection_plans WHERE id=?',(pid,)).fetchone()
+            self.assertEqual(p['status'],'attention');self.assertNotIn('正在人工处理',p['detail'])
+
+    def test_restart_still_blocks_callback_but_new_explicit_start_can_use_verified_partial(self):
+        parent=self.original();pid=self.plan(parent);child=self.start(parent)
+        self.partial_evidence(child);scheduler.recover();self.finish(child,'partial')
+        with app.db() as c:self.assertEqual(recovery.record(c,child)['state'],'plan_changed')
+        self.assertFalse(monitoring.state()['enabled'])
+        monitoring.command('start')
+        self.assertTrue(monitoring.state()['enabled'])
+        with app.db() as c:self.assertEqual(recovery.record(c,child)['state'],'continued')
+
+    def test_missing_partial_diagnostic_is_not_baseline_for_explicit_start(self):
+        parent=self.original();pid=self.plan(parent);child=self.start(parent)
+        self.partial_evidence(child)
+        with app.db() as c:c.execute('DELETE FROM collection_diagnostics WHERE task_id=?',(child,))
+        self.finish(child,'partial')
+        with self.assertRaises(ValueError):monitoring.command('start')
+
     def test_preserves_frozen_account_scope_and_idempotency(self):
         parent = self.original(); child = self.start(parent)
         self.assertEqual(self.start(parent), child)

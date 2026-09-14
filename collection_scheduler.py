@@ -450,6 +450,13 @@ def command(plan_id, action, mode='live', *, allow_monitor=False):
                             healthy, latest = True, bound_task
                             retry = max(60, upstream, row['interval_seconds'])
             if not healthy:
+                import collection_recovery
+                if row['continuous'] and collection_recovery.explicit_start_ready(c, row, latest):
+                    healthy = True
+                    retry = max(60, row['interval_seconds']) if latest['status'] == 'partial' else 0
+                    c.execute('UPDATE collection_manual_recoveries SET state=?,detail=?,settled_at=? WHERE task_id=?',
+                              ('continued', '已核验本批有效读取；按新的开启操作继续原监控，部分读取记录和断点保留', app.now(), latest['id']))
+            if not healthy:
                 raise ValueError('请先手动完成一批实际读到评论的采集，再启用持续计划；目前尚未验证或最近一批未正常完成')
             status, due = 'running', app.now()
             if retry:

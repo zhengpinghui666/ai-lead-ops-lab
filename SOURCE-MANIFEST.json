@@ -53,8 +53,8 @@
     },
     {
       "name": "DAILY_DASHBOARD.md",
-      "sha256": "41796ad6e11842dc36627dea6d13b9caf06bfe112499e33321ab23ff15553f1a",
-      "bytes": 5710
+      "sha256": "766c31e52179f2fe003b5e25bdc1b70315140bd46c5dee5d90bda63628f785f1",
+      "bytes": 6586
     },
     {
       "name": "DELIVERY.md",
@@ -183,8 +183,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "bcbf558d828b2943e9a2e0f1ffe119a170a89b7bce2ea0b28add40feb00465de",
-      "bytes": 140365
+      "sha256": "1fc5531303e50f2831e4c9480b9eee8faad82a8d64c53ee58cf18ace70ac0293",
+      "bytes": 145910
     },
     {
       "name": "UID_HTTP.md",
@@ -208,8 +208,8 @@
     },
     {
       "name": "VERIFICATION_RECOVERY.md",
-      "sha256": "1defa9b42ae07d16c087651cd43ed4a2762fcd5537479987d48caf285549cf05",
-      "bytes": 2096
+      "sha256": "c01e91993b4db2795242fec2c47f3dbdac9c7a7ed593a7db0f8cf2ef502a966a",
+      "bytes": 3280
     },
     {
       "name": "account_admin.py",
@@ -318,8 +318,8 @@
     },
     {
       "name": "clubops.py",
-      "sha256": "792adcd3941630e6b57ad9d785ceb0f56e9b44f02d69298a3f62cdc100c6f25d",
-      "bytes": 61078
+      "sha256": "37fc19c0811e46732712600490f7dce38880543c1dce392b2a356ff593454e19",
+      "bytes": 61455
     },
     {
       "name": "collection_accounts.py",
@@ -328,13 +328,13 @@
     },
     {
       "name": "collection_recovery.py",
-      "sha256": "b8ea309422c8f7184e9248ede1a27b7346d0859494e0ac577760dcd8f7ef4e49",
-      "bytes": 6604
+      "sha256": "184c0c094206b82f07240251fafa64debdbbfd35bcf4a1b774cffea85d05b5ce",
+      "bytes": 10244
     },
     {
       "name": "collection_scheduler.py",
-      "sha256": "842ecfafa7da86c901e6d7b8d4fda72a149558e3f9342dd7400fa84468e82fc9",
-      "bytes": 44173
+      "sha256": "6931f07b1b653adf531c0f33e0477231f34d08d6aeb770e184ae69a7cdd1fae6",
+      "bytes": 44772
     },
     {
       "name": "collector.py",
@@ -428,8 +428,8 @@
     },
     {
       "name": "daily_dashboard.py",
-      "sha256": "31d6b20c14a1cf66146aa192bc7d2e6003d941820f97d88eb7c7c60828ebf1fe",
-      "bytes": 12049
+      "sha256": "4edb49033b4683bdaee92c61cee799bf464e1f37d213cb3559888d76042cd2dd",
+      "bytes": 12683
     },
     {
       "name": "demand_freshness.py",
@@ -1108,8 +1108,8 @@
     },
     {
       "name": "test_collection_recovery.py",
-      "sha256": "9e1e009da577ac5c0f3476a765283d9eb0736a9d5eab10d4bd646ae37b2f644e",
-      "bytes": 14706
+      "sha256": "64a617dd393b310d2ef14a843cae5663703a7d2fc07a39891ddbcd75554e8459",
+      "bytes": 18198
     },
     {
       "name": "test_collection_session.cjs",
@@ -1148,8 +1148,8 @@
     },
     {
       "name": "test_daily_dashboard.py",
-      "sha256": "63d4369fb826e9224ebb758e2681d1248569d8b4303031eb717dc0c52952dd3d",
-      "bytes": 6725
+      "sha256": "a2b55fc7451db0945ca41bf103811dc36db66805e2834b89f7d781f920e12d38",
+      "bytes": 9104
     },
     {
       "name": "test_demand_freshness.py",

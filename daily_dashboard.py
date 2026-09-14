@@ -7,6 +7,19 @@ from datetime import datetime, timedelta, timezone
 import json
 import clubops as app
 
+# One ordered index scan reduces repeated observations before merging the legacy
+# comment store. Keep first-event identity (comment ID + source URL) unchanged.
+FIRST_COMMENT_INDEX = """CREATE INDEX IF NOT EXISTS idx_observation_first_daily
+ ON collection_observations(external_id,page_url,julianday(observed_at))
+ WHERE kind='comment' AND trim(comment_text)!=''"""
+FIRST_COMMENTS = """SELECT MIN(stamp) AS stamp FROM (
+ SELECT external_id,page_url AS url,MIN(julianday(observed_at)) AS stamp
+ FROM collection_observations INDEXED BY idx_observation_first_daily
+ WHERE kind='comment' AND trim(comment_text)!='' GROUP BY external_id,page_url
+ UNION ALL SELECT x.external_id,v.url,julianday(x.discovered_at)
+ FROM comments x JOIN videos v ON v.id=x.video_id
+ ) GROUP BY external_id,url"""
+
 BEIJING = timezone(timedelta(hours=8))
 CAPTCHA_TYPES = {'slider':'滑块拼图','same_shape':'同形点选','sms':'短信验证码','other':'其他／未识别类型'}
 
@@ -101,11 +114,7 @@ def snapshot(mode='live', reference=None):
             series[key] = [days.get(day, 0) for day in dates]
 
         measure('works', 'SELECT created_at AS stamp FROM videos')
-        measure('comments', """SELECT MIN(julianday(stamp)) AS stamp FROM (
-            SELECT external_id,page_url AS url,observed_at AS stamp FROM collection_observations
-            WHERE kind='comment' AND trim(comment_text)!=''
-            UNION ALL SELECT x.external_id,v.url,x.discovered_at FROM comments x JOIN videos v ON v.id=x.video_id
-            ) GROUP BY external_id,url""")
+        measure('comments', FIRST_COMMENTS)
         measure('live', 'SELECT observed_at AS stamp FROM live_messages')
         measure('groups', 'SELECT observed_at AS stamp FROM group_messages')
         measure('screened', """SELECT discovered_at AS stamp FROM comments UNION ALL

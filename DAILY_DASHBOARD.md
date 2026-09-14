@@ -38,3 +38,10 @@
 - 部署使用 Windows 托管任务与正常 service-stop；备份、前后配置和恢复记录在 `artifacts/daily-dashboard-20260913/`。当前服务恢复后 #1632—#1641 连续 10 批 completed（截至 17:41）；这不是长期无故障保证。
 
 官方资料：[桌面任务和事件触发范围](https://learn.chatgpt.com/docs/automations?surface=app)、[Codex SDK](https://learn.chatgpt.com/docs/codex-sdk)、[App Server 事件接口](https://learn.chatgpt.com/docs/app-server)。
+
+
+## 2026-09-14 统计查询提速
+
+首次采集评论使用按原评论ID、作品URL和观察时间排序的局部索引，先合并重复观察，再与历史评论合并取最早日期。保留同一作品同一评论只统计一次、跨作品分开、北京时间日界、空白过滤及未来时间排除。不是限制历史数量或删减图表日期。
+
+迁移前保存SQLite备份，创建索引不改观察记录；重复启动不重复迁移。162项相关回归通过。同一离线生产快照完整dashboard三次读取，修改前776.1/740.1/735.5ms，修改后438.4/453.9/490.5ms；每日总数、全部曲线、验证码分类、私信统计完全一致。这是固定样本的数据库读取比较，不代表所有页面已达到相同速度；生产接口结果另见 artifacts/page-data-speed-20260914/。

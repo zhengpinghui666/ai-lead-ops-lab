@@ -1,3 +1,26 @@
+## 2026-09-14 20:55 首页统计提速上线，7446仍待登录
+
+- 首页新增局部索引idx_observation_first_daily，先在观察表按评论ID/作品URL取首次时间，再合并历史comments。原口径、日期、验证码和私信数据不删减。迁移前自动SQLite备份，观察原值不变，重复启动不重复备份。162项dashboard/discovery/恢复/采集/监控回归通过。
+- 同一离线生产快照完整dashboard读取三次：before 776.1/740.1/735.5ms，after 438.4/453.9/490.5ms，totals/series/captcha/dm/labels完全一致。生产API修改前首次6725.7ms、后两次922.7/828.7ms；上线后三次446.0/441.4/443.1ms。这是本机当前样本，不声称所有页面已优化。需求列表大payload仍待分层/分页。
+- 正常维护部署clubops.py、daily_dashboard.py、test_daily_dashboard.py、DAILY_DASHBOARD.md（4文件）。artifacts/page-data-speed-deploy-20260914保存源码ZIP/两库在线备份、计数一致核对、身份及安装哈希；staging指向artifacts/page-data-speed-20260914/staging。旧page-data-speed-20260914/before.json是当天早期性能数组，prepare防覆盖已阻止，故使用新deploy目录，未改旧baseline。
+- 生产PID212184。原18群、找群、直播恢复；9517独立身份验证后恢复原授权outreach，inbox原关闭保留。group_reads12930~12932 completed；live598于20:53:05 completed，599后续自动running。maintenance hold=0、实时监听connected；评论2881真实needs_login保持，事件4f3e3f7...needs_user，不resolved。
+- 只读获客复盘 artifacts/operational-reviews/20260914-2053.json：4603发现作品、4335开启、2332从未检查；551开启垂直作品中10个从未检查，其余541个距上次检查中位约8.3h。全部已检查开启作品中位16.7h。既有作品在评论发布前有done检查证据的316条，首次采集延迟P50约93min；无该覆盖证据的15823条单列补采，不能混称实时。
+- 今日模型队列无积压，完整model结果约145条、首页去重新增意向10人、私信服务端接受8。今日9条发送尝试按所选授权证据最近model结果至attempt记录，P50约98.8min；这是尝试时刻，不是送达。模型buyer结果次数同钟点昨日14/今日14，非去重人数，不冒充增长。同类失败模型20条需后续诊断；收件同步0开启，入站观察0不能断言没人回复；公众号/已读均未知。
+- 下一步优先用户完成7446登录后核对真实完整批次及后续调度，再处理图文首屏分页/实时新评论队列、按相关性+活跃度分频、边采集边分析、需求到私信延迟。模型无积压而覆盖陈旧，应避免靠放宽纯组队为buyer“提升数量”。并发仍1，登录门槛未过不升压。完整Goal active，不能宣告全部需求完成。
+- 此段写入后准备私有源码增量备份，成功状态以data/github-backup/last-run.json新checked_at为准；之前23a2dab...只含20:14前源码。
+
+## 2026-09-14 20:41 旧验证码暂停判断已修复，新批次要求7446登录
+
+- 用户本人在20:18创建人工批次2878。实际3作品42条评论，5条通过采集过滤、37条过旧，未出现新的验证码诊断；其中图文7684911601669711857只读首页，原始partial。旧人工恢复逻辑只接受completed，误留needs_user并显示“正在人工处理”。
+- collection_recovery现在严格核验普通partial的全作品有效响应/结构、同原账号与冻结范围后，可接回未变更的原计划；保留partial和断点，不伪造验证码通过。重启/修改/停止仍使旧回调失效；新的显式开启可以复核同一人工批次后继续。115项采集/调度/恢复/账号回归通过。
+- 正常维护部署4文件，源码ZIP和两库备份完整，停止后/启动后业务计数一致；生产PID258324。恢复18群、直播、找群；9517身份核对12:35:02Z成功后恢复原授权outreach。前两次探测400没有保存错误正文，不能断言原因；第三次成功，没有测试或补发私信。
+- 20:34:36显式monitor-start成功。实际2879 partial(3作品70评论)、2880 partial(3作品31评论)自动连续执行，均7446/原账号。重复图文只能首屏，分页适配问题仍待查，不能称全批完整。
+- 2881于20:39:14 needs_login，页面明确“登录后可查看更多评论”“立即登录”；已保存有效评论响应但真实登录门槛出现，不当网络错误重试。没有新验证码可找。已通知用户到账号登录选择1267597446完成原账号登录。先前拒绝仅针对打开人工验证码窗口，本轮未绕渠道重试该操作。
+- 新实时事件4f3e3f7a-6f07-47af-9898-c6df1547b0c8收到20:41:05，核对健康与原诊断后20:41:31 ack needs_user；hold=0。旧评论事件758faf07仍needs_user，不能resolved。待7446登录后须核实实际completed及后续自动调度。
+- artifacts/manual-partial-recovery-20260914有before/before-stop/after-start、installed.json、runtime-verification.json、monitor-start.json和tests.log。首次只读observer误写表名collection_account_runs，已改为真实collection_task_accounts，未写生产DB。
+- 远端源码备份已恢复成功：23a2dab3e7faae01f18ad28a0ccfd631d74ad799，326文件，12:19:22Z；包含直播修复，不含本条人工partial修复。待后续源码增量备份。
+- 等待本人登录期间继续独立页面性能/汇总复盘工作。不要把新登录阻塞当作整个Goal blocked，仍有可执行开发。
+
 ## 2026-09-14 20:14 实时直播故障已修复，评论验证码仍待处理
 
 - 本轮收到实时事件35bfdc03-39b3-41c9-967c-26a8655e0114，live #585 failed。19:52:56已ack received；先核对健康与交接，立即中断页面提速工作。#585诊断仅1次请求、ERR_FAILED、navigation failed、HTTP未返回、无页面正文/连接，原track42变attention。

@@ -98,6 +98,42 @@ class DailyDashboardTests(unittest.TestCase):
         self.assertEqual(v['totals']['works'],1,'Today KPI is not the 90-day total')
         self.assertTrue(all(len(values)==len(v['labels']) for values in v['series'].values()))
 
+    def test_first_observation_dates_handle_repetition_urls_blank_and_future(self):
+        with app.db() as c:
+            for url,stamp,text in [
+                ('https://example.test/a','2026-09-13T01:00:00+08:00','fixture'),
+                ('https://example.test/a','2026-09-12T23:59:00+08:00','fixture'),
+                ('https://example.test/b','2026-09-12T16:00:00+00:00','fixture'),
+                ('https://example.test/b','2026-09-13T06:00:00+08:00','fixture'),
+                ('https://example.test/blank','2026-09-13T06:00:00+08:00','  '),
+                ('https://example.test/future','2026-09-14T00:00:00+08:00','fixture'),
+                ('https://example.test/invalid','invalid','fixture')]:
+                task=self.task(c)
+                c.execute('''INSERT INTO collection_observations(task_id,kind,external_id,
+                    page_url,observed_at,payload_hash,comment_text) VALUES(?,'comment','same-id',?,?,'hash',?)''',
+                    (task,url,stamp,text))
+            plan=' '.join(r['detail'] for r in c.execute('EXPLAIN QUERY PLAN '+dashboard.FIRST_COMMENTS))
+            self.assertIn('idx_observation_first_daily',plan)
+        v=dashboard.snapshot(reference=NOON)
+        self.assertEqual(v['series']['comments'][-2:],[1,1])
+        self.assertEqual(v['totals']['comments'],1)
+
+    def test_daily_index_migration_backs_up_and_preserves_observations(self):
+        with app.db() as c:
+            task=self.task(c)
+            c.execute('''INSERT INTO collection_observations(task_id,kind,external_id,page_url,
+                observed_at,payload_hash,comment_text) VALUES(?,'comment','1','https://example.test/a',?,'hash','fixture')''',(task,DAY))
+            before=[tuple(r) for r in c.execute('SELECT * FROM collection_observations')]
+            c.execute('DROP INDEX idx_observation_first_daily')
+        app.init()
+        backups=list((app.DATA_DIR/'backups').glob('*before-daily-comment-index-*'))
+        self.assertEqual(len(backups),1)
+        with app.db() as c:
+            self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM collection_observations')],before)
+            self.assertIsNotNone(c.execute("SELECT 1 FROM sqlite_master WHERE name='idx_observation_first_daily'").fetchone())
+        app.init()
+        self.assertEqual(len(list((app.DATA_DIR/'backups').glob('*before-daily-comment-index-*'))),1)
+
     def test_home_does_not_build_full_state_or_collect_network_state(self):
         with patch('clubops.state',side_effect=AssertionError('full state')),patch('server.collection_state',side_effect=AssertionError('collector state')):
             v=server.workbench_state('live','overview')
