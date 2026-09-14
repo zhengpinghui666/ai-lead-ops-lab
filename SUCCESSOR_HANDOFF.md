@@ -1,5 +1,27 @@
 # ClubOps 接续说明
 
+## 2026-09-14 08点：新作品历史查询嵌套扫描已定位并修复
+
+2264、随后2273的author/http在目录写入时超时。对2273的12/40/90秒无locals栈采样明确显示：主服务collector线程持锁停在discovery_tracking.record的首次作品历史断点查询，HTTP工作进程阻塞在discovery_catalog的stdout emit；群资料及其他写线程等待同一锁。身份、详情、作者HTTP页均正常。不是平台登录失效，不增加超时重试。上一节07点重放已有目录会跳过if not old，因此没有覆盖实际慢路径。
+
+真实库中collection_tasks和collection_checkpoints的sqlite_stat1仍为一行估计，原JOIN查询计划为SCAN t/SCAN k。discovery_tracking.SCHEMA增加(video_id,status,task_id DESC)索引；previous_completed_read先取本作品done断点，再逐项按任务主键读取finished_at，避免过旧统计让连接退化。语义仍为最大task_id中已完成done断点；不按完成时间重排，不修改历史分类/失败/人工暂停。
+
+187项discovery_tracking/video_discovery/collector_http/monitoring测试通过，包含5000历史任务、过旧统计和30条全新作品的SQLite指令预算，以及历史优先级、缺失/未完成/非done、索引重复迁移。真实库新副本2273任务/6435断点复现原嵌套扫描（100万指令仍未完成，主动中止只读查询）；新方案核对1795历史作品结果一致，30条全新作品完整入库约62.6ms。不是网络端到端或长期性能保证。
+
+已保存290文件源码及双库回退，正常停268044、启动原Windows任务为272112；跨重启业务及群读取计数一致、quick_check=ok，恢复原群/公开发现/自动私信开关。2274同一作者一页基线6秒completed（59条过旧）；原计划恢复后2275冻结3页配置逐字段不变，6秒completed（60条过旧），8条首次发现作品成功入库。下一自动2276已调度。2273旧timeout保留，旧live457限流和收件暂停未动，没有测试私信或历史重发。群现13个enabled/running/failures0（后台自然新增38），持续扩大覆盖仍开启。
+
+08:22追加验收：后续自动2276、2277均completed（分别60、57条过旧正常过滤），监控running；13群下一轮仍running/failures0。回退、只读栈、完整副本基准、维护及实际验收在artifacts/author-stall-fix-20260914。10分钟capture-stalls.py诊断已正常结束，不是新增常驻任务。源码备份以data/github-backup/last-run.json的本轮后续成功回执为准。
+
+## 2026-09-14 07点：作者目录超时已恢复，停顿根因未证实
+
+2255（author/http，源作品7613703782567841033、author_pages=3）在22:24:12–22:28:04 UTC超时，全局评论计划attention；身份、详情和3页目录HTTP200/有效结构都成功，无评论断点。仅20条目录关联2255，目录写入与群读取同时出现约百秒间隔；不能当网络失败或扩大有限重试白名单。系统日志对应时段未找到睡眠事件，这不足以确定具体原因。私有数据库副本中20条已保存目录重放仅0.063秒；该样本不含未提交的最后一组记录，不能据此排除其数据或锁等待问题。
+
+已按授权恢复且原配置不改：2256同一作者的一页手动验证4秒completed（2新/37旧）；然后允许原监控继续，2257确实重跑冻结作者来源与原3页预算，约102秒completed（2新/35旧），中间仍在第20条目录后停顿约百秒。下一自动搜索2258 completed（90旧），作品2259 completed（80旧），监控running、下一轮已安排。2255旧timeout保留，未增加自动超时重试、未改总超时阈值、未重启服务。没有更改业务代码，故无新增代码测试。
+
+artifact目录author-catalog-timeout-20260914保存源码回退、数据库profile-copy、配置与最终恢复验收。为抓复现栈局部安装了py-spy，仅在该artifact/profiler/bin中；不进入源码包或产品依赖。对268044取样时2257已完成，工作子进程已退出，故没有抓到真正阻塞栈。若同类问题再出现，工具已可用，优先在三页作者批次第20条后停顿时抓主服务和实际工作Python子进程的栈（不带locals），不要把本次恢复称为永久修复，也不要重复做已排除的泛HTTP/登录检查。
+
+补充排查：2257完成后，将该作者已保存的29条目录（包含文案及tags）放入新的数据库副本，按10/10/9重放并逐组提交，总耗时0.094秒，证据completed-catalog-copy.db、completed-catalog.prof及文本报告。单独处理这些已保存字段没有复现长停顿，仍需抓实际主服务锁/数据库提交/子进程管道阻塞时的栈，不能仅凭副本快就指认根因。
+
 ## 2026-09-14 05点：单条已删除作品造成全局暂停
 
 健康记录comments:attention/2151，10群正常，旧live457不变。2151 HTTP详情明确filter_reason=status_deleted、详情为空，旧作品限制枚举未包含该值；随后同作品评论comments:null且缺total/cursor，被正确视为未知格式，却导致全批停止。不能将未知空评论认作零评论。

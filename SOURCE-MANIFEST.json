@@ -168,8 +168,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "139c409e611a6441714a69c44bab5a8b9f40c20bcc5b85c5f221c68f91232458",
-      "bytes": 82676
+      "sha256": "320a0b7054d2f35eb7012bb4be08d147e004cbbfb1f55ee526de507c891e32ce",
+      "bytes": 87431
     },
     {
       "name": "UID_HTTP.md",
@@ -393,8 +393,8 @@
     },
     {
       "name": "discovery_tracking.py",
-      "sha256": "cad5fab5110dfb7c0a46f354adb77e6d883aa1eb0497b343f6ffc03301061980",
-      "bytes": 34789
+      "sha256": "7f3f9a47a77bf47d4585143c260b9d492ee2d28bde6cd75c91d06c2465bfb5b2",
+      "bytes": 35404
     },
     {
       "name": "evaluation/intent-development-v1.json",
@@ -1023,8 +1023,8 @@
     },
     {
       "name": "test_discovery_tracking.py",
-      "sha256": "1e5f627983655fbd708d0c43e41561a7dd8a5e74e1c264d2e489c5f20c95b9bd",
-      "bytes": 49431
+      "sha256": "c7196db4539bc18d425f7a85b9e4073b4748db6aec6ef2d95b3f87480dcc75b6",
+      "bytes": 53680
     },
     {
       "name": "test_freshness_audit.py",

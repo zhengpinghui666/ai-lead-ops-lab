@@ -31,7 +31,9 @@ CREATE TABLE IF NOT EXISTS discovery_jobs (
 );
 CREATE TABLE IF NOT EXISTS discovery_queries (keyword TEXT PRIMARY KEY,last_checked_at TEXT,next_check_at TEXT);
 CREATE INDEX IF NOT EXISTS idx_discovery_author ON discovery_works(author_sec_uid,author_sample);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_work_status_task ON collection_checkpoints(video_id,status,task_id DESC);
 '''
+
 DEFAULT = dict(enabled=False,keywords=['无畏契约陪玩','无畏契约陪练','瓦陪玩','无畏契约开黑','无畏契约复盘','VALORANT陪玩',
     '瓦','打瓦 陪玩','瓦搭子','瓦开黑','瓦陪练','瓦 点陪'],
     seed_videos=[],search_interval=300,author_interval=600,focus_interval=90,work_interval=60,
@@ -151,6 +153,17 @@ def author_command(body,mode='live'):
     return state(mode)
 
 
+def previous_completed_read(c,video_id):
+    # Start with this work's indexed checkpoints. Stale archive statistics can
+    # turn the equivalent JOIN into nested table scans under the shared lock;
+    # separate primary-key reads also stay fast when a historical match exists.
+    # Preserve highest task ID, not latest completion timestamp, as priority.
+    for checkpoint in c.execute("SELECT task_id FROM collection_checkpoints WHERE video_id=? AND status='done' ORDER BY task_id DESC",(video_id,)):
+        task=c.execute('SELECT finished_at FROM collection_tasks WHERE id=?',(checkpoint[0],)).fetchone()
+        if task and task[0] is not None:return task[0]
+    return None
+
+
 def record(c,rows,*,source,target,task=None):
     """Only callers holding the DB lock pass verified worker rows or local seeds."""
     if task and (task['finished_at'] or task['status']=='cancelling'):return
@@ -182,8 +195,8 @@ def record(c,rows,*,source,target,task=None):
           author_sample=MAX(discovery_works.author_sample,excluded.author_sample),last_seen_at=excluded.last_seen_at,last_task_id=COALESCE(excluded.last_task_id,discovery_works.last_task_id)''',
           (vid,sec or None,title,published,int(relevant),int(source=='author'),source,target,stamp,stamp,task['id'] if task else None,stamp))
         if not old:
-            previous=c.execute("SELECT t.finished_at FROM collection_checkpoints k JOIN collection_tasks t ON t.id=k.task_id WHERE k.video_id=? AND k.status='done' AND t.finished_at IS NOT NULL ORDER BY t.id DESC LIMIT 1",(vid,)).fetchone()
-            if previous:c.execute('UPDATE discovery_works SET last_checked_at=? WHERE video_id=?',(previous[0],vid))
+            previous=previous_completed_read(c,vid)
+            if previous is not None:c.execute('UPDATE discovery_works SET last_checked_at=? WHERE video_id=?',(previous,vid))
         if vid in paused:c.execute('UPDATE discovery_works SET enabled=0 WHERE video_id=?',(vid,))
         if exclusion_reason(title):
             c.execute('UPDATE discovery_works SET enabled=0,next_check_at=NULL WHERE video_id=?',(vid,))

@@ -50,6 +50,69 @@ class DiscoveryTrackingTests(unittest.TestCase):
               VALUES(?,'comment',?,?,?,?,?,?,?)''',
               (self.base,'activity-'+vid+suffix,'https://www.douyin.com/video/'+vid,observed,'synthetic',text,published,reason))
 
+    def checkpoint_history(self,c,task_id,video_id,*,finished=NOW,status='done'):
+        c.execute('''INSERT INTO collection_tasks
+          (id,request_id,kind,target,video_limit,comment_limit,interactive,status,created_at,updated_at,finished_at)
+          VALUES(?,?,'video',?,1,30,0,'completed',?,?,?)''',
+          (task_id,'synthetic-archive-'+str(task_id),video_id,NOW,NOW,finished))
+        c.execute('''INSERT INTO collection_checkpoints(task_id,video_id,video_title,video_url,status,updated_at)
+          VALUES(?,?,'synthetic history',?,?,?)''',
+          (task_id,video_id,'https://www.douyin.com/video/'+video_id,status,NOW))
+
+    def test_new_work_inherits_latest_finished_done_task_by_id_only(self):
+        vid=work(50)['video_id']
+        older=discovery.future(NOW,-100)
+        with app.db() as c:
+            self.checkpoint_history(c,100,vid,finished=NOW)
+            self.checkpoint_history(c,101,vid,finished=older)
+            self.checkpoint_history(c,102,vid,finished=None)
+            self.checkpoint_history(c,103,vid,status='pending')
+            self.checkpoint_history(c,104,vid,status='unavailable')
+            self.checkpoint_history(c,105,work(51)['video_id'])
+            before=[tuple(r) for r in c.execute('SELECT * FROM collection_checkpoints ORDER BY task_id,video_id')]
+            discovery.record(c,[work(50),work(52)],source='author',target=VID)
+            self.assertEqual(c.execute('SELECT last_checked_at FROM discovery_works WHERE video_id=?',(vid,)).fetchone()[0],older)
+            self.assertIsNone(c.execute('SELECT last_checked_at FROM discovery_works WHERE video_id=?',(work(52)['video_id'],)).fetchone()[0])
+            self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM collection_checkpoints ORDER BY task_id,video_id')],before)
+            # Rediscovery must not overwrite a newer check or a manual pause.
+            c.execute('UPDATE discovery_works SET last_checked_at=?,enabled=0 WHERE video_id=?',(NOW,vid))
+            discovery.record(c,[work(50)],source='author',target=VID)
+            self.assertEqual(tuple(c.execute('SELECT last_checked_at,enabled FROM discovery_works WHERE video_id=?',(vid,)).fetchone()),(NOW,0))
+
+    def test_brand_new_catalog_stays_bounded_with_large_archive_and_stale_statistics(self):
+        with app.db() as c:
+            # Production retained one-row planner estimates after thousands of
+            # tasks accumulated. Replaying existing catalog rows misses this.
+            c.execute('ANALYZE')
+            for task_id in range(100,5100):
+                self.checkpoint_history(c,task_id,work(10000+task_id)['video_id'])
+            steps=0
+            def budget():
+                nonlocal steps
+                steps+=1000
+                return int(steps>250000)
+            c.set_progress_handler(budget,1000)
+            try:
+                self.assertEqual(discovery.previous_completed_read(c,work(10100)['video_id']),NOW)
+                discovery.record(c,[work(i) for i in range(50,80)],source='author',target=VID)
+            finally:
+                c.set_progress_handler(None,0)
+            self.assertLessEqual(steps,250000)
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM discovery_works WHERE last_checked_at IS NULL AND video_id BETWEEN ? AND ?',
+                                      (work(50)['video_id'],work(79)['video_id'])).fetchone()[0],30)
+
+    def test_checkpoint_index_upgrade_is_idempotent_and_preserves_history(self):
+        with app.db() as c:
+            self.checkpoint_history(c,100,work(50)['video_id'])
+            c.execute('DROP INDEX idx_checkpoints_work_status_task')
+            before=[tuple(r) for r in c.execute('SELECT * FROM collection_checkpoints ORDER BY task_id,video_id')]
+        app.init();app.init()
+        with app.db() as c:
+            self.assertEqual([tuple(r) for r in c.execute('SELECT * FROM collection_checkpoints ORDER BY task_id,video_id')],before)
+            plan=' '.join(r[3] for r in c.execute("EXPLAIN QUERY PLAN SELECT task_id FROM collection_checkpoints WHERE video_id=? AND status='done' ORDER BY task_id DESC",(work(50)['video_id'],)))
+            self.assertIn('SEARCH',plan)
+            self.assertIn('idx_checkpoints_work_status_task',plan)
+
     def test_group_search_gets_a_turn_despite_unseen_general_keywords(self):
         self.save(keywords=['无畏契约合成新词'])
         with patch('uid_inbox_store._account',return_value='123456789'):
