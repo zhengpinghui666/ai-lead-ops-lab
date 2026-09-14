@@ -1,5 +1,18 @@
 # ClubOps 接续说明
 
+## 2026-09-14 17:43 接续重点（覆盖下方旧状态）
+
+- 用户明确：监控一旦意外暂停，最高优先级，先处理故障再做功能/UI。17:38+最新 API 仍评论 attention，最后2876 needs_verification，7446 点选 point_character_uncertain、submissions0；不能称已恢复。直播545 running，18群开启；不是其他渠道全停。原人工验证窗口工具操作被自动审批拒绝，仅 blocked by policy；本轮没有换通道重试该被拒操作。
+- 已把最高优先级写入现有 heartbeat clubops（保持小时频率、既有任务）及 incident_bridge.prompt 真实通知；合成通知不抢业务优先级。收到意外故障立即接手，不等整点；实际批次完成+后续自动调度才算恢复，需用户时明确阻塞。用户17:38追问未恢复，已说明此前只修了反馈、不等于解除平台验证。已核对前端：运行记录#2876→重新采集→浏览器通道→开始本批采集，collector-form interactive=true，账号由现有discovery职责绑定7446原环境；请用户本人在可见抖音窗口完成验证，再回工作台点已处理继续读取。尚未收到用户完成通知，不自行执行该被拒的打开窗口操作。
+- Incident Bridge 原计划退出后，16:46临时 exec watcher PID263876维持至17:25。现已部署 scripts/incident-watch.py 防状态文件短暂占用/账本读异常退出保护；独立 test_incident_watch.py 加入source-files。17:28重新启动原 Windows任务，PID251120，17:38+仍 Running、心跳新、watcher_error null、realtime_connected true。没有捕获原退出的准确异常，不能断言原故障就是文件锁。24项通知相关测试通过。未重启主业务服务，未改业务开关。
+- 首页图表尺寸与拥挤已热更新生产 static/app.js、app.css：ResizeObserver按实际容器重画坐标，12px刻度；合并重复状态行/验证码分类卡内呈现；每日数值移到共享弹窗，不内联撑/挤首屏；弹窗外点击关闭。20前端状态通过，真实Chromium本地GET fixture验证1912x956/1366x768/390x844两主题+明细弹窗，无横向溢出、桌面无整页下滚、开关明细不挤曲线。图宽1562/1016/332，高203/150/150。文件与截图 artifacts/account-ui-chart-20260914；before中保留app.js/app.css、watcher/bridge旧源码。
+- 用户接受实时新评论与历史补采分队列、增量、活跃突增提频、边采集边入分析、实际延迟验收；要以效果反推优化，一整天10条真实需求不合格。已在原维护任务加入小时只读汇总复盘与低产出诊断，不能为涨数量误纳纯搭子；还没有落实新的调度算法或真实并发提升。
+- 公众号未认证、有管理权，但用户明确先不急，先优化平台。暂停公众号接入，不再开登录/研究；刚才新建公众号Edge页曾超时，状态未知，勿重试。私信已读目前未接入，官方im_message_read权限不能假设私人号可用；本地SDK有participant read-index候选但未证明对方已读。
+- 多账号仍未部署：新源码stage为 artifacts/account-ui-chart-20260914/staging，从306生产文件复制，node_modules/.tools为junction。不要全量覆盖旧stage。已写 account_scope.py/account_admin.py/static/accounts.js/scripts/account-login.cjs、collection_accounts五职责与live绑定、group loop多scope、server接口、login.html新账号目录+任务详情+原手机设置二级modal、login.css。18账户合成测试及旧login UI通过。**visual-accounts.cjs桌面纵向溢出断言失败，尚未修好；不得声称页面已上线。** 所有账户登录测试为合成，没有调用实际登录窗口或发客户消息。
+- 该stage尚需解决：群GET/POST按账号、group_profiles节流key按账号、group_answers多账号、语义routing/eligible不能仍只承认主号、同群不同账号避免重复+角色变更未加入先核验入群。新group loop当前还缺这些，不能部署半成品。account_admin.shutdown新增取消/join/超时兜底待进程回归。新增live绑定有独立身份核对+cookie运行时传入，需检查实际续期与启动兼容。
+- 上线账户改造前必须迁移原primary9517注册(enabled=false roles[])为真实现有live/groups/outreach职责，保留原开关/9517私信通道；否则新intent_outreach.tick会因无角色静默停发。7446继续comments/discovery。新UI当前只允许已配置sender承担outreach，不支持多个私信发送者，不能称任意多号私信完成。所有stage文件尚未纳入生产source白名单。
+- 已授权私有源码备份最近成功 9a4e880918dce2e504685e3fd760d18c28708170（17点前的306文件版本）。当前新备份结果以 data/github-backup/last-run.json为准。不要将staging业务测试文件或artifacts/private数据纳入源码备份。
+
 ## 2026-09-14 16:39 当前生产状态（覆盖下方旧状态）
 
 - 用户最新关注：评论又暂停是否通知。真实通知 ee2a54e4-f44c-4cbf-a619-75d48c20b22e 于16:11:58投递当前开发任务、16:12:24实际接收；已明确向用户说明收到不等于修复。当前原计划仍 attention，last_task_id 2875；手动验证批次2876仍 needs_verification。故障原因是7446号搜索的点选验证码识别不确定，submissions=0，不能标为已恢复或继续升并发。

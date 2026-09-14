@@ -36,6 +36,16 @@ class BridgeTests(unittest.TestCase):
             self.assertIsNone(self.bridge.dispatch(runner=self.runner))
         self.runner.assert_not_called()
 
+    def test_real_fault_preempts_development_but_self_test_does_not(self):
+        delivery = {'id': 'fixture-delivery'}
+        actual = self.bridge.prompt(delivery, [{'channel': 'comments', 'metadata': '{}'}])
+        self.assertIn('最高优先级', actual)
+        self.assertIn('不等待定时巡检', actual)
+        self.assertIn('实际批次完成及后续自动调度', actual)
+        synthetic = self.bridge.prompt(delivery, [{'channel': 'self_test', 'metadata': '{}'}])
+        self.assertNotIn('最高优先级', synthetic)
+        self.assertIn('不修改业务数据', synthetic)
+
     def test_maintenance_does_not_reopen_an_acknowledged_channel_fault(self):
         failure=report('attention',2875,'needs_verification')
         self.bridge.observe(failure);did=self.bridge.dispatch(runner=self.runner)

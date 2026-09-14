@@ -147,15 +147,17 @@ class Bridge:
         python=Path(os.sys.executable)
         if python.name.lower()=='pythonw.exe':python=python.with_name('python.exe')
         command = f"& '{python}' '{BASE / 'scripts/incident-watch.py'}' --data-dir '{self.data_dir}' ack --id {delivery['id']}"
-        prefix = 'ClubOps 实时唤醒验收（合成通知，不是真实业务故障）' if test else 'ClubOps 实时故障通知（用户已授权自动诊断修复）'
+        prefix = 'ClubOps 实时唤醒验收（合成通知，不是真实业务故障）' if test else 'ClubOps 实时故障通知（最高优先级，用户已授权自动诊断修复）'
         return (f'{prefix}\n事件编号：{delivery["id"]}\n项目：{BASE}\n'
                 f'固定状态摘要：{json.dumps(metadata, ensure_ascii=False)}\n'
                 f'收到后先执行：{command} --state received\n' +
                 ('仅验证消息接收，不开启/关闭采集、不发送私信、不修改业务数据；接收后执行下述 resolved 回执。\n' if test else
+                 '监控意外暂停优先于功能和界面开发，收到后立即接手，不等待定时巡检。'
                  '先只读 data/monitor-health.json 和 SUCCESSOR_HANDOFF.md，核对故障是否仍存在。'
                  '用户授权必要代码修复、相关测试、保留回退备份后正常重启；复用原登录环境。'
                  '不将人工暂停、真实登录/验证码/限流/权限限制当成普通网络故障重试；需要用户处理时明确说明。'
-                 '不新增测试私信、补发历史私信或扩大范围。若另有开发正在进行，合并到当前工作，避免同时维护同一服务。\n') +
+                 '不新增测试私信、补发历史私信或扩大范围。若另有开发正在进行，先保存未完成工作并转入故障处理，避免同时维护同一服务。'
+                 '恢复须核实实际批次完成及后续自动调度；确需用户处理时明确阻塞，等待期间可推进独立工作。\n') +
                 f'修复并验证实际批次后执行：{command} --state resolved；'
                 f'需要用户处理则 --state needs_user；处理未完成则 --state failed。'
                 '回执只写独立通知账本，resolved 会复核原故障确已消失。'

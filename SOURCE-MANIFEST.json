@@ -173,8 +173,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "736f17cbad79d3c066a6df2707a9791635debc7ad57d698cbd9421cfdf07412c",
-      "bytes": 117404
+      "sha256": "c93b6445b7c05e204640a987bbf7eced19b00148bf625f6c2864027b7765a1b4",
+      "bytes": 122276
     },
     {
       "name": "UID_HTTP.md",
@@ -488,8 +488,8 @@
     },
     {
       "name": "incident_bridge.py",
-      "sha256": "53f9dd056c85f861e798248b53bc4a73460ecec5f4bb574bbb4fe4901acb3529",
-      "bytes": 18049
+      "sha256": "0b3885c236154de1cb72d3fdb99a3543d738d3e7a2d4b4f2d5dff43f6ae34733",
+      "bytes": 18356
     },
     {
       "name": "incident_push.py",
@@ -783,8 +783,8 @@
     },
     {
       "name": "scripts/incident-watch.py",
-      "sha256": "78e4ad3b0d4decd12faebb246ef0fe5640ca4d0e3c5aad4d9c415e9e970101ee",
-      "bytes": 4049
+      "sha256": "1b194e973a01c749df3c13bc9dc9a927f5a769b2ed11d8640236284d7a2fba25",
+      "bytes": 4639
     },
     {
       "name": "scripts/install-incident-watch.ps1",
@@ -893,8 +893,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "1de5a687adef20798f304c0ba793f2d7c64d28e5674eb2ce22343f5ed1ebaec5",
-      "bytes": 8989
+      "sha256": "6109f7ea65e3560beabb60d104edc6b55f6ddf950e9593a45bbd2398881ee31c",
+      "bytes": 9018
     },
     {
       "name": "start.ps1",
@@ -903,8 +903,8 @@
     },
     {
       "name": "static/app.css",
-      "sha256": "4df2f4fd4ac62c652241e6b3de596790d23357bbd26766d6af7f0afd3f4a8c6d",
-      "bytes": 85310
+      "sha256": "8426212cbd7f594a0d51c5983dc09df29e92e31debd787914a7fd50a25554f0c",
+      "bytes": 86303
     },
     {
       "name": "static/app.html",
@@ -913,8 +913,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "95c4cb993771a46cb3a147334872c2bb87655f6907ba94d0eba74632227e34ac",
-      "bytes": 227154
+      "sha256": "a2e452fefcbeb4a8771d8266643f43e8d78a4c2a852ad9d7f19da29362840f7a",
+      "bytes": 229166
     },
     {
       "name": "static/clubops-iphone.js",
@@ -1088,8 +1088,8 @@
     },
     {
       "name": "test_frontend.cjs",
-      "sha256": "d0f6bc1a031579d327220a7d56d52a6925158cb7f386b1061299d2308f82f0db",
-      "bytes": 50174
+      "sha256": "97baf251e1f29c277fca4609de2282427d945fbd7abe181ae1d118fc56cdd0c5",
+      "bytes": 50656
     },
     {
       "name": "test_frontend_live_history.cjs",
@@ -1153,13 +1153,18 @@
     },
     {
       "name": "test_incident_bridge.py",
-      "sha256": "4356cb7493463e392abd37abe92dfc83b6155fb728cf298bdb756c35b5604f14",
-      "bytes": 11475
+      "sha256": "9d279e30a3513d35646660f30f71cda0f2b5528d4406ab5019dfe888b3a2994a",
+      "bytes": 12073
     },
     {
       "name": "test_incident_push.py",
       "sha256": "40932f34c7e7733c48f2b29a1271134744b1c068ddb8202a189688a3e3da510d",
       "bytes": 2065
+    },
+    {
+      "name": "test_incident_watch.py",
+      "sha256": "7b68d407b9a2d3d4ad64e4e60085f0687b6d14fb9dd583492f19216198ea6a46",
+      "bytes": 1611
     },
     {
       "name": "test_intent_outreach.py",

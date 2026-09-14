@@ -109,7 +109,7 @@ const openPanelIds=()=>[...(document.querySelectorAll?.('details[id][open]')||[]
 const restorePanelIds=ids=>{for(const id of ids){const panel=document.getElementById?.(id);if(panel?.tagName==='DETAILS')panel.open=true;}};
 const metric=(label,note,value,ico,featured=false)=>`<div class="metric ${featured?'featured':''}"><div class="metric-label">${label}<span class="metric-icon">${icon(ico)}</span></div><strong>${fmt(value)}</strong><small>${note}</small></div>`;
 function toast(text,error=false){const el=$('#toast');el.textContent=text;el.className='show'+(error?' error':'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className='',5000);}
-function icons(){window.lucide?.createIcons();}
+function icons(){window.lucide?.createIcons();sizeDailyPlots();}
 let loadSequence=0,collectionPollTimer,collectionPolling=false,collectionReloadPending=false,collectionPanelPending=false;
 function renderNavigation(){
   if(!pages[page])page='overview';
@@ -239,6 +239,38 @@ function groupPage(){
   return header+alert+`<section class="card compact-status"><div><strong>${s.enabled} 个群正在监控</strong><p>群内只观察 · 初筛 → 模型 → 私信</p><small>最近读取 ${date(lastRead)} · 下方按消息发布时间排序</small><br><small>${s.discovery?.enabled?'正在持续找群':'自动找群已暂停'} · 待审核 ${fmt(s.discovery?.counts?.pending)}${s.profiles?` · 昵称已补齐 ${fmt(s.profiles.named)} / ${fmt(s.profiles.speakers)}`:''}</small></div>${sectionLink('groups/sources','管理群与加群')}</section><section class="card"><div class="card-head"><h2>群消息与筛选结果</h2><small>${groupBefore?'历史记录':'最新记录 · 自动更新'}</small></div><div class="result-toolbar"><div class="result-tabs">${[['all','全部消息'],['valuable','点单（板板）'],['supply','接单（陪陪）'],['club','俱乐部']].map(([key,label])=>button(label,'group-result-filter',`result-tab ${groupFilter===key?'selected':''}`,`data-filter="${key}" aria-pressed="${groupFilter===key}"`)).join('')}</div></div>${s.messages.length?`<div class="table-scroll"><table class="group-results-table"><thead><tr><th>用户 / 群聊</th><th>发言原文</th><th>筛选结果</th><th>发布时间</th><th></th></tr></thead><tbody>${s.messages.map(m=>`<tr><td><strong>${esc(m.nickname&&m.nickname!=='未提供昵称'?m.nickname:'用户 · '+String(m.uid).slice(-6))}</strong><small class="cell-sub">${esc(m.group_title)}</small></td><td class="message-excerpt">${esc(m.raw_text)}</td><td>${badge(groupMessageStage(m),m.category==='buyer'&&m.analysis_method==='model'?'good':'')}</td><td>${commentDate(m.published_at)}</td><td>${button('详情','group-message-detail','small subtle',`data-id="${m.id}"`)}</td></tr>`).join('')}</tbody></table></div>`:empty(groupLoading?'正在读取消息':'等待新的群消息','开启监控后，采集原文与筛选结果会显示在这里。','','')}<div class="card-foot actions">${s.has_more?button('更早消息','group-older','small'):''}${groupBefore?button('回到最新','group-refresh','small'):''}<small>同账号同用户与评论、弹幕共用私信去重记录</small></div></section>`;
 }
 
+function dailyPlotMarkup(config,width=520,height=210){
+  const {labels,series,lines,rates,trendDays,date}=config;
+  const left=56,right=20,top=18,bottom=32,plotWidth=width-left-right,plotHeight=height-top-bottom;
+  const ceiling=Math.max(1,...Object.values(series).flat().filter(Number.isFinite)),max=rates?100:ceiling<=5?Math.ceil(ceiling):Math.ceil(ceiling/5)*5;
+  const px=i=>left+(labels.length===1?.5:i/(labels.length-1))*plotWidth,py=n=>top+plotHeight-(n/max)*plotHeight;
+  const valueText=n=>n===null?'—':fmt(n)+(rates?'%':'');
+  const axes=[...new Set([0,Math.floor(max/2),max])].map(n=>`<line x1="${left}" x2="${width-right}" y1="${py(n)}" y2="${py(n)}" class="daily-gridline"/><text x="${left-8}" y="${py(n)+4}" text-anchor="end">${valueText(n)}</text>`).join('');
+  const ticks=[...new Set([0,Math.floor((labels.length-1)/2),labels.length-1])];
+  const paths=lines.map(([key,name,color],lineIndex)=>{
+    const values=series[key];let previous=false,path='';
+    values.forEach((n,i)=>{if(n===null||!Number.isFinite(n)){previous=false;return;}path+=`${previous?'L':'M'}${px(i)},${py(n)} `;previous=true;});
+    return `<path fill="none" stroke="${color}" stroke-width="2.5" ${lineIndex?'stroke-dasharray="'+(lineIndex===1?'6 3':'2 3')+'"':''} d="${path}"/>`+values.map((n,i)=>n===null||!Number.isFinite(n)?'':`<circle cx="${px(i)}" cy="${py(n)}" r="${trendDays>30?2:3}" fill="${color}"><title>${esc(name)} · ${esc(labels[i])} · 当日 ${valueText(n)}${labels[i]===date?'（截至当前）':''}</title></circle>`).join('');
+  });
+  return `<g>${axes}${ticks.map(i=>`<text x="${px(i)}" y="${height-7}" text-anchor="${labels.length===1?'middle':i===0?'start':i===labels.length-1?'end':'middle'}">${esc(labels[i].slice(5))}</text>`).join('')}${paths.join('')}</g>`;
+}
+let dailyPlotObserver;
+function sizeDailyPlots(){
+  if(typeof ResizeObserver==='undefined')return;
+  dailyPlotObserver?.disconnect();
+  dailyPlotObserver=new ResizeObserver(entries=>{
+    for(const {target,contentRect} of entries){
+      const width=Math.round(contentRect.width),height=Math.round(contentRect.height);
+      if(width<100||height<70)continue;
+      const svg=target.querySelector('svg');
+      if(!svg||svg.getAttribute('viewBox')===`0 0 ${width} ${height}`)continue;
+      svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+      svg.innerHTML=dailyPlotMarkup(JSON.parse(target.dataset.dailyPlot),width,height);
+    }
+  });
+  document.querySelectorAll('[data-daily-plot]').forEach(el=>dailyPlotObserver.observe(el));
+}
+
 function dailyChart(d,title,description,lines){
   if(d.granularity!=='day')return notice('每日数据正在更新，请稍后刷新。');
   const rates=lines.every(([key])=>key.startsWith('captcha_rate_'));
@@ -249,19 +281,16 @@ function dailyChart(d,title,description,lines){
   const labels=first<0?[]:windowLabels.slice(first),series=Object.fromEntries(lines.map(([key])=>[key,first<0?[]:windowSeries[key].slice(first)]));
   const rangeControls=`<div class="trend-range" role="group" aria-label="曲线时间范围">${[7,30,90].map(days=>button(`近 ${days} 天`,'trend-range',`small ${trendDays===days?'primary':''}`,`data-days="${days}" aria-pressed="${trendDays===days}"`)).join('')}</div>`;
   if(!labels.length)return `<section class="card daily-chart"><div class="card-head"><h2>${esc(title)}</h2>${rangeControls}</div><div class="daily-chart-body">${empty('所选时段暂无记录','从首次有数据的日期开始展示每日趋势。','','')}</div></section>`;
-  const width=520,height=210,left=48,right=20,top=16,bottom=30,plotWidth=width-left-right,plotHeight=height-top-bottom;
-  const ceiling=Math.max(1,...Object.values(series).flat().filter(Number.isFinite)),max=rates?100:ceiling<=5?Math.ceil(ceiling):Math.ceil(ceiling/5)*5;
-  const px=i=>left+(labels.length===1?.5:i/(labels.length-1))*plotWidth,py=n=>top+plotHeight-(n/max)*plotHeight;
+  const plotConfig={labels,series,lines,rates,trendDays,date:d.date};
   const valueText=n=>n===null?'—':fmt(n)+(rates?'%':'');
-  const axes=[...new Set([0,Math.floor(max/2),max])].map(n=>`<line x1="${left}" x2="${width-right}" y1="${py(n)}" y2="${py(n)}" class="daily-gridline"/><text x="${left-8}" y="${py(n)+4}" text-anchor="end">${valueText(n)}</text>`).join('');
-  const ticks=[...new Set([0,Math.floor((labels.length-1)/2),labels.length-1])];
-  const paths=lines.map(([key,name,color],lineIndex)=>{
-    const values=series[key];let previous=false,path='';
-    values.forEach((n,i)=>{if(n===null||!Number.isFinite(n)){previous=false;return;}path+=`${previous?'L':'M'}${px(i)},${py(n)} `;previous=true;});
-    return `<path fill="none" stroke="${color}" stroke-width="2.5" ${lineIndex?'stroke-dasharray="'+(lineIndex===1?'6 3':'2 3')+'"':''} d="${path}"/>`+values.map((n,i)=>n===null||!Number.isFinite(n)?'':`<circle cx="${px(i)}" cy="${py(n)}" r="${trendDays>30?2:3}" fill="${color}"><title>${esc(name)} · ${esc(labels[i])} · 当日 ${valueText(n)}${labels[i]===d.date?'（截至当前）':''}</title></circle>`).join('');
-  });
   const total=key=>rates?valueText(series[key].at(-1)):fmt(series[key].reduce((sum,n)=>sum+n,0));
-  return `<section class="card daily-chart"><div class="card-head"><div><h2>${esc(title)}</h2><small>${esc(description)} · 今日截至当前</small></div>${rangeControls}</div><div class="daily-chart-body"><div class="daily-legend">${lines.map(([key,name,color])=>`<span><i style="background:${color}"></i>${esc(name)}<b>${total(key)}</b></span>`).join('')}<small>${rates?'今日通过率 · — 表示未尝试':'所选时段合计'}</small></div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(title)}，最近 ${trendDays} 天，按日统计，从 ${esc(labels[0])} 开始。"><g>${axes}${ticks.map(i=>`<text x="${px(i)}" y="${height-7}" text-anchor="${labels.length===1?'middle':i===0?'start':i===labels.length-1?'end':'middle'}">${esc(labels[i].slice(5))}</text>`).join('')}${paths.join('')}</g></svg><details id="daily-table-${lines[0][0]}" class="daily-data-table"><summary>查看每日数值</summary><div class="table-scroll"><table><thead><tr><th>日期（北京时间）</th>${lines.map(([,name])=>`<th>${esc(name)}</th>`).join('')}</tr></thead><tbody>${labels.map((label,i)=>`<tr><td>${esc(label)}${label===d.date?' · 截至当前':''}</td>${lines.map(([key])=>`<td>${valueText(series[key][i])}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div></section>`;
+  return `<section class="card daily-chart"><div class="card-head"><div><h2>${esc(title)}</h2><small>${esc(description)} · 今日截至当前</small></div>${rangeControls}</div><div class="daily-chart-body"><div class="daily-legend">${lines.map(([key,name,color])=>`<span><i style="background:${color}"></i>${esc(name)}<b>${total(key)}</b></span>`).join('')}<small>${rates?'今日通过率 · — 表示未尝试':'所选时段合计'}</small></div><div class="daily-plot" data-daily-plot="${esc(JSON.stringify(plotConfig))}"><svg viewBox="0 0 520 210" role="img" aria-label="${esc(title)}，最近 ${trendDays} 天，按日统计，从 ${esc(labels[0])} 开始。">${dailyPlotMarkup(plotConfig)}</svg></div><div class="daily-chart-actions">${button('查看每日数值','daily-chart-table','small subtle',`data-chart="${esc(JSON.stringify(plotConfig))}"`)}${rates?button('提交与通过明细','captcha-daily-details','small subtle'):''}</div></div></section>`;
+}
+
+function dailyChartTable(config){
+  const {labels,series,lines,rates,date:today}=config;
+  const value=n=>n===null?'—':fmt(n)+(rates?'%':'');
+  showModal('每日数值',`<p class="muted">${rates?'按实际提交统计通过率；未尝试日期显示 —。':'每日新增数据；当天数值截至最近刷新。'}</p><div class="table-scroll"><table><thead><tr><th>日期（北京时间）</th>${lines.map(([,name])=>`<th>${esc(name)}</th>`).join('')}</tr></thead><tbody>${labels.map((label,i)=>`<tr><td>${esc(label)}${label===today?' · 截至当前':''}</td>${lines.map(([key])=>`<td>${value(series[key][i])}</td>`).join('')}</tr>`).reverse().join('')}</tbody></table></div>`);
 }
 
 function captchaTypeStrip(d){
@@ -294,11 +323,11 @@ function overview(){
   if(!d)return header+notice('今日看板数据尚未就绪，请稍后刷新。');
   const t=d.totals,c=d.captcha,r=d.runtime,p=r.monitor,attention=p?.status==='attention',latest=r.latest_batch;
   const tile=(label,value,note,path,featured=false)=>`<a class="metric overview-kpi ${featured?'featured':''}" href="#${path}"><span class="metric-label">${label}${icon('arrow-up-right')}</span><strong>${esc(value)}</strong><small>${note}</small></a>`;
-  return header+`<div class="daily-heading"><div><h2>今日运营 <span>${esc(d.date)}</span></h2><p>北京时间 00:00 至今 · 每 10 秒更新 · <time id="dashboard-as-of">${date(d.as_of)}</time></p></div>${badge(p?.status==='running'?'评论监控已开启':attention?'评论监控需处理':'评论监控未开启',attention?'warn':p?.status==='running'?'good':'')}</div><div id="dashboard-refresh-error" class="notice warn" role="status" hidden></div>`+
-  (attention?`<div class="notice warn attention-inline" role="status"><div><strong>评论监控需要处理</strong><p>${esc(latest?.status==='needs_verification'?'采集账号 '+(latest.collection_account?.account_id||'待核对')+' 需要完成平台验证码；'+(latest.verification?.submissions?'已有提交，尚未确认通过。':'本次未提交答案。')+(latest.verification?.reason==='point_character_uncertain'?'点选题识别不确定，需要人工核验。':'请查看验证码诊断。'):latest?.detail||p.detail||'请查看运行记录')}</p></div>${sectionLink('monitor/runs','处理异常')}</div>`:'')+
-  incidentFeedback(d)+
-  `<div class="overview-kpis">${tile('今日采集内容',fmt(t.comments+t.live+t.groups),`评论 ${fmt(t.comments)} · 弹幕 ${fmt(t.live)} · 群消息 ${fmt(t.groups)}`,'overview/metrics')}${tile('今日模型新增意向',fmt(t.intent_users),'跨来源按用户去重','leads',true)}${tile('今日私信接受',fmt(t.dm_accepted),'服务端接受 · 未确认送达','inbox')}${tile('验证码确认通过率',c.pass_rate===null?'未尝试':c.pass_rate+'%',`${c.passed} 次确认 / ${c.submitted} 次提交 · ${c.unknown} 次待确认`,'overview/metrics')}</div>
-  ${captchaTypeStrip(d)}<section class="card overview-process" aria-label="今日处理进度"><div><span>新增作品</span><b>${fmt(t.works)}</b></div><div><span>初筛通过</span><b>${fmt(t.screened)}</b></div><div><span>模型分析</span><b>${fmt(t.modeled)}</b></div><div><span>等待模型</span><b>${fmt(r.model_pending)}</b></div><a href="#overview/metrics">统计口径 ${icon('chevron-right')}</a></section>
+  const f=r.feedback||{},e=f.last_delivery,feedbackLabel=f.realtime_connected?'实时故障反馈已连接':'故障反馈连接需检查';
+  return header+`<div class="daily-heading overview-context"><p>今日运营 ${esc(d.date)} · 北京时间 00:00 至今 · <time id="dashboard-as-of">${date(d.as_of)}</time> 更新</p><div class="actions">${badge(p?.status==='running'?'评论监控已开启':attention?'评论监控需处理':'评论监控未开启',attention?'warn':p?.status==='running'?'good':'')}${button(feedbackLabel,'incident-details','small subtle')}</div></div><div id="dashboard-refresh-error" class="notice warn" role="status" hidden></div>`+
+  (attention?`<div class="notice warn attention-inline" role="status"><div><strong>评论监控需要处理</strong><p>${esc(latest?.status==='needs_verification'?'采集账号 '+(latest.collection_account?.account_id||'待核对')+' 需要完成平台验证码；'+(latest.verification?.submissions?'已有提交，尚未确认通过。':'本次未提交答案。')+(latest.verification?.reason==='point_character_uncertain'?'点选题识别不确定，需要人工核验。':'请查看验证码诊断。'):latest?.detail||p.detail||'请查看运行记录')}</p></div><div class="actions">${sectionLink('monitor/runs','处理异常')}${button('处理记录','incident-details','small')}</div></div>`:'')+
+  `<div class="overview-kpis">${tile('今日采集内容',fmt(t.comments+t.live+t.groups),`评论 ${fmt(t.comments)} · 弹幕 ${fmt(t.live)} · 群消息 ${fmt(t.groups)}`,'overview/metrics')}${tile('今日模型新增意向',fmt(t.intent_users),'跨来源按用户去重','leads',true)}${tile('今日私信接受',fmt(t.dm_accepted),'服务端接受 · 未确认送达','inbox')}${tile('验证码确认通过率',c.pass_rate===null?'未尝试':c.pass_rate+'%',`${c.passed} 次确认 / ${c.submitted} 次提交<br>${(c.types||[]).map(t=>`${esc(t.name==='其他／未识别类型'?'其他':t.name)} ${t.pass_rate===null?'—':t.pass_rate+'%'}`).join(' · ')}`,'overview/metrics')}</div>
+  <section class="card overview-process" aria-label="今日处理进度"><div><span>新增作品</span><b>${fmt(t.works)}</b></div><div><span>初筛通过</span><b>${fmt(t.screened)}</b></div><div><span>模型分析</span><b>${fmt(t.modeled)}</b></div><div><span>等待模型</span><b>${fmt(r.model_pending)}</b></div><a href="#overview/metrics">统计口径 ${icon('chevron-right')}</a></section>
   <div class="overview-trend"><div class="trend-switch" role="group" aria-label="增长曲线主题">${[['demand','需求与触达'],['collection','采集内容'],['analysis','作品与分析'],['captcha','验证码']].map(([key,name])=>button(name,'daily-trend',`small ${dailyTrend===key?'primary':''}`,`data-key="${key}" aria-pressed="${dailyTrend===key}"`)).join('')}</div>${dailyChart(d,...trendGroups[dailyTrend])}</div>
   <section class="overview-footer"><span>今日完成批次 <b>${fmt(t.batches_completed)}</b> · 异常批次 <b>${fmt(t.batches_error)}</b></span>${latest?`<a href="#monitor/runs">最近批次 #${latest.id} · ${esc(collectionLabels[latest.status]||latest.status)}</a>`:''}<span>公众号关注与客服添加数据未接入</span></section>`;
 }
@@ -593,6 +622,7 @@ case 'semantic-settings':showSettingsModal('模型设置',semanticPanel());break
 case 'uid-settings':uidSettingsDialog();break;
 case 'add-video': videoDialog();break;
 case 'collector-new': collectorDialog();break;
+case 'daily-chart-table': dailyChartTable(JSON.parse(el.dataset.chart));break;
 case 'captcha-daily-details': captchaDailyDetails();break;
 case 'incident-details': incidentDetails();break;
 case 'daily-trend': if(trendGroups[el.dataset.key]){dailyTrend=el.dataset.key;render(false);document.querySelector(`[data-action="daily-trend"][data-key="${dailyTrend}"]`)?.focus({preventScroll:true});}break;

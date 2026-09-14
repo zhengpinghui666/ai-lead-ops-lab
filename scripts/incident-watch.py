@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import sys
 import time
+import uuid
 
 BASE=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(BASE))
@@ -40,6 +41,40 @@ class DirectoryEvents:
         self.kernel.FindCloseChangeNotification(self.handle)
 
 
+def publish_status(directory, state):
+    """A brief Windows reader/replace collision must not kill the watcher."""
+    target=directory/'status.json'
+    temp=directory/('status-'+uuid.uuid4().hex+'.tmp')
+    try:
+        temp.write_text(json.dumps(state),encoding='utf8')
+        for attempt in range(3):
+            try:
+                temp.replace(target)
+                return True
+            except PermissionError:
+                if attempt<2:time.sleep(0.05)
+        return False
+    except OSError:
+        return False
+    finally:
+        try:temp.unlink(missing_ok=True)
+        except OSError:pass
+
+
+def pulse(bridge,port):
+    error=None
+    try:
+        bridge.observe(health(bridge.data_dir,port))
+        bridge.dispatch()
+    except Exception as exc:
+        error=type(exc).__name__
+    try:state=bridge.status()
+    except Exception as exc:
+        state=dict(mode='unavailable',enabled=False)
+        error=type(exc).__name__
+    return publish_status(bridge.directory,dict(state,heartbeat_at=time.time(),pid=os.getpid(),watcher_error=error))
+
+
 def run(bridge,port):
     import msvcrt
     lock=(bridge.directory/'watcher.lock').open('a+b')
@@ -52,15 +87,7 @@ def run(bridge,port):
     events=DirectoryEvents(bridge.data_dir)
     try:
         while True:
-            error=None
-            try:
-                bridge.observe(health(bridge.data_dir,port))
-                bridge.dispatch()
-            except Exception as exc:
-                error=type(exc).__name__  # no credential-bearing exception strings
-            state=dict(bridge.status(),heartbeat_at=time.time(),pid=os.getpid(),watcher_error=error)
-            target=bridge.directory/'status.json';temp=target.with_suffix('.tmp')
-            temp.write_text(json.dumps(state),encoding='utf8');temp.replace(target)
+            pulse(bridge,port)
             events.wait()
     finally:
         events.close();lock.close()
