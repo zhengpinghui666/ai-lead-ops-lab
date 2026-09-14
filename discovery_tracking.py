@@ -254,13 +254,17 @@ def select_work_targets(c,plan,instant,focused,paused):
         row['cadence']=policy;row['due_epoch']=due
         row['overdue_intervals']=(now-due)/policy['interval_seconds']
         eligible.append(row)
+    weighted_turn=turn%3!=2
+    def strong(row):
+        return row['cadence']['sufficient_samples'] and row['cadence']['score']>=70
     def rank(row):
         rotation=row['vertical'] and row['selection_group']=='rotation'
         revisit=rotation and turn%9 in (2,5)
         newer=row['vertical'] and not row['last_checked_at'] and turn%3!=2
-        # Preserve the existing exploration reservations. Within each pool,
-        # elapsed intervals prevent a busy work from perpetually taking slots.
-        return (bool(revisit and not row['last_checked_at']),
+        # Two turns protect evidence-backed service work from a cold backlog;
+        # the third keeps the previous exploration order. Within each weight
+        # group, overdue intervals rotate works instead of pinning one target.
+        return (not (weighted_turn and strong(row)),bool(revisit and not row['last_checked_at']),
                 -(work_cadence.epoch(row['published_at']) or 0) if newer else 0,
                 -row['overdue_intervals'], -row['cadence']['score'],row['due_epoch'],row['video_id'])
     eligible.sort(key=rank);rows=[];counts={}
@@ -273,13 +277,18 @@ def select_work_targets(c,plan,instant,focused,paused):
         def take(name):
             if queues[name]:selected.append(queues[name].popleft());return True
             return False
+        def take_weighted():
+            candidates=[q[0] for name,q in queues.items() if name!='active' and q and strong(q[0])]
+            return take(min(candidates,key=rank)['selection_group']) if weighted_turn and candidates else False
         if budget==1:
             cycle=('active','active','focused_new','rotation')
             for offset in range(len(cycle)):
-                if take(cycle[(turn+offset)%len(cycle)]):break
+                name=cycle[(turn+offset)%len(cycle)]
+                if name!='active' and take_weighted() or take(name):break
         else:
             reserved=int(reserve_exploration and bool(queues['focused_new'] or queues['rotation']))
             while len(selected)<budget-reserved and take('active'):pass
+            while len(selected)<budget and take_weighted():pass
             exploration=0
             while len(selected)<budget and (queues['focused_new'] or queues['rotation']):
                 preferred='rotation' if (turn+exploration)%3==2 else 'focused_new'
@@ -304,7 +313,8 @@ def select_work_targets(c,plan,instant,focused,paused):
         selected=select_pool(vertical or ordinary,limit)
     # Two of three rotation reservations revisit already checked work. The
     # third retains oldest-due exploration so an old unseen backlog also moves.
-    audit=dict(version='work-vertical-priority-v7-quiet-decay',turn=turn,activity_window_seconds=3600,
+    audit=dict(version='work-vertical-priority-v8-service-capacity',turn=turn,activity_window_seconds=3600,
+               service_priority_turn=weighted_turn,
                exploration_phase='revisit_due' if turn%9 in (2,5) else 'oldest_due' if turn%3==2 else 'newer_first_coverage',
                slots=[dict(video_id=r['video_id'],group=r['selection_group'],
                            vertical=bool(r['vertical']),

@@ -910,6 +910,57 @@ class DiscoveryTrackingTests(unittest.TestCase):
                 self.finish_work_job(job,'ratio-reservation-'+str(turn),instant)
         self.assertEqual(channels,['work','work','work','author'])
 
+    def service_priority_fixture(self):
+        self.save(work_interval=30)
+        self.record([work(i) for i in range(20)],source='search')
+        strong={work(18)['video_id'],work(19)['video_id']}
+        with app.db() as c:
+            c.execute('UPDATE discovery_works SET first_seen_at=?,next_check_at=?',
+                      (discovery.future(NOW,-86400),discovery.future(NOW,-86400)))
+            for vid in strong:
+                c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=? WHERE video_id=?',
+                          (discovery.future(NOW,-300),discovery.future(NOW,-210),vid))
+        for vid in strong:
+            for n in range(50):
+                self.activity(vid,discovery.future(NOW,-7200),suffix=str(n),
+                              text='点个陪玩' if n<6 else '合成普通评论')
+        return strong
+
+    def test_due_service_evidence_gets_capacity_despite_older_unchecked_backlog(self):
+        strong=self.service_priority_fixture()
+        with app.db() as c:
+            for turn in (0,1,3,4):
+                selected,_=self.selection_at_round(c,turn)
+                self.assertTrue(strong<={r['video_id'] for r in selected})
+            selected,_=self.selection_at_round(c,8)
+            self.assertTrue({r['video_id'] for r in selected}-strong,'Periodic exploration remains available')
+
+    def test_service_reservation_preserves_disabled_author_work_and_due_boundaries(self):
+        strong=self.service_priority_fixture();one,two=sorted(strong)
+        with app.db() as c:
+            c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=? WHERE video_id=?',
+                      (NOW,discovery.future(NOW,90),one))
+            c.execute('UPDATE videos SET enabled=0 WHERE external_id=?',(two,))
+            selected,_=self.selection_at_round(c,0)
+            self.assertFalse(strong & {r['video_id'] for r in selected})
+            c.execute('UPDATE videos SET enabled=1 WHERE external_id=?',(two,))
+            selected,_=self.selection_at_round(c,0,[two])
+            self.assertFalse(strong & {r['video_id'] for r in selected})
+            c.execute('UPDATE discovery_authors SET enabled=0')
+            self.assertEqual(self.selection_at_round(c,0)[0],[])
+
+    def test_service_reservation_retains_ordinary_pool_and_observed_activity(self):
+        strong=self.service_priority_fixture()
+        ordinary={**work(40),'video_title':'无畏契约普通集锦'}
+        self.record([ordinary],source='search')
+        busy=work(17)['video_id']
+        for n in range(3):self.activity(busy,discovery.future(NOW,-60-n),suffix=str(n))
+        with app.db() as c:
+            selected,_=self.selection_at_round(c,0)
+            ids={r['video_id'] for r in selected}
+            self.assertIn(ordinary['video_id'],ids);self.assertIn(busy,ids)
+            self.assertTrue(ids & strong);self.assertEqual(len(ids),3)
+
     def test_signal_migration_has_backup_and_preserves_business_records(self):
         self.save();self.record([work()]);self.activity(VID,discovery.future(NOW,-60))
         with app.db() as c:

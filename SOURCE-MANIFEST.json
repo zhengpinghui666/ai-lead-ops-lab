@@ -18,8 +18,8 @@
     },
     {
       "name": "AFTERNOON_REQUIREMENTS_20260914.md",
-      "sha256": "9d99036f05bcde86d8d807dde06c6c6a86b5a2db82bcc81165a61c34848197f6",
-      "bytes": 10937
+      "sha256": "41eddd32dd12bb01b61660bd494614d2fe1395784224527cfc60d113b33fb7b9",
+      "bytes": 11218
     },
     {
       "name": "ASSET_VERTICALITY.md",
@@ -203,8 +203,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "dad97f0b73e1345746f853e3613b29565072ec59abacf7a4687240ce5d6dc55f",
-      "bytes": 174668
+      "sha256": "797e52aeaccf67e25d934638878abea1eb93adbe1e9ef7629540158df36a313a",
+      "bytes": 177767
     },
     {
       "name": "UID_HTTP.md",
@@ -233,8 +233,8 @@
     },
     {
       "name": "WORK_CADENCE.md",
-      "sha256": "97b54f5d42c01441ade44e15f73dafa5c7810e0aa945a4273b1837203fdc31a3",
-      "bytes": 4584
+      "sha256": "7c71eb5a8e79ab083d7325be55c05107d28718edf6aa6e53bf97f6565fc158bb",
+      "bytes": 5549
     },
     {
       "name": "account_admin.py",
@@ -473,8 +473,8 @@
     },
     {
       "name": "discovery_tracking.py",
-      "sha256": "35caf7b47cbed7c907668b6fb267007e30551dcc66faff74d0446e42ae32eb02",
-      "bytes": 37912
+      "sha256": "ce01c8261c4f8a5bbc41b0dc4fb3f45b038fc710ea54d84e996796d51128b0e4",
+      "bytes": 38573
     },
     {
       "name": "evaluation/intent-development-v1.json",
@@ -988,8 +988,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "52fa633f74031914cdb5813163ef65fa4e19e297a462c6282b8b30b04e56ef02",
-      "bytes": 9774
+      "sha256": "a2b3b8a598ed9ece278ffe9ab9cfd25122043fa2efbfb5de155c65ad04c4b2c2",
+      "bytes": 10121
     },
     {
       "name": "start.ps1",
@@ -1208,8 +1208,8 @@
     },
     {
       "name": "test_discovery_tracking.py",
-      "sha256": "c18468aa387b6276659f5739f532acd17d5098bd19b41b3b5b0ea398d2f1570b",
-      "bytes": 64010
+      "sha256": "f9cac8c47e1a1b88aa0b7a3bb65f586fe8244b695396d71990e7b110e3a069ce",
+      "bytes": 67045
     },
     {
       "name": "test_freshness_audit.py",

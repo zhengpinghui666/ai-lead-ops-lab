@@ -1,5 +1,15 @@
+## 2026-09-15 04:16 高权重检查名额已落地，三路实际恢复核验
+
+- 04点先只读新鲜healthy文件，跳过故障诊断，按计划只读汇总与清单。0401汇总/明细/同小时对照、0400-scheduling和0400-analysis位于artifacts/operational-reviews。最近小时2327首次观察仅68在24h内（前日同小时1171/61），高权重52检查年龄中位40.9分钟/P95约2.98小时，未达标；模型无积压，今日20完成仅18noise/1seller/1social、4失败，无发送尝试。公众号/客服/已读未知，原inbox暂停；不能把0观测回复当实际0回复。
+- 证据：旧调度过去小时162作品名额仅27高权重，冷积压/首次读取先于充分相关作品。v8-service-capacity每3轮前2轮在原池内优先sufficient_samples且score>=70，第三轮保留旧探索。活跃优先、普通/垂直配额、作者/搜索机会、未来/关闭/暂停/冻结限制保留；分频阈值与工作预算没有增加。原7446/2路/3作品/30评论/30秒/24h不变。
+- 新积压反例在旧代码失败；98项相关隔离回归通过。固定内存模拟36作品轮次、108名额：高权重17→49、不同高权重17→44，首次覆盖两版均36；假定成功无新评论，非真实时效或转化。artifact high-weight-reservation-20260915-0407保存stage、baseline.db、simulation.json、tests.log与regression-before说明。
+- 保留源码ZIP、两SQLite快照、原哈希后正常退出257840并启动原系统任务，新PID246304。部署3文件discovery_tracking.py/test_discovery_tracking.py/WORK_CADENCE.md，清单345。ZIP中source-files.json出现重复同名提示，两个内容相同且源文件仍齐；无数据恢复覆盖。停止后/启动后8项业务计数相等，账号角色原样，原20群/直播/发现恢复、inbox保持暂停。9517独立HTTP身份通过后恢复原授权outreach，无测试或历史补发；maintenance hold已清0。
+- 3388/3389/3392/3393实际completed，优先轮各2高权重+1普通；3391探索轮无高权重且completed，3390/3394作者发现完成，未把探索饿死。716直播completed(211帧/9观察)于04:14:34，717后续自动running；群17952—17955等实际completed，health healthy。runtime-verification.json保存范围/角色/计数核对。一次只读群SQL误用不存在finished_at列，按PRAGMA后改查created_at成功，未写业务数据。
+- 本轮只补高权重容量，不勾选全局实时/历史队列或分钟时效。完整最新评论排序、跨批队列、并发更高实测、多游戏等仍见AFTERNOON清单。04点读取GitHub身份、私有repo和ref均成功，远端仍1c3f4b...，上一轮345源码未上传。此次源码备份在本段后有限重试，必须按新last-run时间及退出码判定，不沿用旧pushed。
+
 ## 2026-09-15 03:20 首页旧标签已刷新，评论本批前页优先实际验收
 
+- 03:23本次源码API备份失败：github_backup.py返回gh api退出码1。last-run.json仍是02:17旧成功1c3f4b.../343文件，不能视为当前345文件已远端备份；本轮源码ZIP/两库本地回退完整。未为备份失败停止正常业务，后续核对远端实际ref并作有限恢复。
 - 当前用户问题仍是“首页验证码为什么都是0”。再次读取正式overview API：今日09-15 encounters/submitted=0、pass_rate=null/not_attempted；历史27遇验证、6提交、0明确通过/失败、6未知；短信没有真实尝试。IAB标签9仍加载修复前JS，虽然实时取新数据，图表仍显示旧文案。通过CUA reload加载最新JS，实际首页显示“未尝试／今日未提交验证码／历史6次提交结果未确认”；切验证码图显示“尚无已确认的验证码结果”，不再绘制假0线。AX按钮两次因节点脱离失败，截图定位后点击成功；未更改数据或启动验证。
 - 03点维护先只读健康且healthy，没有新P0。复盘见artifacts/operational-reviews/20260915-0300-analysis.md。最近一小时2212首次观察，仅91在24h内；51高权重检查年龄中位39.8分钟/P95约2.82h，分钟覆盖仍不达标。今日16模型完成（15noise、1social）、4失败、1约12秒running，无新增发送记录。公众号/客服/已读未知，inbox原暂停，不把零观测当零实际回复。
 - 已热部署collector_http_worker前页优先：本批各已选作品先完成cursor0页，再共享原预算读历史/回复。生成器保留去重、分页版本和剩余预算；取消、平台gate或请求预算耗尽阻止后续，关闭已暂停生成器。诊断front-page-priority-v1明确newest_order_verified=false。无需主服务重启（各批独立启动worker），PID257840及全部业务开关/账号范围保持。
