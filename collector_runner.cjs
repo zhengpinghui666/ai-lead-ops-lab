@@ -35,7 +35,9 @@ async function pause(reader,code,detail=reasons[code]){
       check();
       await reader.diagnose(code); // Capture the post-attempt state, not only the initial prompt.
     }
-    if(!config.interactive)throw new Stop(code,'后台读取遇到需要处理的状态，本批已暂停并关闭后台浏览器；已有数据及已记录的验证码样本保留，请从工作台查看诊断。');
+    if(!config.interactive)throw new Stop(code,code==='needs_interaction'?
+      '作品页未取得可识别的评论响应；后台浏览器已关闭，已有数据与断点保留。此状态本身不代表出现验证码，请查看页面诊断。':
+      '后台读取遇到需要处理的状态，本批已暂停并关闭后台浏览器；已有数据及已记录的验证码样本保留，请从工作台查看诊断。');
     await reader.page.bringToFront?.().catch(()=>{});
     await status(code,detail+' 其他读取页暂停后续操作；已发出的请求仍可能完成。');
     await response;check();

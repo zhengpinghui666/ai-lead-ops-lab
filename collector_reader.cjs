@@ -24,13 +24,13 @@ function createReader(page,shared){
   async function wait(ms){const end=Date.now()+ms;while(Date.now()<end){check();await new Promise(r=>setTimeout(r,Math.min(250,end-Date.now())));}}
   async function bounded(promise,ms){let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('timeout')),ms);})]);}finally{clearTimeout(timer);}}
   async function visibleText(){return (await page.locator('body').innerText({timeout:3000}).catch(()=>'')).slice(0,100000);}
-  async function diagnose(stage){
+  async function diagnose(stage,extra={}){
     if(page.isClosed())return;
     if(stage==='needs_verification'){
       await emit({type:'diagnostic',stage:'captcha_dom',snapshot:{title:'验证码页面结构（不含图片与凭证）',visible_text:JSON.stringify(await describe(page)),responses:[]}});
     }
     let url='';try{const u=new URL(page.url());url=u.protocol==='https:'&&u.hostname==='www.douyin.com'?u.origin+u.pathname:'非抖音内容页';}catch{}
-    await emit({type:'diagnostic',stage,snapshot:{title:await page.title().catch(()=>''),page_url:url,visible_text:(await visibleText()).slice(0,2500),video_links:await page.locator('a[href*="/video/"]').count().catch(()=>0),responses:responseMeta.slice(-15),navigation_error:navigationError,navigation_http_status:navigationStatus,navigation_retry_after_seconds:navigationRetryAfter,processing:{pending:queue.pending,high_water:queue.highWater,capacity:8,concurrency:2}}});
+    await emit({type:'diagnostic',stage,snapshot:{title:await page.title().catch(()=>''),page_url:url,visible_text:(await visibleText()).slice(0,2500),video_links:await page.locator('a[href*="/video/"]').count().catch(()=>0),responses:responseMeta.slice(-15),navigation_error:navigationError,navigation_http_status:navigationStatus,navigation_retry_after_seconds:navigationRetryAfter,processing:{pending:queue.pending,high_water:queue.highWater,capacity:8,concurrency:2},...extra}});
   }
   async function pause(code,detail){await shared.pause(reader,code,detail);networkBlock='';}
   async function guard(){
@@ -221,14 +221,17 @@ function createReader(page,shared){
       await ready();const buttons=page.getByRole('button',{name:/^评论(?:\s|\d|$)/});
       if(await buttons.count()===1&&await buttons.first().isVisible()){await buttons.first().click({timeout:3000}).catch(()=>{});await wait(2500);await drain();}
     }
-    if(!recognized&&!commentResponses&&navigationStatus===200&&parser.contentPageKind(page.url(),row.video_id)==='video'&&
-        /(?:^|\n)\s*视频数据加载中\s*(?:\n|$)/.test(await visibleText())){
+    const loadingState=!recognized&&!commentResponses&&navigationStatus===200&&
+      parser.contentPageKind(page.url(),row.video_id)==='video'?parser.commentLoadingState(await visibleText()):'';
+    if(loadingState){
       // A real loading shell (task 2060) is not a request for human interaction.
       // Wait for this same video's data, with normal login/captcha/rate guards.
-      await diagnose('comment-loading');
+      await guard();
+      const loading={version:'comment-loading-v2',state:loadingState,wait_ms:8000};
+      await diagnose('comment-loading',{loading});
       for(let i=0;i<8&&!recognized&&!commentResponses;i++){await wait(1000);await drain();await guard();}
       if(!recognized&&!commentResponses){
-        await diagnose('comment-loading-timeout');
+        await diagnose('comment-loading-timeout',{loading});
         throw new Stop('network_error','作品仍未返回评论数据，已结束本批并保留断点，按网络故障策略退避。');
       }
     }

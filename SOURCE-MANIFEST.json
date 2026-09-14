@@ -168,8 +168,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "4ab457383e5dcffa0b129d4fb091cef539ebcbc5d2533015e068e5ad8c3890f4",
-      "bytes": 96917
+      "sha256": "516e5cbc85fd87ccd1a8dc15a7f316ec277f17998ee50cdb524876bc21a3552c",
+      "bytes": 99358
     },
     {
       "name": "UID_HTTP.md",
@@ -283,8 +283,8 @@
     },
     {
       "name": "collection_scheduler.py",
-      "sha256": "2ee6ade1d457eec0aa15f4442412204cb12a34afa061a30b11cd25de219885c0",
-      "bytes": 42535
+      "sha256": "2d7c18b8b1ae46978a602942b8341d68ce29e21d779984acc7343c4310277ecf",
+      "bytes": 42864
     },
     {
       "name": "collector.py",
@@ -308,8 +308,8 @@
     },
     {
       "name": "collector_parser.cjs",
-      "sha256": "c694c53238478178debcb5753911a27d59a39b3dafc71a6ed0cc3ff6adc220ac",
-      "bytes": 9385
+      "sha256": "ce8eab513b32ec38427a70714e37d3cc806eb6cc038697f4fbae6b7078616686",
+      "bytes": 9818
     },
     {
       "name": "collector_pool.cjs",
@@ -323,13 +323,13 @@
     },
     {
       "name": "collector_reader.cjs",
-      "sha256": "e437917598020508b5e4bf215013f6d9e0c213671fbc6b1d42d47be0a13e6d33",
-      "bytes": 23666
+      "sha256": "f43ed7c8a23e4fd3e161129e0eeddb3ca1c85338b52edf0eacb81e5fb67aa9bb",
+      "bytes": 23822
     },
     {
       "name": "collector_runner.cjs",
-      "sha256": "1e85cfaee0c01f95b090fd4d9e4bcc8121f903b0fa803e5e57d8ad09275c44ae",
-      "bytes": 9689
+      "sha256": "7276ed12332429e5bf9535256f9ff39609cf59142a024569606d4d4403509f3c",
+      "bytes": 9901
     },
     {
       "name": "collector_verification.cjs",
@@ -763,8 +763,8 @@
     },
     {
       "name": "scripts/monitor-health.py",
-      "sha256": "dff38b0cae368050ed2a0e582118691acdff68a3482322497a0f88173c75540a",
-      "bytes": 6381
+      "sha256": "ccfec76a9739db7c82c910110d92af50845fb8acb3c6493fb9e1016f57a33ee0",
+      "bytes": 6713
     },
     {
       "name": "scripts/prepare-collection-session.cjs",
@@ -1213,13 +1213,13 @@
     },
     {
       "name": "test_monitor_health.py",
-      "sha256": "29d2017adf6d3b045adc9e2f1cbda61831dc6da85f1b392e9ac6701f7b275a9c",
-      "bytes": 5028
+      "sha256": "77b6569af8e8143d11e21da307c8b3e9dee43d57ecc2ed813abc8610cc6b88f3",
+      "bytes": 5606
     },
     {
       "name": "test_monitoring.py",
-      "sha256": "4fbe3c8eb6d2345e7f31e5c0fd3544eb10bf157f0cd1ae30bb1c293b6093dacf",
-      "bytes": 65515
+      "sha256": "f747925e4dc243978860d286434060c544c73eb890f9a4a8dee48c5ac01798b3",
+      "bytes": 67447
     },
     {
       "name": "test_parallel_worker.cjs",
@@ -1363,8 +1363,8 @@
     },
     {
       "name": "test_worker.cjs",
-      "sha256": "d4072fd6a09744011df5f5753694c2917571afb55e43a70f146f62f2e359993f",
-      "bytes": 17146
+      "sha256": "4f2aed76bb54da5c42edd60395316cc73c3d9643e8fae71e1bec8a59a7f34821",
+      "bytes": 17854
     },
     {
       "name": "tests/fixtures/captcha/background.png",
@@ -1383,8 +1383,8 @@
     },
     {
       "name": "tests/fixtures/playwright_fixture.cjs",
-      "sha256": "1b72af816bc0a0dc2e11882b9ceaa51bb515f67c25184ddedec149c15884d10b",
-      "bytes": 12279
+      "sha256": "63f265b74e5c648a531f6012ea2f98f44ab67a2cf6ea13fe78d5784d3a974517",
+      "bytes": 12557
     },
     {
       "name": "tests/fixtures/playwright_parallel_fixture.cjs",

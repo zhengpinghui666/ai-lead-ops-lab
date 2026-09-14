@@ -23,6 +23,8 @@ def assess(name, plan, task, now):
         return {'state': 'unconfigured', 'issue': name + ':unconfigured'}
     enabled = plan['status'] == ('running' if name == 'comments' else 'enabled')
     result = {'state': plan['status'], 'last_task_id': plan.get('last_task_id', plan.get('last_session_id'))}
+    if task:
+        result.update(task_status=task.get('status'),task_finished_at=task.get('finished_at'))
     if not enabled:
         result['issue'] = name + ':' + plan['status']
     elif task and not task.get('finished_at'):
@@ -65,7 +67,10 @@ def assess_inbox(rows, now):
 
 def check(data_dir=BASE / 'data', port=8765):
     now = datetime.now(timezone.utc)
-    report = {'checked_at': now.isoformat(), 'status': 'healthy', 'issues': []}
+    # A local event/health file is not an acknowledgement from the Codex app.
+    # No outbound event receiver is implemented by this watcher.
+    report = {'checked_at': now.isoformat(), 'status': 'healthy', 'issues': [],
+              'feedback': {'mode': 'local_only', 'codex_push_connected': False}}
     try:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with opener.open(f'http://127.0.0.1:{port}/api/service', timeout=5) as response:

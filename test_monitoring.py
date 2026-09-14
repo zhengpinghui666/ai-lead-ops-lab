@@ -441,6 +441,28 @@ class MonitorTests(unittest.TestCase):
                 c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps({**snapshot,**change}),start))
                 self.assertIsNone(sch.transient_http_wait(c,row))
 
+    def test_open_comment_panel_loading_requires_exact_evidence_and_keeps_gates(self):
+        task=self.task();self.incomplete_page(task)
+        with app.db() as c:
+            c.execute("UPDATE collection_tasks SET status='network_error' WHERE id=?",(task,))
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            snapshot=dict(page_url='https://www.douyin.com/video/'+VIDEO,navigation_http_status=200,
+                navigation_error='',responses=[],visible_text='全部评论\n留下你的精彩评论吧\n大家都在搜：\n瓦\n加载中',
+                loading=dict(version='comment-loading-v2',state='comment_panel',wait_ms=8000))
+            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                (task,'comment-loading-timeout',json.dumps(snapshot),NOW))
+            self.assertIsNone(sch.transient_http_wait(c,row))
+            start=c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                (task,'comment-loading',json.dumps(snapshot),NOW)).lastrowid
+            self.assertEqual(sch.transient_http_wait(c,row),0)
+            for change in (dict(visible_text='加载中'),dict(loading={}),dict(page_url='https://www.douyin.com/video/99999999'),
+                           dict(navigation_http_status=403),dict(responses=[{'status':429}])):
+                c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps({**snapshot,**change}),start))
+                self.assertIsNone(sch.transient_http_wait(c,row))
+            c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps(snapshot),start))
+            c.execute("INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,'needs_verification','{}',?)",(task,NOW))
+            self.assertIsNone(sch.transient_http_wait(c,row))
+
     def test_nontext_quality_allows_retry_but_requires_complete_consistent_evidence(self):
         task=self.task();self.incomplete_page(task)
         page='https://www.douyin.com/video/'+VIDEO

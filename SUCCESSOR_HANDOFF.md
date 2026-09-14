@@ -1,5 +1,15 @@
 # ClubOps 接续说明
 
+## 2026-09-14 12:12 评论加载暂停与故障通知缺口
+
+11:55:25 批次2569（浏览器搜索）以needs_interaction结束，计划attention。同页诊断HTTP200、无导航错误、无评论响应；正文是正常作品页，含“全部评论／留下你的精彩评论吧／加载中”，无验证码样本、登录或限流证据。此前2567/2568 HTTP实读成功，故障monitor-incident事件18636在11:55:25已写入，但仅是本地日志。12:04对同作品7670835480107816308用原data/browser-profile后台浏览器复核2570 completed，30条均过旧，不因复核触发新增需求或测试私信；随后原24h监控恢复，2576—2578连续HTTP完成。
+
+修复：collector_parser.commentLoadingState区分视频壳与已展开评论区加载；仅同作品页面、HTTP200、尚无评论响应且明确加载提示时有界等待8秒，持续执行原登录/验证码/限流检查。超时保留network_error和断点，collection_scheduler仅对同目标、加载起点和超时均有证据的情况沿用有限退避；已验证的搜索隔离可继续独立HTTP轮询。不把未知空白、结构异常或真实验证码改成成功。needs_interaction的后台错误文案明确“未取得评论响应”，不再暗示一定有验证码。136项Python回归及完整test_worker.cjs子进程回归通过，覆盖新评论区延迟/超时/401/429/无关加载文案。
+
+通知现状必须如实说明：scripts/monitor-health.py每分钟只读；Codex原clubops任务每小时，目标01a09666-68bb-7860-979d-b3415b851bed。monitor-incident写库并不调用Codex，没有推送接收或确认。官方文档 https://learn.chatgpt.com/docs/automations?surface=app 说明事件触发只覆盖受支持的Gmail/Slack/GitHub且不适用于桌面；https://learn.chatgpt.com/docs/app-server 公开thread/resume与turn/start供自行集成，但当前项目未接入，也不能把单独启动另一个app-server等同于已连接当前桌面对话。此次未另建AI任务、擅自缩短周期或承诺秒级唤醒。健康文件现在标注feedback.mode=local_only、codex_push_connected=false，并附实际失败任务状态和结束时间；这只是透明诊断，绝不能宣称通知链路已修好。
+
+源码/双库回退及本次运行证据：artifacts/monitor-incident-20260914。最终重启及批次验证以后续验收文件为准；未恢复旧直播457限流和人工停用的收件入口。
+
 ## 2026-09-14 11:18 搜索正文丢失隔离、原IM会话更新
 
 10:58群修复验收后，评论2511再次partial进入attention。实据为浏览器comment-read HTTP200 JSON响应中body_unavailable/resource_missing，两个作品各一条；其余评论响应业务码0、无invalid_records。浏览器先收到请求响应、但Playwright无法取正文，不是JSON结构已变或平台无评论。旧策略最多对单一正文丢失重试3次，重复冻结同一搜索后停全局。

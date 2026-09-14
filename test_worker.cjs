@@ -23,6 +23,13 @@ const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
   assert.equal(loading[0].filter(m=>m.type==='comment').length,1);
   for(const messages of loading.slice(1))assert.ok(!messages.some(m=>m.type==='comment'));
   for(const messages of loading)assert.ok(!messages.some(m=>m.type==='status'&&m.status==='needs_interaction'));
+  const panels=await Promise.all(['panel-loading-delayed','panel-loading-timeout','panel-loading-limited','panel-loading-login','panel-loading-unrelated'].map(s=>run(s,{kind:'video'})));
+  assert.deepEqual(panels.map(terminal),['completed','network_error','rate_limited','needs_login','needs_interaction']);
+  assert.equal(panels[0].filter(m=>m.type==='comment').length,1);
+  for(const messages of panels.slice(1))assert.ok(!messages.some(m=>m.type==='comment'));
+  const panelProof=panels[1].find(m=>m.stage==='comment-loading').snapshot;
+  assert.deepEqual(panelProof.loading,{version:'comment-loading-v2',state:'comment_panel',wait_ms:8000});
+  assert.ok(!panels[4].some(m=>m.stage==='comment-loading'));
   if(process.env.CLUBOPS_TEST_LOADING_ONLY==='1'){console.log('PASS: delayed comments, bounded loading timeout, real rate limit and login guard. Synthetic only.');return;}
   const alternate=await Promise.all(['alternate-success','alternate-wrong-video','alternate-forbidden','alternate-limited','alternate-schema'].map(s=>run(s)));
   assert.equal(terminal(alternate[0]),'completed');

@@ -125,6 +125,12 @@ function pageVideoTitle(value,url,expectedVideo){
   if(!title||title===expectedVideo||title==='抖音'||/验证码中间页|发现更多精彩视频|安全验证|使用原设备扫码/.test(title))return '';
   return title;
 }
+function commentLoadingState(value) {
+  if(/(?:^|\n)\s*视频数据加载中\s*(?:\n|$)/.test(value))return 'video_shell';
+  // Task 2569: the video was visible but its open comment panel was still loading.
+  const lines=String(value||'').split('\n').map(line=>line.trim());
+  return lines.includes('全部评论')&&lines.includes('留下你的精彩评论吧')&&lines.includes('加载中')?'comment_panel':'';
+}
 function blockFromText(value) {
   if(/访问过于频繁|操作频繁|请求过于频繁|稍后再试.{0,12}频繁/.test(value))return 'rate_limited';
   if(/验证码中间页|拖动滑块|请完成.{0,8}验证|安全验证|完成下方验证|验证码验证|使用原设备扫码|为保障账号安全[\s\S]{0,80}扫码验证/.test(value))return 'needs_verification';
@@ -140,4 +146,4 @@ function blockFromBody(body){
   const reason=body.search_nil_info?.search_nil_type;
   return typeof reason==='string'&&/verify|antispam|risk|captcha/i.test(reason)?'needs_verification':'';
 }
-module.exports={id,video,searchVideos,searchResponseShape,isEmptySearchResponse,comments,responseKind,contentPageKind,pageVideoTitle,blockFromText,blockFromBody,inSearchScope,searchPageMatches,outsideServiceScope};
+module.exports={id,video,searchVideos,searchResponseShape,isEmptySearchResponse,comments,responseKind,contentPageKind,pageVideoTitle,commentLoadingState,blockFromText,blockFromBody,inSearchScope,searchPageMatches,outsideServiceScope};

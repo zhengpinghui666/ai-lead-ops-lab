@@ -24,9 +24,12 @@ def transient_http_wait(connection, task):
         loading=set()
         for row in rows:
             snapshot=json.loads(row['snapshot'])
+            lines={line.strip() for line in snapshot.get('visible_text','').splitlines()}
+            panel_loading=(snapshot.get('loading')==dict(version='comment-loading-v2',state='comment_panel',wait_ms=8000)
+                           and {'全部评论','留下你的精彩评论吧','加载中'}<=lines)
             if (row['stage']=='comment-loading' and snapshot.get('page_url') in expected
                     and snapshot.get('navigation_http_status')==200 and not snapshot.get('navigation_error')
-                    and snapshot.get('responses')==[] and re.search(r'(?:^|\n)\s*视频数据加载中\s*(?:\n|$)',snapshot.get('visible_text',''))):
+                    and snapshot.get('responses')==[] and (panel_loading or re.search(r'(?:^|\n)\s*视频数据加载中\s*(?:\n|$)',snapshot.get('visible_text','')))):
                 loading.add(snapshot['page_url'])
         for row in rows:
             if row['stage'] in ('captcha_workflow', 'captcha_dom', 'needs_login', 'needs_verification'):

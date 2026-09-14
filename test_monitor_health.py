@@ -25,6 +25,13 @@ class HealthTests(unittest.TestCase):
         plan = {'status': 'running', 'next_run_at': '2026-09-13T00:20:00Z', 'updated_at': '2026-09-12T20:00:00Z'}
         self.assertNotIn('issue', health.assess('comments', plan, {'finished_at': '2026-09-12T20:00:00Z'}, NOW))
 
+    def test_failure_includes_task_reason_without_private_detail(self):
+        result=health.assess('comments',{'status':'attention','last_task_id':2569},
+            {'status':'needs_interaction','finished_at':'2026-09-13T00:00:00Z','detail':'PRIVATE_SENTINEL'},NOW)
+        self.assertEqual(result['task_status'],'needs_interaction')
+        self.assertEqual(result['task_finished_at'],'2026-09-13T00:00:00Z')
+        self.assertNotIn('PRIVATE_SENTINEL',json.dumps(result))
+
     def test_running_task_has_its_own_progress_clock(self):
         plan = {'status': 'enabled', 'next_run_at': '2026-09-12T20:00:00Z'}
         task = {'updated_at': '2026-09-12T23:59:30Z', 'finished_at': None}
@@ -73,6 +80,7 @@ class HealthTests(unittest.TestCase):
             opener=Mock();opener.open.return_value=io.BytesIO(json.dumps({'status':'running'}).encode())
             with patch.object(health.urllib.request,'build_opener',return_value=opener):result=health.check(folder,8765)
             self.assertEqual(result['status'],'attention');self.assertIn('inbox_sync:1:attention',result['issues'])
+            self.assertEqual(result['feedback'],{'mode':'local_only','codex_push_connected':False})
             self.assertEqual(result['inbox_sync']['configured'],2)
             opener.open.assert_called_once_with('http://127.0.0.1:8765/api/service',timeout=5)
             self.assertNotIn('synthetic-private-profile',json.dumps(result));self.assertEqual(path.read_bytes(),before)
