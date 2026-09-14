@@ -148,13 +148,13 @@
     },
     {
       "name": "REALTIME_INCIDENTS.md",
-      "sha256": "4e04e17485131020405f34d0a04efb989c085f045e72f994ad723edfbcc39e47",
-      "bytes": 3453
+      "sha256": "041601fbb615bd40f901d5f0b80a85b74b58dcaae6c004dd4ddfbb82a603593a",
+      "bytes": 3819
     },
     {
       "name": "REQUIREMENTS_DISCUSSION.md",
-      "sha256": "a7b4cfc0314c6f46d5ca107a8422d189d72b58694bde0ba38eceb6b5a05d6cf8",
-      "bytes": 23059
+      "sha256": "6d8d0388e8fc644f05852a0e630ae2fb39633e79d54b6e1c5c07a4eae4773a86",
+      "bytes": 23697
     },
     {
       "name": "RULES.md",
@@ -173,8 +173,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "94536fb35d974a447b268008cb1318494941e62e1faa26bf269d16986d6d5fdf",
-      "bytes": 103305
+      "sha256": "48d833e567fe98fda69451d21f644dbc6d0b7f522bb3000afc0b8a6dca9bcbe6",
+      "bytes": 106684
     },
     {
       "name": "UID_HTTP.md",
