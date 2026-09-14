@@ -320,5 +320,9 @@
   "uid_session_renewal.py",
   "uid_transport.py",
   "video_discovery.py",
-  "video_metadata.py"
+  "video_metadata.py",
+  "live_navigation.cjs",
+  "test_live_navigation.cjs",
+  "live_recovery.py",
+  "test_live_recovery.py"
 ]

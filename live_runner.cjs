@@ -6,7 +6,7 @@ const input=readline.createInterface({input:process.stdin});
 let config,context,stopping=false,finish,queued=0,tail=Promise.resolve(),received=0,frames=0,invalid=0,connected=0,boundRoom=null;
 let reason='completed',timer,guardTimer,closeTimer,activeSocket;const methodCounts={},errorCounts={},timestamps={};
 const pageInfo={navigation:'not_started',http_status:null,body_chars:0,gate:'unknown'},socketTargets=[];
-const networkInfo={requests:0,failures:{},script_errors:{},live_responses:{},live_routes:{}};
+const networkInfo={requests:0,failures:{},script_errors:{},live_responses:{},live_routes:{},navigation_attempts:0};
 let pollTail=Promise.resolve(),pollQueued=0;const pollInfo={responses:0,decoded:0,missing_room:0,decode_errors:0,body_errors:0,oversized:0,empty_bodies:0,empty_messages:0,max_bytes:0};const pollFields={},transports=new Set();
 let validMessages=false,connectionLost=false,lastTransport=null;
 function countDiagnostic(group,key){if(Object.hasOwn(group,key)||Object.keys(group).length<20)group[key]=Math.min(1000000,(group[key]||0)+1);}
@@ -104,7 +104,11 @@ async function main(){
       ws.on('socketerror',lost);
     });
     pageInfo.navigation='loading';
-    const navigation=await page.goto(config.room_url,{waitUntil:'domcontentloaded',timeout:25000});
+    const navigation=await require('./live_navigation.cjs').navigate(page,config.room_url,{
+      stopped:()=>stopping,
+      attempt:number=>{networkInfo.navigation_attempts=number;},
+      retry:()=>emit({type:'status',status:'connecting'})
+    });
     pageInfo.navigation='loaded';pageInfo.http_status=navigation?.status()||null;
     if(stopping)return;
     clearTimeout(timer);timer=setTimeout(()=>stop(budgetStatus()),config.duration_seconds*1000);

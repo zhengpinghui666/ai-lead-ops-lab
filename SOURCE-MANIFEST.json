@@ -98,8 +98,8 @@
     },
     {
       "name": "LIVE_MONITOR.md",
-      "sha256": "2104c0e4c0d6a7ad3d3881963be7bb8a00f988e52b9183a8bca8a6420f8f718a",
-      "bytes": 15491
+      "sha256": "26ac07dff6e1adbdef867260e76c95e96079eca4a7a2292a99f4d39f30242393",
+      "bytes": 16997
     },
     {
       "name": "LIVE_RULES.md",
@@ -183,8 +183,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "32cd9bfcc84463b9badf2af8b3f9826825c049d46a0776d88c93e1d930d55332",
-      "bytes": 135995
+      "sha256": "bcbf558d828b2943e9a2e0f1ffe119a170a89b7bce2ea0b28add40feb00465de",
+      "bytes": 140365
     },
     {
       "name": "UID_HTTP.md",
@@ -658,13 +658,23 @@
     },
     {
       "name": "live_monitor.py",
-      "sha256": "a99cb9df2c89195413cc6eaf2b9ed48cbdaec1638ac1e922365b00dc535b7e0d",
-      "bytes": 29377
+      "sha256": "3f76760d189aa9c8bda162148f6bcb6c1d613159a7847c3a070407d3d365942a",
+      "bytes": 30871
+    },
+    {
+      "name": "live_navigation.cjs",
+      "sha256": "f88c2a22c61e8edba3c87b6f38cfcd676b9bbc332b589f9217fb2317590f3800",
+      "bytes": 2205
     },
     {
       "name": "live_protocol.cjs",
       "sha256": "379be29fa9bfc0cca74f7185bd20db9b5eea10af861469ab4950c061103f1204",
       "bytes": 5677
+    },
+    {
+      "name": "live_recovery.py",
+      "sha256": "683bec19f9c590b87210581b95204adb48f1a8c0b616b6419c2b42de1000c542",
+      "bytes": 3444
     },
     {
       "name": "live_room_pool.py",
@@ -678,8 +688,8 @@
     },
     {
       "name": "live_runner.cjs",
-      "sha256": "1236a87fb607ef560db3362b56bccc36ef618fea91973d428ddaa399ddcdfdb1",
-      "bytes": 10975
+      "sha256": "419300f6898da0da5b89e58f7e94211e2aa4b3417eb6be67f75cf82d30858293",
+      "bytes": 11148
     },
     {
       "name": "live_tracking.py",
@@ -928,8 +938,8 @@
     },
     {
       "name": "server.py",
-      "sha256": "bf69c03265653997e5d14466ffa5cb298a635413fd174a868b1afaa34fa61134",
-      "bytes": 29046
+      "sha256": "901fe464d85107358f58bef054a448657f0ea8df5255e3952c7c643725d2a143",
+      "bytes": 29190
     },
     {
       "name": "service_roles.py",
@@ -938,8 +948,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "e4e7860a8954c34a2dcdecaac1dc0b05aaa3234653912bde2839ef08f7c30eb9",
-      "bytes": 9420
+      "sha256": "0ac1b723c55d3d81c443d42b01c30665b4583dd238733b16705d2aace9bd0f6b",
+      "bytes": 9528
     },
     {
       "name": "start.ps1",
@@ -1277,9 +1287,19 @@
       "bytes": 16132
     },
     {
+      "name": "test_live_navigation.cjs",
+      "sha256": "6a15d2282fe6317d0d683903ad6a585e9b56f413df8e6ad1171f240e9e1dea58",
+      "bytes": 3476
+    },
+    {
       "name": "test_live_protocol.cjs",
       "sha256": "33b5c9f54c22e8ff8f190427c305f495dcf20c5a66d37c6d8821e92a374760c0",
       "bytes": 4459
+    },
+    {
+      "name": "test_live_recovery.py",
+      "sha256": "042f607b350903181e9f45a3f1b6252849decbb58ca3a56135d867c313bfc509",
+      "bytes": 7364
     },
     {
       "name": "test_live_room_pool.py",
@@ -1293,8 +1313,8 @@
     },
     {
       "name": "test_live_runner.cjs",
-      "sha256": "09e639968408b0a3f0b0e7acbcde7a2be9bc5f67eb13bacee144dc346b50ea91",
-      "bytes": 8493
+      "sha256": "cfeb94b11ccb60c7061d1f346fa5f5dfd06f22896cb2383d0da5bfe14a523410",
+      "bytes": 8515
     },
     {
       "name": "test_live_tracking.py",

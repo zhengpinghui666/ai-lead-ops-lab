@@ -230,9 +230,11 @@ def receive(session_id, message):
                     or not re.fullmatch(r'[a-z0-9.-]{1,100}',v['host']) or not re.fullmatch(r'[/a-zA-Z0-9_-]{1,200}',v['path']) for v in sockets):
                 raise ValueError('连接诊断无效')
             network = message.get('network', {})
-            if not isinstance(network, dict) or network and (set(network) not in ({'requests','failures','script_errors','live_responses'}, {'requests','failures','script_errors','live_responses','live_routes'})
+            if not isinstance(network, dict) or network and (set(network)-{'navigation_attempts'} not in ({'requests','failures','script_errors','live_responses'}, {'requests','failures','script_errors','live_responses','live_routes'})
                     or type(network['requests']) is not int or not 0 <= network['requests'] <= 1000000):
                 raise ValueError('网络诊断无效')
+            if 'navigation_attempts' in network and (type(network['navigation_attempts']) is not int or not 0 <= network['navigation_attempts'] <= 3):
+                raise ValueError('导航尝试次数无效')
             for key, pattern in [('failures', r'(?:ERR_[A-Z_]{1,50}|other)'), ('script_errors', r'(?:TypeError|ReferenceError|SyntaxError|RangeError|Error|NotSupportedError|NotAllowedError|AbortError|SecurityError|NetworkError|InvalidStateError|other)'), ('live_responses', r'[1-5][0-9]{2}'), ('live_routes', r'/webcast/[a-zA-Z0-9/_-]{1,100}')]:
                 group = network.get(key, {})
                 if not isinstance(group, dict) or len(group) > 20 or any(not re.fullmatch(pattern, k) or type(v) is not int or not 0 <= v <= 1000000 for k, v in group.items()):
@@ -304,7 +306,7 @@ def receive(session_id, message):
         semantic_queue.enqueue('live', [message_id])
 
 
-def start(body, mode='live', *, _tracking_config=None):
+def start(body, mode='live', *, _tracking_config=None, _retry_from=None):
     if mode != 'live':
         raise ValueError('演示区不连接真实直播间')
     request_id = body.get('request_id')
@@ -312,6 +314,19 @@ def start(body, mode='live', *, _tracking_config=None):
         raise ValueError('缺少本次启动的唯一请求 ID')
     config = options(_tracking_config if _tracking_config is not None else settings())
     with GUARD, app.LOCKS['live'], app.db() as c:
+        frozen = None
+        if _retry_from is not None:
+            import live_recovery, collection_accounts
+            parent = c.execute('SELECT * FROM live_sessions WHERE id=?', (_retry_from,)).fetchone()
+            if _tracking_config is None or not live_recovery.eligible(c, parent):
+                raise ValueError('没有可恢复的原直播连接故障')
+            original = json.loads(parent['config'])
+            config = options(original)
+            frozen = original.get('collection_account')
+            matches = [r for r in collection_accounts.role_accounts(c, 'live')
+                       if frozen and all(r[k] == frozen[k] for k in ('account_id','sender_uid','storage'))]
+            if not matches or c.execute('SELECT 1 FROM account_login_jobs WHERE account_id=? AND finished_at IS NULL', (frozen['account_id'],)).fetchone():
+                raise ValueError('原账号任务分工或登录状态已变化，不能换号恢复')
         old = c.execute('SELECT id,status FROM live_sessions WHERE request_id=?', (request_id,)).fetchone()
         if old:
             return dict(old)
@@ -326,7 +341,10 @@ def start(body, mode='live', *, _tracking_config=None):
         sid = c.execute('INSERT INTO live_sessions(request_id,room_url,config,status,detail,started_at,updated_at) VALUES(?,?,?,?,?,?,?)',
                         (request_id, config['room_url'], json.dumps(config, ensure_ascii=False), 'connecting', DETAILS['connecting'], app.now(), app.now())).lastrowid
         import collection_accounts
-        assigned=collection_accounts.select_role(c,'live','live:'+str(sid))
+        assigned=frozen or collection_accounts.select_role(c,'live','live:'+str(sid))
+        if frozen:
+            c.execute('INSERT INTO account_role_runs(run_key,account_id,sender_uid,storage,role,created_at) VALUES(?,?,?,?,?,?)',
+                      ('live:'+str(sid), frozen['account_id'], frozen['sender_uid'], frozen['storage'], 'live', app.now()))
         if assigned:
             config=dict(config,collection_account={k:assigned[k] for k in ('account_id','sender_uid','storage')})
             c.execute('UPDATE live_sessions SET config=? WHERE id=?',(json.dumps(config,ensure_ascii=False),sid))

@@ -357,6 +357,9 @@ class Handler(BaseHTTPRequestHandler):
                 result = live_tracking.start(body, mode)
             elif action == 'live-track-stop':
                 result = live_tracking.stop(body.get('id'), mode)
+            elif action == 'live-connection-retry':
+                import live_recovery
+                result = live_recovery.retry(body, mode)
             elif action == 'live-discover':
                 import live_discovery
                 result = live_discovery.discover(mode)

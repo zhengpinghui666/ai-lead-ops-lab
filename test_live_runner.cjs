@@ -50,7 +50,7 @@ async function run(scenario,buffer){
 (async()=>{
  let rows=await run('normal',frame([message()]));assert.equal(rows.filter(r=>r.type==='message').length,1);assert.equal(rows.at(-1).status,'completed');
  const diagnostic=rows.find(r=>r.type==='diagnostic');assert.equal(diagnostic.page.navigation,'loaded');assert.equal(diagnostic.sockets.length,1);assert.equal(diagnostic.sockets[0].path,'/webcast/im/push/v2/');assert.ok(!JSON.stringify(diagnostic).includes('secret'));assert.ok(!JSON.stringify(diagnostic).includes('room_id'));
- assert.deepEqual(diagnostic.network,{requests:1,failures:{ERR_CONNECTION_CLOSED:1},script_errors:{TypeError:1},live_responses:{200:1},live_routes:{'/webcast/im/fetch/':1}});assert.ok(!JSON.stringify(diagnostic).includes('private test content'));
+ assert.deepEqual(diagnostic.network,{requests:1,failures:{ERR_CONNECTION_CLOSED:1},script_errors:{TypeError:1},live_responses:{200:1},live_routes:{'/webcast/im/fetch/':1},navigation_attempts:1});assert.ok(!JSON.stringify(diagnostic).includes('private test content'));
  rows=await run('ended',frame([message({method:'WebcastControlMessage'})]));assert.equal(rows.at(-1).status,'ended');assert.ok(!rows.some(r=>r.type==='message'));
  rows=await run('invalid',frame([]));assert.equal(rows.at(-1).status,'schema_changed');
  rows=await run('close',frame([]));assert.equal(rows.at(-1).status,'interrupted');

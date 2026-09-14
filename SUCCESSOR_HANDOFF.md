@@ -1,4 +1,20 @@
+## 2026-09-14 20:14 实时直播故障已修复，评论验证码仍待处理
+
+- 本轮收到实时事件35bfdc03-39b3-41c9-967c-26a8655e0114，live #585 failed。19:52:56已ack received；先核对健康与交接，立即中断页面提速工作。#585诊断仅1次请求、ERR_FAILED、navigation failed、HTTP未返回、无页面正文/连接，原track42变attention。
+- 已上线live_navigation.cjs：仅原主文档未得任何响应的明确连接错误在同一page/context内额外导航最多2次，1/3秒间隔，共享25秒预算。无响应证据的普通错误、证书/客户端拦截、登录/验证码/权限/限流不会重试。真实Chromium本地fixture发现Chrome错误页会自己恢复，修复等待期收到新响应后不再次goto，保留新页面/验证入口；取消同样阻止下一导航。navigation_attempts计程序调用，不等于浏览器内部网络请求数。
+- 新live_recovery.py及HTTP live-connection-retry只接受原track id和session_id，要求最新attention及严格原诊断，冻结原账号UID/目录/房间/参数，角色变化、正在登录、人工暂停、已有新track均拒绝。请求ID固定，重复不会建第二批或重启已暂停计划。普通新批仍按原分工；没有改评论验证码规则。
+- 77项不同Python回归通过（76项初轮+新增HTTP用例；另8项恢复专项复测），Node导航及直播worker套件通过。源码stage从最新322文件新建，9文件正常维护部署，现清单326；源码ZIP/两库在线备份quick_check=ok，业务计数停止后与重启后相等。保留导航测试原失败日志，其后迟到响应保护修复有实际Chromium证据。
+- 生产PID266984。正常恢复18群/找群和原授权自动私信；9517独立identity_verified后才恢复outreach，无测试/补发私信。原评论attention/inbox暂停保留。
+- 20:09:40通过原track42/原585专用接口创建#586，账号9517、同房间686375449707、原180秒300条预算；实际HTTP轮询与WS收到数据。20:12:42 completed，0新增文字（不能称新客户）；#587后续自动进入running。20:14:23实际核验后ack resolved，maintenance hold=0。group_reads12552–12554 completed。证据 artifacts/live-navigation-recovery-20260914/runtime-verification.json、repair-report.json、installed.json。
+- 评论仍#2875验证码attention，最近#2877于18:44session_expired，无新人工任务。IAB现有标签8已打开原7446/#2875的人工说明弹窗，仅展示，未点“打开原账号验证窗口”。用户需本人处理；此轮没有重试之前被拒绝的创建/打开人工验证窗口动作。旧评论事件758faf07...仍needs_user，未混同直播resolved。
+- 页面性能已定位但尚未修改：artifacts/page-data-speed-20260914/diagnosis.json，dashboard只读约4786ms，其中评论首次观察去重SQL execute约2706ms；需求状态传6515条leads约4.2MB、comments约1.88MB、collector约1.56MB。应继续按最慢查询/数据分层分页优化，不把账号API快当全站快。当前无性能stage未提交修改。
+- 上轮GitHub备份两次失败已核对：认证、私有repo、远端ref/tree读取现在全部成功，远端仍cec96ea.../314文件，失败写入阶段待带脱敏诊断复核；本轮实际备份结果以data/github-backup/last-run.json及本artifact日志时间为准，勿仅按旧pushed字段判断。本地回退完整。
+- 完整获客Goal继续active，本轮为progress；多游戏、调度权重/实时新评论/并发、手机远程验证码、各账号SMS、本地模型等未完成，不能宣告全系统验收。
+
 ## 2026-09-14 19:30 多账号页面与任务分工已部署，评论仍待验证码
+
+- 远端备份补充：本次 github_backup.py --transport api 连续两次返回 gh api 失败(退出码1)，未确认新322文件提交已更新远端；不能报告GitHub备份成功。本地source-before.zip、DB备份及已安装哈希齐全。下轮检查API失败阶段，勿无界重试。真实IAB目前停在/login账号页，任务设置弹窗已关闭，无新登录任务。
+- 独立性能复查保存在 artifacts/multiaccount-completion-20260914/page-api-baseline.json：首页/api/state?view=overview 7455ms，需求页990ms/6317489bytes，其他页约290~1579ms。账号/群独立API快不代表全站问题已解决。后续应优先检查daily_dashboard.workbench和需求列表过大，完成后再做前端实测。
 
 - 生产服务 PID257856。已上线 account_admin/account_scope/group_accounts、账号页和群账号选择器；当前7446 comments/discovery，9517 live/groups/outreach。原来9517的 enabled=0/roles=[]仅代表评论注册表未分配，迁移已显式保留它既有直播/群/私信工作；没有暗中把所有采集改成7446。
 - 账号新增默认关闭任务，独立原账号登录和UID核对后才可分工。评论/发现共用队列轮换，断点、人工验证和重采保留原账号；直播按会话冻结账号。已测试未结束的 needs_verification 不能被登录抢占，登录中的账号不能开新采集。
