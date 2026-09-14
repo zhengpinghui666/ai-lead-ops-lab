@@ -32,6 +32,20 @@ def in_pc_scope(text):
     return bool(GAME_PATTERN.search(text or '')) and not exclusion_reason(text)
 
 
+def group_exclusion(name='', description='', notice=''):
+    """A notice saying mobile players must not join is not a mobile audience.
+
+    Only explicit exclusions inside notice clauses are discounted. Names,
+    descriptions and members' own demand still use the strict scope gate.
+    """
+    clauses = re.split(r'([，,。；;\n])', notice or '')
+    for i, clause in enumerate(clauses):
+        if (not re.search(r'不是不|并非不|不能不', clause)
+                and re.search(r'请勿加入|禁止加入|谢绝加入|不接受|不欢迎|不交流|不讨论|不得加入|勿扰|直接移出|直接踢出', clause)):
+            clauses[i] = MOBILE_PATTERN.sub('', clause)
+    return exclusion_reason(name, description, ''.join(clauses))
+
+
 def record_exclusion(c, kind, record_id):
     """Recheck current source and literal message/parent before model and submission.
 
@@ -50,6 +64,8 @@ def record_exclusion(c, kind, record_id):
     elif kind=='group':
         row=c.execute('''SELECT m.raw_text,m.group_title,g.name,g.description,g.notice
           FROM group_messages m JOIN monitored_groups g ON g.id=m.group_id WHERE m.id=?''',(record_id,)).fetchone()
+        if row:
+            return exclusion_reason(row[0], row[1]) or group_exclusion(*tuple(row)[2:])
     else:raise ValueError('原文类型无效')
     return exclusion_reason(*row) if row else '原文不存在，无法核对端游范围。'
 
@@ -63,7 +79,7 @@ def enforce_saved_scope(c):
                 if table=='discovery_works':
                     c.execute('UPDATE discovery_works SET relevant=0,next_check_at=NULL WHERE video_id=?',(row[0],))
     for row in c.execute('SELECT id,name,description,notice FROM monitored_groups').fetchall():
-        reason=exclusion_reason(*tuple(row)[1:])
+        reason=group_exclusion(*tuple(row)[1:])
         if reason:c.execute("UPDATE monitored_groups SET matched=0,enabled=0,status='paused',detail=?,next_run_at=NULL WHERE id=?",(reason,row[0]))
     for row in c.execute('SELECT account_uid,group_id,name,description FROM public_group_candidates').fetchall():
         if exclusion_reason(row[2],row[3]):

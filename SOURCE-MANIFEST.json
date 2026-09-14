@@ -148,8 +148,8 @@
     },
     {
       "name": "REQUIREMENTS_DISCUSSION.md",
-      "sha256": "dea1125d6b5f44b54b0c8a5618bc0d2873aeddfc16fcbf89db27625c952644ab",
-      "bytes": 21413
+      "sha256": "a7b4cfc0314c6f46d5ca107a8422d189d72b58694bde0ba38eceb6b5a05d6cf8",
+      "bytes": 23059
     },
     {
       "name": "RULES.md",
@@ -168,8 +168,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "320a0b7054d2f35eb7012bb4be08d147e004cbbfb1f55ee526de507c891e32ce",
-      "bytes": 87431
+      "sha256": "9796f59afb144a715e9ab7d2ff9b251fb9b805dea836e90b92e52b157699b5fc",
+      "bytes": 93479
     },
     {
       "name": "UID_HTTP.md",
@@ -208,8 +208,8 @@
     },
     {
       "name": "asset_verticality.py",
-      "sha256": "2dbc2ec1301926307b45fb3ff4d06d342e476ffd09bb477559a8970405fbe3bd",
-      "bytes": 9535
+      "sha256": "1e8b9375ce703fc4c0df0353794b9a9d6726fb861edd57e371625d2977921267",
+      "bytes": 10242
     },
     {
       "name": "browser_config.cjs",
@@ -418,8 +418,8 @@
     },
     {
       "name": "game_scope.py",
-      "sha256": "e409617096d06834b4928932744a8660b9cc261d0c42d707bdec5591a8b8bfd4",
-      "bytes": 4716
+      "sha256": "290cfc8530bc9d9ade83b966d8a3b1070566c70a1b3d7d8a487b95dce675684e",
+      "bytes": 5571
     },
     {
       "name": "github_backup.py",
@@ -453,8 +453,8 @@
     },
     {
       "name": "group_monitor.py",
-      "sha256": "7f53bb63928318d78bfbbc1f62fa02cfc45c45c3e58587e5e7ec129bcb7ec9ae",
-      "bytes": 25952
+      "sha256": "77bd0d9934ade0853877deac349bd834748f5d45906fd2cca77225cf634e3666",
+      "bytes": 26786
     },
     {
       "name": "group_profiles.py",
@@ -573,8 +573,8 @@
     },
     {
       "name": "intent_rules.py",
-      "sha256": "23ac3eec19746ea7d79238a1461da57c3f6670a14bd53df7090d5c733b53515e",
-      "bytes": 16852
+      "sha256": "7d2f7dd1b884709eb43442ac0c8e6553816d99838ed75f5055e481e85a0fc24b",
+      "bytes": 17127
     },
     {
       "name": "keyword_learning.py",
@@ -863,8 +863,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "993438cde467d3bb6cc0644612f47f2e3080b9afee2c5d1567470eff9494da64",
-      "bytes": 220501
+      "sha256": "de339d30b2283461996bc8bbbe9ea3a1efd5680c24b0ae2853585ce48df9e3bc",
+      "bytes": 220771
     },
     {
       "name": "static/clubops-iphone.js",
@@ -918,8 +918,8 @@
     },
     {
       "name": "test_asset_verticality.py",
-      "sha256": "22d25c6c76ad63a1282311e926b4319f419be66fbc7b4cfc0bdc4b0640117242",
-      "bytes": 10460
+      "sha256": "90b6e90df0f0683abe2604dfc81b4b8c867fe6dffbb4956898f77beff59885ee",
+      "bytes": 12124
     },
     {
       "name": "test_author_collection.py",
@@ -1063,8 +1063,8 @@
     },
     {
       "name": "test_game_scope.py",
-      "sha256": "88322f031abb2cb5a35f62482a4508fb1404a9eaab92100041da08486b9a5e39",
-      "bytes": 6873
+      "sha256": "f234fafca2d579fd9e6643c05827d08e41329b412ab876c96a757266fe4acf3f",
+      "bytes": 7940
     },
     {
       "name": "test_github_backup.py",
@@ -1073,8 +1073,8 @@
     },
     {
       "name": "test_group_monitor.py",
-      "sha256": "3fb6aefdf46c4531effd24e423903f096a6e16e0c36ea1a5f0646bc260bd6751",
-      "bytes": 23478
+      "sha256": "dffb4eb57eee8ff6bcfb03d341e0bae5e24dbd81a43e24a7bf1b215785814ed4",
+      "bytes": 24811
     },
     {
       "name": "test_group_profiles.py",
@@ -1098,8 +1098,8 @@
     },
     {
       "name": "test_intent_rules.py",
-      "sha256": "23ba5790e667c432d66b2ae55a72af0f7dbb0bf808f1558e0c6be14984abd180",
-      "bytes": 13946
+      "sha256": "9bc78d7396301742b47cb77bec3aef85be1251f1e0a874006ffcbfdf8f9350e5",
+      "bytes": 14293
     },
     {
       "name": "test_iphone_forwarder.cjs",
@@ -1278,8 +1278,8 @@
     },
     {
       "name": "test_semantic_queue.py",
-      "sha256": "85b1252b16ac4bd27fe26e441811552012daf16d59598802b41f5259190e29c5",
-      "bytes": 15468
+      "sha256": "97f01edfb9f818d42f4c63f480f855c1b9ccf14d2f1a7ae957fdc3e91c5566e7",
+      "bytes": 15489
     },
     {
       "name": "test_service_lifecycle.py",

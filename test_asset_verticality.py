@@ -125,14 +125,38 @@ class RoutingTests(unittest.TestCase):
             predict.assert_called_once()
         with app.db() as c:self.assertEqual(c.execute('SELECT status FROM semantic_jobs').fetchone()[0],'completed')
 
-    def test_nonvertical_comment_with_keywords_never_calls_model(self):
+    def test_nonvertical_comment_with_demand_and_game_context_queues_model(self):
         record_id,result=self.comment('无畏契约找陪玩','无畏契约赛事')
-        self.assertEqual(result['model_queue']['queued'],0)
-        with app.db() as c:source,_=store.inputs(c,'comment',record_id)
-        with patch.object(SyntheticAdapter,'predict') as predict:
-            with self.assertRaisesRegex(ValueError,'非垂直对口'):
-                semantic.analyze_one(dict(evidence_type='comment',id=record_id,input_hash=store.digest(source),request_id='ordinary-no-model'),adapter_factory=SyntheticAdapter)
-            predict.assert_not_called()
+        self.assertEqual(result['model_queue']['queued'],1)
+        with app.db() as c:
+            route=assets.routing(c,'comment',record_id)
+            self.assertTrue(route['model_allowed']);self.assertTrue(route['keyword_match']['passed'])
+            self.assertFalse(route['asset']['matched'])
+
+    def test_ordinary_game_invitation_enters_model_without_rule_buyer(self):
+        record_id,result=self.comment('现在有打的吗？','瓦搭子日常')
+        self.assertEqual(result['model_queue']['queued'],1)
+        with app.db() as c:
+            self.assertNotEqual(c.execute('SELECT category FROM comments WHERE id=?',(record_id,)).fetchone()[0],'buyer')
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM message_jobs').fetchone()[0],0)
+
+    def test_nonvertical_fallback_still_requires_message_and_game_evidence(self):
+        for n,(text,title) in enumerate([('今天这局真好看','无畏契约赛事'),('找陪玩','日常生活'),
+                                       ('皮肤多少钱','无畏契约赛事'),('找陪玩','手瓦日常'),
+                                       ('港服求带','无畏契约赛事')]):
+            record_id,result=self.comment(text,title,key='blocked'+str(n),video='blocked'+str(n))
+            self.assertEqual(result['model_queue']['queued'],0,(text,title))
+            with app.db() as c:self.assertFalse(assets.routing(c,'comment',record_id)['model_allowed'])
+
+    def test_nonvertical_question_uses_its_own_parent_context(self):
+        self.comment('陪玩服务','无畏契约赛事',key='parent')
+        record_id,_=self.comment('多少钱','无畏契约赛事',key='child')
+        with app.db() as c:
+            self.assertFalse(assets.routing(c,'comment',record_id)['model_allowed'])
+            c.execute("UPDATE comments SET parent_external_id='parent' WHERE id=?",(record_id,))
+            self.assertTrue(assets.routing(c,'comment',record_id)['model_allowed'])
+            c.execute("UPDATE comments SET raw_text='这款鼠标' WHERE external_id='parent'")
+            self.assertFalse(assets.routing(c,'comment',record_id)['model_allowed'])
 
     def test_vertical_live_requires_keywords_even_when_model_enabled(self):
         sid=self.room();plain=self.message(sid,'这波操作漂亮',1);matched=self.message(sid,'陪玩多少钱',2)
@@ -142,11 +166,11 @@ class RoutingTests(unittest.TestCase):
             self.assertEqual([r[0] for r in c.execute('SELECT record_id FROM semantic_jobs')],[matched])
             source,_=store.inputs(c,'live',matched);self.assertEqual(source['title'],'无畏契约陪玩')
 
-    def test_nonvertical_live_keywords_still_do_not_queue(self):
+    def test_nonvertical_live_demand_in_confirmed_game_context_queues(self):
         sid=self.room('无畏契约赛事');record_id=self.message(sid,'无畏契约找陪玩')
         with app.db() as c:
-            self.assertFalse(assets.routing(c,'live',record_id)['model_allowed'])
-            self.assertEqual(c.execute('SELECT COUNT(*) FROM semantic_jobs').fetchone()[0],0)
+            self.assertTrue(assets.routing(c,'live',record_id)['model_allowed'])
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM semantic_jobs').fetchone()[0],1)
 
     def test_demotion_before_dispatch_cancels_model_admission(self):
         record_id,_=self.comment('无畏契约找陪玩')

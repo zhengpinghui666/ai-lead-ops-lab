@@ -282,11 +282,11 @@ class MonitorTests(unittest.TestCase):
             self.assertFalse(monitor.eligible(c,raw,semantic.state()['engine'],SENDER))
 
     def test_old_invitation_gate_rescreens_once_and_waits_for_model(self):
-        texts = ('一会有人要玩吗', '有人打不', '匹配你玩不', '我青铜')
+        texts = ('现在有打的吗？', '白银局来个q男两个妹子', '黄金局缺个大佬', '我青铜')
         self.add([msg(20+i, text, age=7200) for i, text in enumerate(texts)])
         self.add([msg(30, '有人打不', age=86401), msg(31, '有人打不', uid=SENDER)])
         with app.db() as c:
-            old = dict(version='comment-relevance-v1', passed=False, reason='old gate', evidence=[])
+            old = dict(version='comment-relevance-v2', passed=False, reason='old gate', evidence=[])
             c.execute("UPDATE group_messages SET filter_reason='未通过陪玩需求初筛',relevance=?,person_id=NULL", (json.dumps(old),))
             before = [tuple(r) for r in c.execute('SELECT id,raw_text,published_at,observed_at,category,reason,facts FROM group_messages ORDER BY id')]
         self.assertEqual(set(monitor.reconsider_keyword_filters()), {1, 2, 3, 4, 6})
@@ -301,6 +301,23 @@ class MonitorTests(unittest.TestCase):
             self.assertTrue(all(r['previous_relevance']==old for r in audit))
             self.assertEqual(len(audit), 5)
         self.assertEqual(queue.enqueue('group', passed)['queued'], 3)
+
+    def test_pc_notice_excluding_mobile_is_readable_but_commercial_ban_blocks_outreach(self):
+        from game_scope import record_exclusion
+        notice='本群仅面向PC端无畏契约，手游手瓦玩家请勿加入，群内不交流手游相关内容。\n严格禁止人员：所有陪玩、代练，无论私聊还是群发广告，一经发现拉黑。'
+        self.assertTrue(monitor.match(dict(GROUP,notice=notice)))
+        self.add([msg()])
+        with app.db() as c:
+            c.execute('UPDATE monitored_groups SET notice=?',(notice,))
+            self.assertEqual(record_exclusion(c,'group',1),'')
+            self.assertTrue(monitor.routing(c,1)['model_allowed'])
+            with patch.object(monitor,'project',return_value=dict(analysis_method='model',category='buyer',game=app.TARGET_GAME)):
+                self.assertFalse(monitor.eligible(c,self.raw(c),semantic.state()['engine'],SENDER))
+                c.execute("UPDATE monitored_groups SET notice='仅限端游玩家'")
+                self.assertTrue(monitor.eligible(c,self.raw(c),semantic.state()['engine'],SENDER))
+            c.execute("UPDATE group_messages SET raw_text='手瓦找陪玩'")
+            self.assertTrue(record_exclusion(c,'group',1))
+            self.assertFalse(monitor.routing(c,1)['model_allowed'])
 
     def test_paging_restarts_from_committed_cursor_and_never_reingests(self):
         calls=[]

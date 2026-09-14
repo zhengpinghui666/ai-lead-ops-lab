@@ -9,7 +9,7 @@ import clubops as app
 import group_inbox
 import uid_inbox_store
 import uid_messaging
-from game_scope import in_pc_scope, record_exclusion
+from game_scope import GAME_PATTERN, group_exclusion, record_exclusion
 
 GUARD = threading.RLock()
 STOP = threading.Event()
@@ -60,7 +60,18 @@ def fresh(value, seconds=600):
 
 
 def match(group):
-    return in_pc_scope(' '.join(group.get(k,'') for k in ('name','description','notice')))
+    fields = [group.get(k,'') for k in ('name','description','notice')]
+    return bool(GAME_PATTERN.search(' '.join(fields))) and not group_exclusion(*fields)
+
+
+def outreach_restriction(group):
+    """Keep observation separate from an explicit ban on commercial contact."""
+    notice = group.get('notice', '') or ''
+    for paragraph in re.split(r'[。；;\n]', notice):
+        if (re.search(r'禁止|严禁|不接受|谢绝|勿扰', paragraph)
+                and re.search(r'陪玩|商业私[聊信]|私[聊信].{0,20}广告', paragraph)):
+            return '群公告不接受商业联系；仅监控，不自动私信'
+    return ''
 
 
 def policy(c):
@@ -228,6 +239,8 @@ def project(c,raw,*,engine=None):
 def eligible(c,raw,engine,account):
     grant=policy(c)
     if not grant.get('outreach_enabled') or grant.get('account_uid')!=account or raw['account_uid']!=account:return False
+    group=c.execute('SELECT notice FROM monitored_groups WHERE id=?',(raw['group_id'],)).fetchone()
+    if not group or outreach_restriction(dict(group)):return False
     if not routing(c,raw['id'])['model_allowed']:return False
     row=project(c,raw,engine=engine)
     return row['analysis_method']=='model' and row['category']=='buyer' and row['game']==app.TARGET_GAME
@@ -382,6 +395,8 @@ def state(mode='live',before=0):
         groups=[dict(r) for r in c.execute('''SELECT g.*,(SELECT COUNT(*) FROM group_messages m WHERE m.group_id=g.id) AS message_count,
           (SELECT COUNT(*) FROM group_messages m WHERE m.group_id=g.id AND m.filter_reason='') AS screened_count
           FROM monitored_groups g WHERE account_uid=? AND (matched=1 OR enabled=1) ORDER BY enabled DESC,id''',(account,))]
+        for group in groups:
+            group['outreach_restriction']=outreach_restriction(group)
         anchor=''
         if before:
             previous=c.execute(SELECT+' WHERE g.account_uid=? AND m.id=?',(account,before)).fetchone()

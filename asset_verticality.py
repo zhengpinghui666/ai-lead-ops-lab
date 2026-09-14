@@ -14,6 +14,7 @@ from video_discovery import GAME_PATTERN
 from game_scope import exclusion_reason, record_exclusion
 
 VERSION='asset-verticality-v6-cn-pc'
+ROUTING_VERSION='asset-routing-v2-contextual-demand'
 SAMPLE_LIMIT=300
 SERVICE_PATTERN=re.compile(COMPANION+r'|陪同上分|付费教学|有偿教学|复盘接单|陪练接单',re.I)
 SCHEMA='''CREATE TABLE IF NOT EXISTS asset_verticality (
@@ -120,7 +121,9 @@ def routing(c,kind,record_id,*,refresh_asset=False):
         import group_monitor
         return group_monitor.routing(c,record_id)
     if kind=='comment':
-        row=c.execute('''SELECT x.raw_text,x.video_id,v.external_id AS asset_key,v.title,'' AS filter_reason
+        row=c.execute('''SELECT x.raw_text,x.video_id,v.external_id AS asset_key,v.title,'' AS filter_reason,
+          COALESCE((SELECT p.raw_text FROM comments p WHERE p.source_id=x.source_id AND p.video_id=x.video_id
+            AND p.external_id=x.parent_external_id AND p.id!=x.id),'') AS parent_text
           FROM comments x JOIN videos v ON v.id=x.video_id WHERE x.id=?''',(record_id,)).fetchone()
         asset_kind='work'
     elif kind=='live':
@@ -135,12 +138,20 @@ def routing(c,kind,record_id,*,refresh_asset=False):
     if profile is None:
         stored=c.execute('SELECT result FROM asset_verticality WHERE kind=? AND asset_key=?',(asset_kind,row['asset_key'])).fetchone()
         profile=json.loads(stored[0]) if stored else classify(row['title'],[])
-    keyword=vocabulary.message_relevance(c,row['raw_text'],row['title'])
+    parent=row['parent_text'] if kind=='comment' else ''
+    keyword=vocabulary.message_relevance(c,row['raw_text'],row['title'],parent)
     learned=keyword.get('learned_keywords',[])
-    allowed=bool(profile['matched'] and not row['filter_reason'] and (kind=='comment' or keyword['passed']))
-    reason=('垂直作品的新评论直接分析意图。' if kind=='comment' else '垂直直播间弹幕通过陪玩关键词匹配。') if allowed else (
-        '非垂直对口资产，只做关键词匹配。' if not profile['matched'] else
-        '弹幕未通过本批采集关键词配置。' if row['filter_reason'] else '垂直直播间弹幕未命中陪玩关键词。')
+    game_confirmed=bool(profile.get('game_confirmed') or any(GAME_PATTERN.search(text) for text in (row['raw_text'],row['title'],parent)))
+    # Source priority must not discard an otherwise relevant request from a
+    # general game work/room. This grants model admission, never buyer status.
+    direct=kind=='comment' and profile['matched']
+    contextual=game_confirmed and keyword['passed']
+    allowed=bool(not row['filter_reason'] and (direct or contextual))
+    reason=('垂直作品的新评论直接分析意图。' if direct else
+            '原文通过需求初筛，且上下文确认瓦范围；交由模型判断。') if allowed else (
+        '弹幕未通过本批采集关键词配置。' if row['filter_reason'] else
+        '原文和上下文尚未确认无畏契约范围。' if not game_confirmed else
+        '原文未通过陪玩或游戏邀约初筛。')
     if excluded:allowed=False;reason=excluded
-    return dict(version=VERSION,model_allowed=allowed,route='model' if allowed else 'keywords',reason=reason,
-                asset_kind=asset_kind,asset_key=row['asset_key'],asset=profile,keyword_match=keyword if kind=='live' else None,learned_keywords=learned)
+    return dict(version=ROUTING_VERSION,model_allowed=allowed,route='model' if allowed else 'keywords',reason=reason,
+                asset_kind=asset_kind,asset_key=row['asset_key'],asset=profile,keyword_match=None if direct else keyword,learned_keywords=learned)

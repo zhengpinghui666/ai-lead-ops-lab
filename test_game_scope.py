@@ -15,6 +15,17 @@ from video_discovery import in_search_scope
 
 
 class GameScopeTests(unittest.TestCase):
+    def test_group_notice_negation_does_not_change_strict_message_scope(self):
+        for notice in ('本群仅面向PC端无畏契约，手游手瓦玩家请勿加入，群内不交流手游相关内容，混入手游玩家直接移出。\n再次重申：手瓦、陪玩、代练三类人员勿扰',
+                       '端游交流群；不接受手游玩家'):
+            self.assertTrue(groups.match(dict(name='瓦搭子群2️⃣',notice=notice)))
+            self.assertTrue(exclusion_reason('瓦搭子群',notice))
+        for notice in ('手游和端游都玩','手游玩家欢迎加入','手游玩家请勿加入，亚服玩家集合',
+                       '不是不接受手游玩家', 'PC端玩家也欢迎，手游群'):
+            self.assertFalse(groups.match(dict(name='瓦搭子群',notice=notice)),notice)
+        self.assertFalse(groups.match(dict(name='手瓦群',notice='手游玩家请勿加入')))
+        self.assertFalse(groups.match(dict(name='瓦搭子群',description='端游手游都玩',notice='不交流手游相关内容')))
+
     def test_domestic_pc_scope_is_shared_and_unknown_region_is_not_invented(self):
         foreign=['亚服','港服','台服','日服','韩服','美服','欧服','国际服','新加坡服','APAC server','NA服']
         titles=['无畏契约 '+term+' 陪玩' for term in foreign]+['端瓦国服亚服都玩']

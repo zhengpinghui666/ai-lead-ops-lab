@@ -61,7 +61,7 @@ class QueueTests(unittest.TestCase):
             c.execute("INSERT INTO semantic_jobs(evidence_type,record_id,input_hash,engine,config_json,status,created_at) VALUES('comment',?,?,?,?, 'queued',?)",
                       (record_id,fingerprint,semantic.state()['engine'],json.dumps(self.settings,sort_keys=True),app.now()))
         with patch.object(SyntheticAdapter,'predict') as predict:
-            with self.assertRaisesRegex(ValueError,'非垂直对口'):
+            with self.assertRaisesRegex(ValueError,'未通过陪玩或游戏邀约初筛'):
                 semantic.analyze_one(dict(evidence_type='comment',id=record_id,input_hash=fingerprint,request_id='relevance-manual'),adapter_factory=SyntheticAdapter)
             self.assertTrue(queue.run_one(adapter_factory=SyntheticAdapter))
             predict.assert_not_called()

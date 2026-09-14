@@ -10,7 +10,8 @@ from intent_rules import RULESET_VERSION,companion_relevance
 
 class IntentRuleTests(unittest.TestCase):
     def test_contextual_play_invitations_reach_model_without_becoming_rule_buyers(self):
-        for text in ('一会有人要玩吗', '有人打不', '匹配你玩不', '有人打瓦吗', '找个人一起打瓦'):
+        for text in ('一会有人要玩吗', '有人打不', '匹配你玩不', '有人打瓦吗', '找个人一起打瓦',
+                     '现在有打的吗？', '有没有玩的', '白银局来个q男两个妹子', '黄金局缺个大佬'):
             with self.subTest(text=text):
                 result = companion_relevance(text, '瓦搭子群')
                 self.assertTrue(result['passed'])
@@ -18,7 +19,9 @@ class IntentRuleTests(unittest.TestCase):
                 self.assertNotEqual(app.classify(text, '瓦搭子群')['category'], 'buyer')
         for text, title in (('有人打不', '朋友聚会'), ('有人打麻将吗', '瓦搭子群'),
                             ('有人打我', '瓦搭子群'), ('今天天气很好', '瓦搭子群'),
-                            ('匹配', '瓦搭子群'), ('有人要玩吗', '瓦工交流群')):
+                            ('匹配', '瓦搭子群'), ('有人要玩吗', '瓦工交流群'),
+                            ('现在有打的吗？', '朋友聚会'), ('来个妹子', '日常交友群'),
+                            ('有没有玩的皮肤', '瓦搭子群'), ('有人打我的时候', '瓦搭子群')):
             with self.subTest(text=text, title=title):
                 self.assertFalse(companion_relevance(text, title)['passed'])
 
