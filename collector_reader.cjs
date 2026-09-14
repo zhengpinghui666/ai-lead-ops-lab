@@ -257,7 +257,8 @@ function createReader(page,shared){
     if(!recognized){await emit({type:'checkpoint',video_id:row.video_id,status:'partial',detail:'没有可识别的评论响应'});return false;}
     for(let i=0;i<6&&(perVideo.get(row.video_id)||0)<config.comment_limit&&hasMore!==false;i++){
       await guard();await drain();if((perVideo.get(row.video_id)||0)>=config.comment_limit||hasMore===false)break;
-      const regions=page.locator('[data-e2e="comment-list"]');if(await regions.count()!==1||!await regions.isVisible())break;
+      // Note pages retain a hidden comment panel; only one visible panel may scroll.
+      const regions=page.locator('[data-e2e="comment-list"]:visible');if(await regions.count()!==1||!await regions.isVisible())break;
       try{await regions.hover({timeout:3000});}catch{check();await drain();if((perVideo.get(row.video_id)||0)<config.comment_limit)await diagnose('comment-scroll-unavailable');break;}
       await drain();if((perVideo.get(row.video_id)||0)>=config.comment_limit||hasMore===false)break;
       await ready();await page.mouse.wheel(0,650);await wait(2000);await drain();

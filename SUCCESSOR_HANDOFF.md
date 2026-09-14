@@ -1,3 +1,14 @@
+## 2026-09-14 21:28 7446登录已确认，图文翻页修复后评论监控恢复
+
+- 用户发来抖音新手提示截图，不是验证码。只读账号API确认7446登录任务f7e953e03f10488e8a5556a525622a9a已于21:04:19 completed，UID50887922274/isolated身份一致；无需重复登录。按原失败2881的断点、账号、绝对时间窗创建2882，读取70条但图文仍partial；monitor-start因最近批次未完整拒绝，失败未覆盖。
+- 实际只读DOM诊断发现图文7684911601669711857有两个data-e2e=comment-list，其中一个在隐藏祖先下尺寸0，另一个可见。旧count===1提前退出；可见区域正常滚动可收到cursor10、has_more=0。不是缺少该选择器或新的验证码。修正collector_reader为只选可见评论区，仍要求唯一，不从两个可见区任选。
+- 新test_note_comment_scroll.cjs用真实Chromium+全部路由合成响应，不接平台、不用真实profile；旧代码hidden-first重现失败，修复后隐藏区前/后、单区、双可见歧义、全部隐藏、登录守卫6场景通过。另50项Python采集/恢复/账号/调度回归、12项多页子进程场景及parser断言通过。未把模拟数据计入生产。
+- 原子替换新worker读取的JS及测试/清单，服务PID212184不变，直播、18群、原outreach未停；源码ZIP和两库在线备份quick_check=ok。清单327文件。证据artifacts/note-comment-scroll-20260914-2120，原账号登录/首次断点恢复证据artifacts/account-login-recovery-20260914-2111。
+- 正式2883仅继续2882未完图文，21:23:17 completed；返回首屏10条+后页5条记录，其中14条文字/1条非文字，平台has_more=0。页面total17不等于本次已见记录，不宣称全部17条已获取。21:24:26按既有授权monitor-start成功。
+- 自动2884 partial因一次body_unavailable/resource_missing，既有60秒退避生效；2885于21:26:45 completed，3作品79条文字（均旧）、7条非文字；2886于21:27:16自动开始。全部账号7446、并发1、原24小时范围。登录门槛和图文翻页本轮已恢复；不保证后续平台不再验证，不把观察数当新增意向。
+- 健康报告21:26 healthy、comments running、live enabled、groups18。旧投递4f3e3f7...已经needs_user终态；补resolved按代码返回Delivery already completed，原始日志保留，未改写回执。watcher可另将incidents置recovered；当前incident-state.json记录真实状态。首页“最近事件”仍显示旧needs_user回执，是待完善的历史回执/当前状态区分，不能据此断言仍未登录。
+- 无测试私信、无补发历史消息、无业务范围扩张。私有GitHub备份将在此更新后执行，成功以data/github-backup/last-run.json为准。本轮为P0恢复与图文修复进展，完整Goal仍active；需求页大数据分层/分页、监控权重和实时队列等清单继续未完成。
+
 ## 2026-09-14 20:55 首页统计提速上线，7446仍待登录
 
 - 首页新增局部索引idx_observation_first_daily，先在观察表按评论ID/作品URL取首次时间，再合并历史comments。原口径、日期、验证码和私信数据不删减。迁移前自动SQLite备份，观察原值不变，重复启动不重复备份。162项dashboard/discovery/恢复/采集/监控回归通过。

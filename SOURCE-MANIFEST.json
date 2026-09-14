@@ -183,8 +183,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "1fc5531303e50f2831e4c9480b9eee8faad82a8d64c53ee58cf18ace70ac0293",
-      "bytes": 145910
+      "sha256": "da486c79b8126e6146904300a897c27cf5aabbdc188807d7a24805595c823e33",
+      "bytes": 148844
     },
     {
       "name": "UID_HTTP.md",
@@ -373,8 +373,8 @@
     },
     {
       "name": "collector_reader.cjs",
-      "sha256": "f43ed7c8a23e4fd3e161129e0eeddb3ca1c85338b52edf0eacb81e5fb67aa9bb",
-      "bytes": 23822
+      "sha256": "5a1ca51ead9f9925d041639fa25204885e4a485b352b677fa5f876c60d5c483b",
+      "bytes": 23916
     },
     {
       "name": "collector_runner.cjs",
@@ -948,8 +948,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "0ac1b723c55d3d81c443d42b01c30665b4583dd238733b16705d2aace9bd0f6b",
-      "bytes": 9528
+      "sha256": "2201428138e1a692a6d8696d96f9b292c7388e215fc191982be720c6d67d3403",
+      "bytes": 9563
     },
     {
       "name": "start.ps1",
@@ -1397,6 +1397,11 @@
       "bytes": 67447
     },
     {
+      "name": "test_note_comment_scroll.cjs",
+      "sha256": "1a3fcf0937baa62d73e39f9a4e86019a1c3f0162ed3f9f6e66cc4800fd8c55f2",
+      "bytes": 4776
+    },
+    {
       "name": "test_parallel_worker.cjs",
       "sha256": "f0db3b4e0d90e030739fb366811507bf5ac3ac51986e67119ce35a0b1a9e9ce1",
       "bytes": 4539
@@ -1563,8 +1568,8 @@
     },
     {
       "name": "tests/fixtures/playwright_fixture.cjs",
-      "sha256": "63f265b74e5c648a531f6012ea2f98f44ab67a2cf6ea13fe78d5784d3a974517",
-      "bytes": 12557
+      "sha256": "a87e8ed9592166cb5b96a274397ff22b0bdd4be4c96e364c81bd34c530cc46fd",
+      "bytes": 12603
     },
     {
       "name": "tests/fixtures/playwright_parallel_fixture.cjs",

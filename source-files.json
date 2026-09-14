@@ -131,7 +131,9 @@
   "keyword_learning.py",
   "live_discovery.py",
   "live_monitor.py",
+  "live_navigation.cjs",
   "live_protocol.cjs",
+  "live_recovery.py",
   "live_room_pool.py",
   "live_rules.py",
   "live_runner.cjs",
@@ -254,7 +256,9 @@
   "test_lab.py",
   "test_live_discovery.py",
   "test_live_monitor.py",
+  "test_live_navigation.cjs",
   "test_live_protocol.cjs",
+  "test_live_recovery.py",
   "test_live_room_pool.py",
   "test_live_rules.py",
   "test_live_runner.cjs",
@@ -274,6 +278,7 @@
   "test_monitor_comments.py",
   "test_monitor_health.py",
   "test_monitoring.py",
+  "test_note_comment_scroll.cjs",
   "test_parallel_worker.cjs",
   "test_pool.cjs",
   "test_queue.cjs",
@@ -320,9 +325,5 @@
   "uid_session_renewal.py",
   "uid_transport.py",
   "video_discovery.py",
-  "video_metadata.py",
-  "live_navigation.cjs",
-  "test_live_navigation.cjs",
-  "live_recovery.py",
-  "test_live_recovery.py"
+  "video_metadata.py"
 ]
