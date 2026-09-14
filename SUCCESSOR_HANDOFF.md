@@ -1,3 +1,14 @@
+## 2026-09-15 02:15 直播身份预检网络失败已恢复，02点效果复盘已记录
+
+- 小时任务先只读02:00:45新鲜healthy健康文件，跳过故障排查，运行既有只读汇总。02:02收到新实时事件c8b25c67-db57-43f8-9029-280c8aa4a0d8，立即received并转P0，没有同时修改调度代码。
+- 原681/track49预检事件明确identity_checked、http_failed、http_attempts=1、connection_failed/connect，4秒失败、0数据/0帧，无浏览器诊断或平台响应。该批绑定7446/UID50887922274/isolated、room960494666543。当前原任务角色实际为7446 comments/discovery/live/groups，9517 live/groups/outreach；此次完整维护前后角色相等，没有擅自将本次恢复切到9517。旧680 disconnected保留，不能把它或681改成completed。
+- 新live_identity仅对无HTTP状态的http_failed + connection_failed/timeout + connect/request/response_headers额外重试最多2次，1/3秒可取消等待，原账号/端点/会话不变。HTTP状态、验证码、登录、账号不符、权限、限流、TLS/未知错误不重试。各次安全诊断单独记录，最终总尝试数保留；初始预检或过期本地会话续验共用这一预算，成功后不再做第二套预检。
+- live_recovery仅对旧v1、两条事件(preflight+failed)、一次明确连接失败、0消息/0帧提供同原track/session/账号的幂等恢复。新版本三次耗尽产生identity_attempt证据，不能当旧失败再次自动重试。现有原账号/角色/人工停止/新track/请求ID保护继续生效，真实平台阻塞不会进入该恢复。
+- 84项隔离Python回归通过，含worker实际调用链耗尽三次后不启动浏览器、错误类型/取消/幂等/冻结身份边界。部署4文件，白名单343；source-before.zip与两SQLite备份、停止后/启动后业务计数一致。正常退出263188，托管新PID257840。恢复原评论/20群/发现；原inbox暂停，9517独立HTTP身份通过后恢复原授权outreach。无测试私信/历史补发。
+- 02:09:59通过原681/track49恢复API启动682（原7446/原房间/原180s300条预算）。02:13:01真实completed：284帧、23条文字入库；首个身份请求即成功，不等于真实平台上测试到了两次重试。683于02:13:32后续自动running。评论3227已completed并继续计划，群20保持、health healthy，02:15事件resolved。全部证据artifacts/live-fault-20260915-0203，包括events-before/tests-final/installed/runtime-verification及回退备份。
+- 02点效果复盘详见artifacts/operational-reviews/20260915-0200-analysis.md和0201三份JSON。过去一小时首次观察1881但24h内57，前一天同小时773/128；历史补采占大头。648垂直检查年龄中位2.38h/P9514.48h，47高权重中位53.1min/P953.46h，仍未达分钟覆盖；模型无积压、今日6完成均noise/3旧超时。未放宽纯组队标准，公众号/客服/已读未知，inbox暂停不能声称实际0回复。上轮策略真实30min前87/87不同作品、后93/93，两段都无重复独占，不能夸大离线模拟为实际提速。
+- 优先下一项仍新评论/历史补采隔离与增量读取，先验证排序/分页真实含义；本轮无此功能代码变更。完整队列、全站速度、多游戏等清单继续未完成。源码增量备份随后走API，最终以last-run.json为准。
+
 ## 2026-09-15 01:35 群重复消息故障已恢复，稀疏活跃优先占位已修正
 
 - 当前用户问题“首页验证码为什么都是0”已经修复并生产复核：09-15 submitted=0/pass_rate=null/not_attempted，历史submitted=6/unknown=6/pass_rate=null/unconfirmed；短信仍无真实尝试。原始27次遇验证记录保留，不能用后续普通采集成功补造验证通过。之前52项统计/登录回归及三尺寸浏览器证据见下段。本轮真实API再次确认正确口径。

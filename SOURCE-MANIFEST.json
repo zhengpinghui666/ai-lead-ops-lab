@@ -18,8 +18,8 @@
     },
     {
       "name": "AFTERNOON_REQUIREMENTS_20260914.md",
-      "sha256": "db313a00d56aa1e7ef6969ecec497040e6ae5d5579fd2c41c55633d76c5f7a73",
-      "bytes": 10339
+      "sha256": "de18e8fa55b88ef0adfff9a2c4b35db8a69e71b642c5683cd01d5522b25fc1ef",
+      "bytes": 10611
     },
     {
       "name": "ASSET_VERTICALITY.md",
@@ -198,8 +198,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "d93732736c48794d267b35fe0bd3eb4fd7394637b8427723dae858d1eb04a3ce",
-      "bytes": 168737
+      "sha256": "62ec9e0d5f20042732cd528c499beff707bb75acacbc658defe6b1d9ae57cad1",
+      "bytes": 172108
     },
     {
       "name": "UID_HTTP.md",
@@ -687,9 +687,14 @@
       "bytes": 5537
     },
     {
+      "name": "live_identity.py",
+      "sha256": "6879a789d66f89214a0515faaeea25d92ab09fbf57e698c997127db1820f9070",
+      "bytes": 2229
+    },
+    {
       "name": "live_monitor.py",
-      "sha256": "aed964a68d51e209d4f6c3c10d5f812894bab93fdc2c465e3226d2f11a8e741f",
-      "bytes": 32259
+      "sha256": "6fe6730c234c30c34c2f490a4f58ad90c82249cf940f34a8ab3c632a3a33cdf1",
+      "bytes": 32392
     },
     {
       "name": "live_navigation.cjs",
@@ -703,8 +708,8 @@
     },
     {
       "name": "live_recovery.py",
-      "sha256": "34fe0a22887f65486dba73382f0bca5203fe021502a4435d9ed2a8a52e87aaf1",
-      "bytes": 3553
+      "sha256": "c9efaf7b024422245fff0cfe9297084c0322ce37f9fdd2b62ae29338bfd0c89a",
+      "bytes": 3626
     },
     {
       "name": "live_room_pool.py",
@@ -978,8 +983,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "a194e2eaefb4e377fed2e7517bdfcc6dd5e2bf60c10b28dbf9ed78be82069151",
-      "bytes": 10006
+      "sha256": "9e809f151777eabdacfc6e9d3c61240c62f574f78fcb4f33eba3bf7daebd9ea1",
+      "bytes": 10057
     },
     {
       "name": "start.ps1",
@@ -1335,6 +1340,11 @@
       "name": "test_live_discovery.py",
       "sha256": "f580a7225aabde176721d790d4ed9c905710a7e38e00b0cdd76cf7137c6036fd",
       "bytes": 4642
+    },
+    {
+      "name": "test_live_identity.py",
+      "sha256": "5b9df7387c769e3fd5c2704f83b1ef64dfc742f78e5555e2c2a25bfc4c1a68b9",
+      "bytes": 6009
     },
     {
       "name": "test_live_monitor.py",

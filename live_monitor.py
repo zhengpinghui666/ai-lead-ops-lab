@@ -395,16 +395,17 @@ def worker(session_id, config, control):
                 (session_id,'preflight',json.dumps(dict(version='live-preflight-v1',stage=stage,
                   reason=reason,**evidence),ensure_ascii=False),app.now()))
     try:
-        import collection_accounts,collector_http_session,uid_bootstrap
+        import collection_accounts,collector_http_session,live_identity
         assigned=config.get('collection_account')
         profile=app.DATA_DIR/'live-browser-profile'
         payload=dict(config)
         if assigned:
             directory=collection_accounts.directory(assigned)
-            session,renewed=collection_session_refresh.ensure(directory,assigned,cancelled=lambda:control['stop'])
+            identity_probe=lambda value:live_identity.probe(value,cancelled=lambda:control['stop'],report=preflight)
+            session,renewed=collection_session_refresh.ensure(directory,assigned,probe=identity_probe,cancelled=lambda:control['stop'])
             stage='identity'
             if control['stop']:return
-            identity=renewed or uid_bootstrap.probe(dict(expected_account=assigned['account_id'],cookie=collector_http_session.cookie_header(session,'identity'),user_agent=session['user_agent']))
+            identity=renewed or identity_probe(dict(expected_account=assigned['account_id'],cookie=collector_http_session.cookie_header(session,'identity'),user_agent=session['user_agent']))
             preflight('session_revalidated' if renewed else 'identity_checked',
                 {k:identity[k] for k in collection_session_refresh.SAFE_FIELDS if k in identity})
             if identity.get('status')!='identity_verified' or identity.get('sender_uid')!=assigned['sender_uid']:
