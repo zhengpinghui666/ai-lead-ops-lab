@@ -163,6 +163,9 @@ class Handler(BaseHTTPRequestHandler):
                 import asset_keywords
                 query=parse_qs(urlparse(self.path).query)
                 return self.respond(asset_keywords.state(self.mode(),query.get('q',[''])[0],query.get('scope',['all'])[0],query.get('status',['all'])[0]) if path=='/api/asset-keywords' else asset_keywords.detail(query.get('term',[''])[0],self.mode()))
+            if path == '/api/bark':
+                import bark_notify
+                return self.respond({**bark_notify.state(clubops.DATA_DIR), 'csrf': CSRF})
             if path == '/api/login-recovery':
                 return self.respond({**login_recovery.state(self.mode()), 'csrf': CSRF})
             if path == '/api/collector':
@@ -215,7 +218,7 @@ class Handler(BaseHTTPRequestHandler):
                 result = clubops.state(self.mode())
                 return self.respond({'exported_at': clubops.now(), 'mode': result['mode'], 'comments': result['comments'], 'leads': result['leads']})
             files = {'/': ('app.html', 'text/html; charset=utf-8'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/app.css': ('app.css', 'text/css; charset=utf-8'), '/vendor/lucide.min.js': ('vendor/lucide.min.js', 'text/javascript; charset=utf-8'),
-                     '/login': ('login.html', 'text/html; charset=utf-8'), '/login.js': ('login.js', 'text/javascript; charset=utf-8'),
+                     '/login': ('login.html', 'text/html; charset=utf-8'), '/bark.js': ('bark.js', 'text/javascript; charset=utf-8'), '/login.js': ('login.js', 'text/javascript; charset=utf-8'),
                      '/login.css': ('login.css', 'text/css; charset=utf-8'), '/login-guide': ('login-guide.html', 'text/html; charset=utf-8'), '/iphone-script': ('clubops-iphone.js', 'text/plain; charset=utf-8')}
             if path not in files:
                 return self.respond({'error': 'Not found'}, 404)
@@ -291,6 +294,11 @@ class Handler(BaseHTTPRequestHandler):
                         result = {**login_relay.phone_configuration(), 'account': login_recovery.config()['account']}
                 else:
                     raise ValueError('登录恢复操作不存在')
+            elif action in ('bark-save','bark-test','bark-confirm'):
+                if mode != 'live':raise ValueError('手机通知仅用于正式工作区')
+                import bark_notify
+                method={'bark-save':bark_notify.save,'bark-test':bark_notify.test,'bark-confirm':bark_notify.confirm}[action]
+                result=method(clubops.DATA_DIR,body)
             elif action in ('asset-reference-propose','asset-reference-review'):
                 import asset_references
                 result = asset_references.propose(body,mode) if action=='asset-reference-propose' else asset_references.review(body,mode)

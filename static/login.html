@@ -4,7 +4,7 @@
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light"><title>账号登录 · ClubOps</title>
   <link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/login.css">
-  <script defer src="/vendor/lucide.min.js"></script><script defer src="/login.js"></script>
+  <script defer src="/vendor/lucide.min.js"></script><script defer src="/login.js"></script><script defer src="/bark.js"></script>
 </head>
 <body>
   <button class="mobile-nav-backdrop" data-command="close-menu" aria-label="关闭导航遮罩" tabindex="-1"></button>
@@ -35,7 +35,7 @@
         <li><i data-lucide="smartphone"></i><div><strong>2. 手机转发</strong><span id="phone-step">等待检查</span></div></li>
         <li><i data-lucide="shield-check"></i><div><strong>3. 登录状态</strong><span id="session-step">等待检查</span></div></li>
       </ol>
-      <section class="card section-gap"><div class="card-body row spread"><div><h2>登录与手机连接设置</h2><p class="muted">账号、自动恢复与手机转发配置</p></div><button class="button small" data-command="settings">打开设置</button></div></section>
+      <section class="card section-gap"><div class="card-body row spread"><div><h2>登录与手机连接设置</h2><p class="muted">账号、自动恢复与手机转发配置</p></div><div class="row"><button class="button small" data-command="bark-settings">手机通知</button><button class="button small" data-command="settings">打开设置</button></div></div></section>
       <section class="card section-gap" aria-labelledby="history-title"><div class="card-head"><h2 id="history-title">最近恢复记录</h2><small>保留状态，不保存验证码</small></div><div id="login-history" class="card-body"><p class="muted">正在读取…</p></div></section>
       <p class="login-footnote">短信登录用于恢复账号会话。关键词搜索要求的滑块、点选等验证会单独提示；登录成功后仍需确认相应读取恢复。</p>
     </main>
@@ -72,5 +72,9 @@
         </section>
       </div>
 </div></dialog>
-</body>
+<dialog id="bark-dialog" class="settings-modal" aria-labelledby="bark-title"><div class="modal-head"><h2 id="bark-title">手机锁屏通知</h2><button class="button small" type="button" data-command="bark-close">关闭</button></div><div class="modal-body">
+<p>安装 Bark 并允许通知，将首页的推送地址粘贴到下方。测试时先锁屏，再点击电脑上的“发送测试”。</p>
+<form id="bark-form"><label class="field"><span>Bark 推送地址</span><input id="bark-url" type="password" autocomplete="off" maxlength="2048" placeholder="https://api.day.app/…"><small>已保存时留空即可保留；密钥在本机加密保存。</small></label><label class="login-toggle"><input id="bark-enabled" type="checkbox" checked><span>需要人工处理时通知我</span></label><div class="login-actions"><button class="button primary small" type="submit">保存配置</button><button class="button small" type="button" data-command="bark-test">发送测试</button><button class="button small" type="button" data-command="bark-confirm">我已收到</button></div></form>
+<p id="bark-status" class="login-hint" role="status">正在读取…</p><p class="muted">服务端接受推送后，仍需确认手机实际收到。同一故障只提醒一次；通知不包含客户消息或验证码。</p>
+</div></dialog></body>
 </html>

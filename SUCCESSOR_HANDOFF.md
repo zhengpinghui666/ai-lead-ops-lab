@@ -1,5 +1,15 @@
 # ClubOps 接续说明
 
+## 2026-09-14 Bark 锁屏通知入口已上线，手机人工验证页尚未完成
+
+- 用户追问 Scriptable 锁屏通知能力后，进一步问“怎么接入 bark”。已核对 Scriptable 官方仅本地 schedule 能力，Bark 官方 POST /push、device_key、timeSensitive、url。已告知手机安装 Bark、允许通知，配置地址不发聊天；自行粘贴本地 ClubOps「账号登录→手机通知」。
+- 生产已部署 bark_notify.py、static/bark.js、login.html/login.js、server.py、scripts/incident-watch.py、test_bark_notify.py、test_login_recovery_http.py（仅8文件）。配置 DPAPI，GET/保存响应不返回密钥；仅默认官方 https://api.day.app 地址，POST密钥在body，固定TLS主机、不重定向。需用户发送锁屏合成测试并点“我已收到”后才启用故障通知。Bark accepted只是服务端接受；未知结果不自动重发；同一active needs_user事件按配置revision去重。通知正文只有渠道+人工处理提示，无客户/验证码/账号秘密。
+- 独立事件watcher异步触发Bark网络任务，不阻塞Codex投递；自身仍看真实人工状态，不会自动清除平台验证码。Bark不替代Codex实时故障处理。页面外点击关闭、保存后清空输入。35项Python回归（含HTTP CSRF/Origin、真实DPAPI、重复/未知结果）和既有login frontend通过；真实headless Edge合成UI1366x768/390x844，无弹窗横向溢出，保存→测试→手动确认3次写入全stub，未给真实手机发送。
+- 通过正常maintenance保留源码ZIP和SQLite在线备份，短暂停既有开启渠道后正常重启，主服务现PID271720；恢复18群、原直播track、9517身份独立验证后恢复授权自动私信。原inbox暂停和评论attention保留，不把维护重启当解除验证码。watcher已重启、hold已清零。详情 artifacts/manual-verification-20260914/{before.json,before-stop.json,installed.json,latest.json,source-before.zip,database-backup}。不要重跑prepare覆盖基线。
+- 目前Bark /api/bark实测configured=false、verified=false，等待用户手机配置和真实锁屏验收。已发async问题：锁屏是否收到“ClubOps 锁屏通知测试”，收到后电脑点“我已收到”。不能替用户确认、不能称实际锁屏已验证。
+- **手机人工验证码流程仍在开发，未部署，未完成**。新独立stage artifacts/manual-verification-20260914/staging/integrations/login-relay/manual.mjs仅协议草稿，引用verification-page.mjs尚不存在，尚无tests/collector/Scriptable/云部署，不可全量覆盖或使用。这份stage其余Bark文件已部署；此前多账户未完成stage仍独立保留。人工页目标：保留原账号/批次/浏览器挑战、手机人操作、明确平台结果及真正采集恢复；不能换路径重试先前自动审批拒绝的“创建并打开7446人工验证窗口”操作。当前原验证码没有通过。
+
+
 ## 2026-09-14 17:43 接续重点（覆盖下方旧状态）
 
 - 用户明确：监控一旦意外暂停，最高优先级，先处理故障再做功能/UI。17:38+最新 API 仍评论 attention，最后2876 needs_verification，7446 点选 point_character_uncertain、submissions0；不能称已恢复。直播545 running，18群开启；不是其他渠道全停。原人工验证窗口工具操作被自动审批拒绝，仅 blocked by policy；本轮没有换通道重试该被拒操作。

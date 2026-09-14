@@ -68,6 +68,10 @@ def pulse(bridge,port):
         bridge.dispatch()
     except Exception as exc:
         error=type(exc).__name__
+    try:
+        import bark_notify
+        bark_notify.schedule(bridge)
+    except Exception:pass # Phone transport must not interrupt the fault receiver.
     try:state=bridge.status()
     except Exception as exc:
         state=dict(mode='unavailable',enabled=False)

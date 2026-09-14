@@ -49,6 +49,21 @@ class LoginHTTPTests(unittest.TestCase):
         with response:
             return response.status, response.read(), dict(response.headers)
 
+    def test_bark_configuration_is_local_csrf_protected_and_never_echoes_key(self):
+        import bark_notify
+        status,raw,_=self.request('/api/bark');self.assertEqual(status,200)
+        csrf=json.loads(raw)['csrf'];good={'X-ClubOps-Token':csrf,'Origin':self.base}
+        payload={'url':'https://api.day.app/synthetic_device_key_1234','enabled':True}
+        self.assertEqual(self.request('/api/bark-save',payload)[0],403)
+        self.assertEqual(self.request('/api/bark-save',payload,**{**good,'Origin':'https://evil.invalid'})[0],403)
+        self.assertEqual(self.request('/api/bark-save?mode=demo',payload,**good)[0],400)
+        status,raw,_=self.request('/api/bark-save',payload,**good)
+        self.assertEqual(status,200);self.assertNotIn(b'synthetic_device_key_1234',raw)
+        self.assertFalse(json.loads(raw)['result']['verified'])
+        status,raw,_=self.request('/api/bark');self.assertNotIn(b'synthetic_device_key_1234',raw)
+        self.assertEqual(self.request('/bark.js')[0],200)
+        self.assertEqual(self.request('/data/private/phone-notify/bark.dpapi')[0],404)
+
     def test_credentials_require_explicit_post_with_csrf_and_origin(self):
         private = login_relay.provision()
         login_relay.bind('https://fixture.example.test')

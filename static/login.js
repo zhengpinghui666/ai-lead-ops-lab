@@ -82,6 +82,7 @@ document.addEventListener('submit',event=>{
 });
 document.addEventListener('click',event=>{
   const command=event.target.closest('[data-command]')?.dataset.command;if(!command)return;
+  if(command.startsWith('bark-'))return;
   if(command==='menu'||command==='close-menu'){const open=command==='menu';setMobileNavigation(open);return;}
   if(command==='hide-phone'){hidePhone();return;}
   if(command==='settings'){$('#login-settings-dialog').showModal();return;}
@@ -125,3 +126,4 @@ let settingsBackdropDown=false;
 $('#login-settings-dialog').addEventListener('pointerdown',event=>{settingsBackdropDown=event.button===0&&settingsBackdrop(event);});
 $('#login-settings-dialog').addEventListener('pointercancel',()=>{settingsBackdropDown=false;});
 $('#login-settings-dialog').addEventListener('click',event=>{const dismiss=settingsBackdropDown&&settingsBackdrop(event);settingsBackdropDown=false;if(dismiss)$('#login-settings-dialog').close();});
+

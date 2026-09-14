@@ -27,6 +27,11 @@
       "bytes": 4035
     },
     {
+      "name": "BARK_NOTIFICATIONS.md",
+      "sha256": "03b3e1b4d8bbbc54e43918d5b1ca5b136500937b544775b71d28089d3fd98e81",
+      "bytes": 1118
+    },
+    {
       "name": "CAPTCHA_PROJECT_RESEARCH.md",
       "sha256": "192a5eb7589de169cf333ece31ee877b531c7f0c42b71d9de71cd8bfd2527af2",
       "bytes": 14297
@@ -173,8 +178,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "c93b6445b7c05e204640a987bbf7eced19b00148bf625f6c2864027b7765a1b4",
-      "bytes": 122276
+      "sha256": "08b7427ff9e50ac8ebdcc0ddaf0adaab92bd228c33f89e132273a473a2e3fe18",
+      "bytes": 125262
     },
     {
       "name": "UID_HTTP.md",
@@ -220,6 +225,11 @@
       "name": "author_roles.py",
       "sha256": "49f41fc0490bc0e09a58fd827c7164fbbab557cf0ebf3bc5fc097121037e2b03",
       "bytes": 6653
+    },
+    {
+      "name": "bark_notify.py",
+      "sha256": "286c53d960df13f7f0854e14328147ff79583d8f052e6818b7d2557e8981a39c",
+      "bytes": 8133
     },
     {
       "name": "browser_config.cjs",
@@ -783,8 +793,8 @@
     },
     {
       "name": "scripts/incident-watch.py",
-      "sha256": "1b194e973a01c749df3c13bc9dc9a927f5a769b2ed11d8640236284d7a2fba25",
-      "bytes": 4639
+      "sha256": "ec6d7a5f39d88159b2cb647546bcfc7746bd9910b5650fb6fbcbab2be8d3b56c",
+      "bytes": 4916
     },
     {
       "name": "scripts/install-incident-watch.ps1",
@@ -883,8 +893,8 @@
     },
     {
       "name": "server.py",
-      "sha256": "037be08d2cb8fbf98ac0013e151d124fe27d03cf0b999de4785ce8bc0fd7903e",
-      "bytes": 27982
+      "sha256": "27ffe9d2ff5ccb3ccdb407858bc9e0c859661e8637300bbf1f8471e97898519a",
+      "bytes": 28590
     },
     {
       "name": "service_roles.py",
@@ -893,8 +903,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "6109f7ea65e3560beabb60d104edc6b55f6ddf950e9593a45bbd2398881ee31c",
-      "bytes": 9018
+      "sha256": "a656335c40d0e57600d1faa7ebb71b43d6ba6795965a3d0418657b99477dfb8c",
+      "bytes": 9114
     },
     {
       "name": "start.ps1",
@@ -917,6 +927,11 @@
       "bytes": 229166
     },
     {
+      "name": "static/bark.js",
+      "sha256": "b897b3739d0043b28de9f42c22d044907f99238979411a772dafdf270dc0f65d",
+      "bytes": 3182
+    },
+    {
       "name": "static/clubops-iphone.js",
       "sha256": "c2dce0286e0a3b63af506d38f8925fdc8da5400bc863769369e89e73e2dad3e8",
       "bytes": 10438
@@ -933,13 +948,13 @@
     },
     {
       "name": "static/login.html",
-      "sha256": "5b56abbf0f16f74d3070ffbf6fdb0a7aa2874cd9ed305623fcf8458965ef1f4b",
-      "bytes": 9411
+      "sha256": "74853fec9285019f46bc5b52e1a9fb7ed426f156754c1a8b9b62c2629302f0ff",
+      "bytes": 10889
     },
     {
       "name": "static/login.js",
-      "sha256": "b5cd51dfd4cda00ff08c71f0f6fbf35919a5c718e1f05a9a5caf4c1d8f607c0b",
-      "bytes": 15329
+      "sha256": "0e73053ff2081da44b1fe4661d3b57e45cffe174da512bf6809d182a3dcae307",
+      "bytes": 15379
     },
     {
       "name": "static/vendor/lucide.LICENSE.txt",
@@ -975,6 +990,11 @@
       "name": "test_author_collection.py",
       "sha256": "f8d4124c71e4d7f2836494e42038201e1013508c09182967d19f32ffdc51dcbd",
       "bytes": 8775
+    },
+    {
+      "name": "test_bark_notify.py",
+      "sha256": "e4b2521d4b08c0f8568f845c898b7c54069d00cf26f28a6633fc3c7b7ed45259",
+      "bytes": 4823
     },
     {
       "name": "test_candidate_pool.py",
@@ -1263,8 +1283,8 @@
     },
     {
       "name": "test_login_recovery_http.py",
-      "sha256": "1b5b3c1655b2c695d126c4c051647d69745d2cb2555693087e80113a5ec21f49",
-      "bytes": 4110
+      "sha256": "17895792e7dd43f050b43f2d6b2be103cc5875a6f0662eb8641bd3e71375bb91",
+      "bytes": 5314
     },
     {
       "name": "test_login_relay.py",
