@@ -19,6 +19,7 @@ async function scenario(browser,name){
     const lists=name==='hidden-first'?hidden+panel('active'):name==='hidden-last'?panel('active')+hidden:name==='ambiguous'?panel('active')+panel('other'):name==='all-hidden'?hidden:panel('active');
     await route.fulfill({contentType:'text/html; charset=utf-8',body:`<!doctype html><title>Synthetic note fixture</title><button id="tab">评论(3)</button><main style="display:none" id="comments">${lists}</main><script>
       const name=${JSON.stringify(name)};let loaded=false,more=false;
+      if(name==='prefetch-hidden'||name==='prefetch-login-gate'){fetch('/aweme/v1/web/comment/list/?aweme_id=${vid}&cursor=0').then(()=>{loaded=true;if(name==='prefetch-login-gate'){const p=document.createElement('p');p.textContent='登录后可查看更多评论';document.body.append(p);}});}
       document.querySelector('#tab').onclick=async()=>{document.querySelector('#comments').style.display='block';await fetch('/aweme/v1/web/comment/list/?aweme_id=${vid}&cursor=0');loaded=true;if(name==='login-gate'){const p=document.createElement('p');p.textContent='登录后可查看更多评论';document.body.append(p);}};
       document.querySelector('#active')?.addEventListener('scroll',async()=>{if(loaded&&!more){more=true;await fetch('/aweme/v1/web/comment/list/?aweme_id=${vid}&cursor=2');}});
       </script>`});return;
@@ -38,12 +39,12 @@ async function scenario(browser,name){
   let result,error;
   try{result=await reader.collect({video_id:vid,video_url:url,video_title:'合成无畏契约图文'});}catch(e){error=e;}
   await reader.settle();
-  if(['hidden-first','hidden-last','single'].includes(name)){
+  if(['hidden-first','hidden-last','single','prefetch-hidden'].includes(name)){
    assert.equal(error,undefined,name);assert.equal(result,true,name);
-   assert.deepEqual(requests,['0','2'],name);assert.equal(messages.filter(r=>r.type==='comment').length,3,name);
+   assert.deepEqual(requests,name==='prefetch-hidden'?['0','0','2']:['0','2'],name);assert.equal(messages.filter(r=>r.type==='comment').length,3,name);
    assert.equal(messages.filter(r=>r.type==='checkpoint').at(-1).status,'done',name);
    assert.ok(messages.some(r=>r.stage==='comment-read'&&r.snapshot.processing.has_more===false),name);
-  }else if(name==='login-gate'){
+  }else if(['login-gate','prefetch-login-gate'].includes(name)){
    assert.equal(error?.code,'needs_login');assert.deepEqual(requests,['0']);
   }else{
    assert.equal(error,undefined,name);assert.equal(result,false,name);assert.deepEqual(requests,['0'],name);
@@ -55,8 +56,8 @@ async function scenario(browser,name){
 (async()=>{
  const browser=await chromium.launch({...require('./browser_config.cjs')(),headless:true});
  try{
-  const results=await Promise.allSettled(['hidden-first','hidden-last','single','ambiguous','all-hidden','login-gate'].map(name=>scenario(browser,name)));
+  const results=await Promise.allSettled(['hidden-first','hidden-last','single','ambiguous','all-hidden','login-gate','prefetch-hidden','prefetch-login-gate'].map(name=>scenario(browser,name)));
   for(const r of results)if(r.status==='rejected')throw r.reason;
-  console.log('PASS: 6 real Chromium synthetic note cases: hidden duplicates in either order, single panel, ambiguous panels, no visible panel and login guard. No live access.');
+  console.log('PASS: 8 real Chromium synthetic note cases (including hidden prefetch and prefetch login gate): hidden duplicates in either order, single panel, ambiguous panels, no visible panel and login guard. No live access.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

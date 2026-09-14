@@ -18,8 +18,8 @@
     },
     {
       "name": "AFTERNOON_REQUIREMENTS_20260914.md",
-      "sha256": "c5d8dca34b88c7a57ece1fd2529d5101710d9c61082d4260699bbde5c4a48690",
-      "bytes": 7771
+      "sha256": "bfa0276b8dcf67bcc0ef7b0801e1dd56f9096b3fc4ad50f5fc66176f8e5f189f",
+      "bytes": 8206
     },
     {
       "name": "ASSET_VERTICALITY.md",
@@ -193,8 +193,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "e1026e7c6a4dffaffcc7b98dd4a5b2cf6744139da6e73a15fa5106fbe9a66b5e",
-      "bytes": 152958
+      "sha256": "1730cf978bfea91801ae6ad322d40568fbbc663d5b754dd6e07cf9736bc38890",
+      "bytes": 155279
     },
     {
       "name": "UID_HTTP.md",
@@ -383,8 +383,8 @@
     },
     {
       "name": "collector_reader.cjs",
-      "sha256": "5a1ca51ead9f9925d041639fa25204885e4a485b352b677fa5f876c60d5c483b",
-      "bytes": 23916
+      "sha256": "e34eb76400a2e1169e68593396a8870cf692899eb7efbcbb361a43158ad3603a",
+      "bytes": 24359
     },
     {
       "name": "collector_runner.cjs",
@@ -1423,8 +1423,8 @@
     },
     {
       "name": "test_note_comment_scroll.cjs",
-      "sha256": "1a3fcf0937baa62d73e39f9a4e86019a1c3f0162ed3f9f6e66cc4800fd8c55f2",
-      "bytes": 4776
+      "sha256": "e4df1933f3da8cab4f9b828b5de0e8ffd2b23b875006e1bb52a7a769199cb787",
+      "bytes": 5315
     },
     {
       "name": "test_parallel_worker.cjs",

@@ -205,8 +205,9 @@ function createReader(page,shared){
     if(config.kind==='search')await observeVideo();
     phase='comment';await shared.running(`正在读取视频 ${row.video_id} 的已加载评论（最多 ${config.comment_limit} 条）。`);
     await goto(row.video_url);
-    if(!recognized&&parser.contentPageKind(page.url(),row.video_id)==='note'){
-      // Task 118: the note page has a plain DIV tab, not an accessible button.
+    if(parser.contentPageKind(page.url(),row.video_id)==='note'&&await page.locator('[data-e2e="comment-list"]:visible').count()===0){
+      // A note can prefetch comments while its actual panel is still hidden.
+      // Open the unique visible tab based on panel visibility, not response arrival.
       await guard();
       const tabs=page.getByText(/^评论\(\d+\)$/),count=await tabs.count(),visible=[];
       if(count<=4)for(let i=0;i<count;i++){const tab=tabs.nth(i);if(await tab.isVisible())visible.push(tab);}
