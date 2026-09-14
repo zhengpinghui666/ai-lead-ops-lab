@@ -147,6 +147,11 @@
       "bytes": 35744
     },
     {
+      "name": "REALTIME_INCIDENTS.md",
+      "sha256": "4e04e17485131020405f34d0a04efb989c085f045e72f994ad723edfbcc39e47",
+      "bytes": 3453
+    },
+    {
       "name": "REQUIREMENTS_DISCUSSION.md",
       "sha256": "a7b4cfc0314c6f46d5ca107a8422d189d72b58694bde0ba38eceb6b5a05d6cf8",
       "bytes": 23059
@@ -168,8 +173,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "2751c2f6414787f90316196df03ae64b16e000377d18b7e544a924ea40430038",
-      "bytes": 100264
+      "sha256": "94536fb35d974a447b268008cb1318494941e62e1faa26bf269d16986d6d5fdf",
+      "bytes": 103305
     },
     {
       "name": "UID_HTTP.md",
@@ -467,6 +472,11 @@
       "bytes": 15650
     },
     {
+      "name": "incident_bridge.py",
+      "sha256": "8923ff7d0329079716e81afa2b95c5c7963fbbb3a20b96efd2d095ad5e03efda",
+      "bytes": 15429
+    },
+    {
       "name": "integrations/iphone/forwarder-core.cjs",
       "sha256": "c9611877b25201e587b081038cdbc594ef4e2a4effa830d198ad290d0360840e",
       "bytes": 5276
@@ -747,6 +757,16 @@
       "bytes": 5677
     },
     {
+      "name": "scripts/incident-watch.py",
+      "sha256": "78e4ad3b0d4decd12faebb246ef0fe5640ca4d0e3c5aad4d9c415e9e970101ee",
+      "bytes": 4049
+    },
+    {
+      "name": "scripts/install-incident-watch.ps1",
+      "sha256": "87ecfa8e36fb45f46e8bac2ed371a0625a550e0e175dbf7cfddccced1a7ecb9e",
+      "bytes": 1422
+    },
+    {
       "name": "scripts/login-recovery.cjs",
       "sha256": "e8ac65fb4c768f6ee5877b1be1ea99df4c6a7531d33a3d55330b8580f4a2cda1",
       "bytes": 9790
@@ -763,8 +783,8 @@
     },
     {
       "name": "scripts/monitor-health.py",
-      "sha256": "ccfec76a9739db7c82c910110d92af50845fb8acb3c6493fb9e1016f57a33ee0",
-      "bytes": 6713
+      "sha256": "a2b678c182cf0fae54f7b7027bfdb9ddd1224bd82aaab730cef85581595325bd",
+      "bytes": 7056
     },
     {
       "name": "scripts/prepare-collection-session.cjs",
@@ -843,8 +863,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "27f548c8b1f35b1d2ff10419cb22693f62eb918795f563f9ae2e6735e8907b55",
-      "bytes": 8537
+      "sha256": "c7ebfe9629486aaf91b5928b9d11c938c6a152861910b04d46954c2ef61aa188",
+      "bytes": 8696
     },
     {
       "name": "start.ps1",
@@ -1090,6 +1110,11 @@
       "name": "test_http_probe.cjs",
       "sha256": "6f28622cabf044017fd08d6848b2ef716442c34fc2d9c346557085dc1494b2c9",
       "bytes": 7495
+    },
+    {
+      "name": "test_incident_bridge.py",
+      "sha256": "302839f7a2ec376d6a440d90c1c78cd91c153adf032abd6928794ededb81413c",
+      "bytes": 7904
     },
     {
       "name": "test_intent_outreach.py",

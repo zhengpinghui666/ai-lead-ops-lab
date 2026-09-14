@@ -288,5 +288,10 @@
   "uid_session_renewal.py",
   "uid_transport.py",
   "video_discovery.py",
-  "video_metadata.py"
+  "video_metadata.py",
+  "incident_bridge.py",
+  "scripts/incident-watch.py",
+  "scripts/install-incident-watch.ps1",
+  "test_incident_bridge.py",
+  "REALTIME_INCIDENTS.md"
 ]

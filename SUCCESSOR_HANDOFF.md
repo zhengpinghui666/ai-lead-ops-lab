@@ -1,5 +1,19 @@
 # ClubOps 接续说明
 
+## 2026-09-14 12:46 实时通知监听已安装，等待真实接收验收
+
+用户要求完成故障实时唤醒。新增 incident_bridge.py、scripts/incident-watch.py、安装脚本与 REALTIME_INCIDENTS.md：Windows 目录变更事件触发只读健康检查，独立 data/private/incident-bridge/outbox.db 保存事件和投递回执，通过本机安装版 codex queue 向现有 AI获客任务 01a09666-68bb-7860-979d-b3415b851bed 排入消息。未新建 Codex 任务或 app-server，未改内部 Codex 数据库。正常事件合并250ms，10秒仅为进程失联等本地兜底；原小时巡检保留。
+
+已安装并启动 Windows 任务 ClubOps Incident Bridge，首个监听PID258344；20项通知/健康测试通过，原生临时目录事件实测0.351秒。投递元数据不含评论原文、凭据、响应体或模型参数；故障合并去重、正常恢复抑制、维护hold自动过期，未知投递不盲目重发。发送进程中断超过60秒改为unknown供排查，不永远伪装sending；resolved要求真实接收并且健康探针可用、原入口恢复。独立监听进程不控制业务开关、不发客户私信。
+
+验收消息78011097-4294-4e56-bb33-44a50628b258已在12:45:31由CLI确认queued，received_at尚空。当前主动开发轮次不能代替接收者填写回执，也不能声称实时唤醒已端到端通过。必须在收到实际自动消息之后，按消息中的准确命令写received、再resolved；仅合成验收，不改业务数据。随后核对 status.json、monitor-health.json 中 receiver_verified 与 codex_push_connected。此前独立CLI连接探针RTW-PROBE-20260914也可能先到达，该探针不能代替本次具回执编号的验收。
+
+本轮已按用户“直播间怎么也暂停了”核查旧457为9月13日18:09的rate_limited历史任务，并通过原API对原直播库做一次恢复，tracker34启用。458/459/460均completed，分别17/18/18帧、0条文字；461继续自动运行，不能把帧数称为弹幕数。没有修改频率或增加限流无限重试，没有额外私信测试。当前主服务仍266684，无业务重启。
+
+12:43评论监控running，3作品/批、30条/作品、page_concurrency=1、完成后间隔30秒、24h窗口；HTTP最近3–10秒，浏览器搜索37秒。最近1小时首次采到135条24h内评论，3条发布后60秒内、6条300秒内，包含旧评论补采，不代表纯新评论实时达标率。已向用户明确目前单路轮询，需将活跃作品新评论与旧评论补采分开才能改善，尚未修改并发与调度策略。
+
+回退源码和验收在 artifacts/realtime-wakeup-20260914；source-before.zip是新通知功能之前290文件，source-files.json现295文件。新功能只需安装/重启独立监听与只读健康任务，不需重启业务服务。若监听心跳过期，原小时巡检应核对 ClubOps Incident Bridge 任务并恢复；unknown不能直接重发，先核对现有任务是否实际收到。最后备份结果见data/github-backup/last-run.json。
+
 ## 2026-09-14 12:12 评论加载暂停与故障通知缺口
 
 11:55:25 批次2569（浏览器搜索）以needs_interaction结束，计划attention。同页诊断HTTP200、无导航错误、无评论响应；正文是正常作品页，含“全部评论／留下你的精彩评论吧／加载中”，无验证码样本、登录或限流证据。此前2567/2568 HTTP实读成功，故障monitor-incident事件18636在11:55:25已写入，但仅是本地日志。12:04对同作品7670835480107816308用原data/browser-profile后台浏览器复核2570 completed，30条均过旧，不因复核触发新增需求或测试私信；随后原24h监控恢复，2576—2578连续HTTP完成。

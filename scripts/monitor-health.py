@@ -67,10 +67,17 @@ def assess_inbox(rows, now):
 
 def check(data_dir=BASE / 'data', port=8765):
     now = datetime.now(timezone.utc)
-    # A local event/health file is not an acknowledgement from the Codex app.
-    # No outbound event receiver is implemented by this watcher.
+    # A fresh listener heartbeat alone is not proof that Codex received a message.
+    import sys
+    if str(BASE) not in sys.path:sys.path.insert(0,str(BASE))
+    from incident_bridge import feedback
     report = {'checked_at': now.isoformat(), 'status': 'healthy', 'issues': [],
-              'feedback': {'mode': 'local_only', 'codex_push_connected': False}}
+              'feedback': feedback(data_dir)}
+    if report['feedback']['mode']=='event_queue':
+        if not report['feedback'].get('watcher_running'):
+            report['issues'].append('feedback:watcher_stale')
+        if (report['feedback'].get('last_delivery') or {}).get('status')=='unknown':
+            report['issues'].append('feedback:delivery_unknown')
     try:
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with opener.open(f'http://127.0.0.1:{port}/api/service', timeout=5) as response:
