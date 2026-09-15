@@ -18,8 +18,8 @@
     },
     {
       "name": "AFTERNOON_REQUIREMENTS_20260914.md",
-      "sha256": "e8326a30963fd72ce03cf73d76d7610faa0c61ecaa0c20c6c8b41309890e3eba",
-      "bytes": 13950
+      "sha256": "293c4188328e253e5f7cc2628b0a0df7cc8d6949bfb10afb78559623b85f596b",
+      "bytes": 14229
     },
     {
       "name": "ASSET_VERTICALITY.md",
@@ -75,6 +75,11 @@
       "name": "DELIVERY.md",
       "sha256": "b82b8cf8f115bbbcee1faf3c51f4ead44a69dfc5731f48bd94b9f847dd7beaff",
       "bytes": 131160
+    },
+    {
+      "name": "DELIVERY_STATUS_20260915.md",
+      "sha256": "c4d8a97ad6d5467c8350f877542a2f909a19987fd2fe78217230068e50a55e40",
+      "bytes": 7487
     },
     {
       "name": "DISCOVERY_TRACKING.md",
@@ -203,8 +208,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "8904d95d2f53d2d5e2cff960e92d03b71a2f6c0253ed9031362c04cebbeb87fc",
-      "bytes": 201765
+      "sha256": "f98326b113e8a5eda838b8f8cfd8bbedf156340a8a38632b47ff6cc1964d2c66",
+      "bytes": 204882
     },
     {
       "name": "UID_HTTP.md",
@@ -348,8 +353,8 @@
     },
     {
       "name": "collection_accounts.py",
-      "sha256": "23dd8c91adeca941cd67d4854a11ef26858be48d3058d77bfbaa9af8c2e9e0b6",
-      "bytes": 11055
+      "sha256": "1cea7eb064bccb9fb34a5d0eb867749cd588bdd981a36cfb2bdc4cd430406ef0",
+      "bytes": 11414
     },
     {
       "name": "collection_recovery.py",
@@ -543,8 +548,8 @@
     },
     {
       "name": "group_monitor.py",
-      "sha256": "c812559dea5a6c9db1a6b4a5ab7336d3bc0bd56a9ee1e58aeb5d74de085e04d0",
-      "bytes": 30036
+      "sha256": "d878d3cc1497eeaf04b68e2550f0129e1d9441ee1b7147bf35d496c3eb4f0e42",
+      "bytes": 30104
     },
     {
       "name": "group_profiles.py",
@@ -558,8 +563,8 @@
     },
     {
       "name": "incident_bridge.py",
-      "sha256": "0b3885c236154de1cb72d3fdb99a3543d738d3e7a2d4b4f2d5dff43f6ae34733",
-      "bytes": 18356
+      "sha256": "094eff510fd4cf51d2870694a0d780f65ac83cd2a184faa24c0f3be63c671701",
+      "bytes": 18637
     },
     {
       "name": "incident_push.py",
@@ -903,8 +908,8 @@
     },
     {
       "name": "scripts/monitor-health.py",
-      "sha256": "d5d8a979a939615a384d37b3e78c365c1e9801eababbfd9552b1edcbcc98929b",
-      "bytes": 7559
+      "sha256": "2bfbe0809e556141cb9773df15ac60dea8b7d638f0b3a6ead0fd54f48f7dfaeb",
+      "bytes": 9359
     },
     {
       "name": "scripts/prepare-collection-session.cjs",
@@ -978,8 +983,8 @@
     },
     {
       "name": "server.py",
-      "sha256": "d214a40dfcef996068ecceceab01f1b13745484fe6ce947f25400c410aaeec7f",
-      "bytes": 29536
+      "sha256": "88b083ff3b6edf827c1c2c063bed19c96962bc3eee167636dcc88701bdf13c47",
+      "bytes": 29655
     },
     {
       "name": "service_roles.py",
@@ -988,8 +993,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "a2b3b8a598ed9ece278ffe9ab9cfd25122043fa2efbfb5de155c65ad04c4b2c2",
-      "bytes": 10121
+      "sha256": "1ada2ad58a2c5cba17468f1aa482c78dee8723e0e244c54b21a9fb3e474f5117",
+      "bytes": 10155
     },
     {
       "name": "start.ps1",
@@ -998,8 +1003,8 @@
     },
     {
       "name": "static/accounts.js",
-      "sha256": "65397cf796063a60abf309e4eb585d110673dd217fba67850e1444ede9e36868",
-      "bytes": 10311
+      "sha256": "383b6d70770880700bf25820872cc3094cafa15e938877d91847aaafbf29712f",
+      "bytes": 11124
     },
     {
       "name": "static/app.css",
@@ -1603,8 +1608,8 @@
     },
     {
       "name": "test_uid_session_renewal.py",
-      "sha256": "b53f42f54343c8083d20d8bad9ced70009df213a104c5df2008f117644cd8ce2",
-      "bytes": 13036
+      "sha256": "93c67bd309cf31fd971b524c395ccf08cf83ec23c1393ea85851b19636d8503b",
+      "bytes": 22035
     },
     {
       "name": "test_verification.cjs",
@@ -1703,8 +1708,8 @@
     },
     {
       "name": "uid_session_renewal.py",
-      "sha256": "d22480bd39f5383707aed8cd2cb918bd133f6e414581fe1d7d17627090685cd5",
-      "bytes": 7864
+      "sha256": "942d7df1f37df0f366925f484a752ebf4653a87563fe96202df2bf79acc804a6",
+      "bytes": 12238
     },
     {
       "name": "uid_transport.py",

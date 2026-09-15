@@ -83,6 +83,32 @@ def assess_groups(rows, now):
     return result
 
 
+def assess_renewals(connection):
+    """Read account-scoped gates directly; deliberate task pauses stay silent."""
+    result = {'issues': []}
+    if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='collection_accounts'").fetchone():
+        return result
+    def setting(key):
+        row = connection.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
+        return json.loads(row[0]) if row else {}
+    policy, discovery = setting('intent_outreach_policy'), setting('public_group_discovery')
+    for row in connection.execute('SELECT * FROM collection_accounts WHERE enabled=1'):
+        row = dict(row); roles = set(json.loads(row['roles'])); uid = row['sender_uid']
+        active = 'outreach' in roles and policy.get('enabled') and policy.get('sender_uid') == uid
+        if 'groups' in roles:
+            cfg = discovery if discovery.get('account_uid') == uid else setting('public_group_discovery:' + uid) or discovery
+            active = active or cfg.get('enabled') or connection.execute(
+                'SELECT 1 FROM monitored_groups WHERE account_uid=? AND enabled=1 LIMIT 1', (uid,)).fetchone()
+        active = active or roles.intersection({'groups', 'outreach'}) and connection.execute(
+            'SELECT 1 FROM uid_inbox_sync WHERE account_uid=? AND enabled=1 LIMIT 1', (uid,)).fetchone()
+        if not active:
+            continue
+        key = 'uid_session_renewal' + (':' + row['account_id'] if row['storage'] == 'isolated' else '')
+        if setting(key).get('status') == 'attention':
+            result['issues'].append('account_sessions:' + row['account_id'] + ':attention')
+    return result
+
+
 def check(data_dir=BASE / 'data', port=8765):
     now = datetime.now(timezone.utc)
     # A fresh listener heartbeat alone is not proof that Codex received a message.
@@ -132,6 +158,8 @@ def check(data_dir=BASE / 'data', port=8765):
                 groups=[dict(r) for r in connection.execute('SELECT id,enabled,status,failures,next_run_at,last_read_at FROM monitored_groups')]
                 report['groups']=assess_groups(groups,now)
                 report['issues'].extend(report['groups']['issues'])
+            report['account_sessions'] = assess_renewals(connection)
+            report['issues'].extend(report['account_sessions']['issues'])
     except Exception as error:
         # Do not serialize exceptions containing response bodies or account data.
         report['issues'].append('probe:' + type(error).__name__)

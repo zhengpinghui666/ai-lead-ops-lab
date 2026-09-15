@@ -263,7 +263,7 @@ def eligible(c,raw,engine,account,*,allow_unknown=False):
 def tick(*,reader=None,catalog_reader=None):
     import uid_session_renewal,account_scope
     selected=account_scope.current()
-    if (not selected or selected['storage']=='primary') and uid_session_renewal.pending():
+    if uid_session_renewal.pending():
         return
     global ACTIVE
     if STOP.is_set() or not GUARD.acquire(blocking=False):return
@@ -469,6 +469,8 @@ def start_service():
                 if STOP.is_set():break
                 with account_scope.use(account):
                     for action in (tick,group_discovery.tick,group_profiles.tick):
+                        import uid_session_renewal
+                        if uid_session_renewal.pending():break
                         try:action()
                         except Exception:pass  # One account cannot terminate other account loops.
     THREAD=threading.Thread(target=loop,name='group-monitor',daemon=True);THREAD.start()

@@ -9,25 +9,40 @@ import clubops as app
 import uid_messaging
 import uid_protocol
 import uid_session
+import account_scope
+import collection_accounts
 
 KEY = 'uid_session_renewal'
 GUARD = threading.RLock()
 STOP = threading.Event()
 THREAD = None
 ACTIVE = False
+ACTIVE_ACCOUNT = None
 LEAD_SECONDS = 300
 RETRIES = (60, 120, 240)
 
 
+def state_key():
+    selected=account_scope.current()
+    return KEY+':'+selected['account_id'] if selected and selected['storage']=='isolated' else KEY
+
+
+def managed_accounts(*,include_disabled=False):
+    with app.db() as c:
+        rows=[dict(r) for r in c.execute('SELECT * FROM collection_accounts ORDER BY account_id')]
+    if not rows:return [None]
+    return [r for r in rows if include_disabled or r['enabled'] and set(json.loads(r['roles'])).intersection({'groups','outreach'})]
+
+
 def read(c):
-    row = c.execute('SELECT value FROM settings WHERE key=?', (KEY,)).fetchone()
+    row = c.execute('SELECT value FROM settings WHERE key=?', (state_key(),)).fetchone()
     return json.loads(row['value']) if row else {}
 
 
 def write(value):
     with app.LOCKS['live'], app.db() as c:
         c.execute('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)',
-                  (KEY, json.dumps(value, ensure_ascii=False)))
+                  (state_key(), json.dumps(value, ensure_ascii=False)))
 
 
 def state():
@@ -37,12 +52,36 @@ def state():
 
 
 def pending():
-    return ACTIVE or state().get('status') in ('checking', 'retry_wait')
+    return (ACTIVE and ACTIVE_ACCOUNT==state_key()) or state().get('status') in ('checking', 'retry_wait', 'attention')
 
 
 def configured_sender():
     # A failed IM diagnostic must not block its own read-only recovery. Ignore
     # the send-readiness issues, but bind the exact configured provider and UID.
+    selected=account_scope.current()
+    if selected:
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_accounts WHERE account_id=?',(selected['account_id'],)).fetchone()
+            if (not row or not row['enabled'] or row['sender_uid']!=selected['sender_uid']
+                    or row['storage']!=selected['storage']
+                    or not set(json.loads(row['roles'])).intersection({'groups','outreach'})):
+                return None
+            if c.execute('SELECT 1 FROM account_login_jobs WHERE account_id=? AND finished_at IS NULL',(row['account_id'],)).fetchone():
+                return None
+            roles=set(json.loads(row['roles']));sender=uid_protocol.numeric_uid(row['sender_uid'])
+            active=False
+            if 'groups' in roles:
+                active=bool(c.execute('SELECT 1 FROM monitored_groups WHERE account_uid=? AND enabled=1 LIMIT 1',(sender,)).fetchone())
+                import group_discovery
+                cfg=group_discovery.config(c)
+                active=active or cfg.get('enabled') and cfg.get('account_uid')==sender
+            if 'outreach' in roles:
+                entry=c.execute("SELECT value FROM settings WHERE key='intent_outreach_policy'").fetchone()
+                policy=json.loads(entry[0]) if entry else {}
+                active=active or policy.get('enabled') and policy.get('sender_uid')==sender
+            active=active or c.execute('SELECT 1 FROM uid_inbox_sync WHERE enabled=1 AND account_uid=? LIMIT 1',(sender,)).fetchone()
+        if not active:return None
+        if selected['storage']=='isolated':return sender
     settings, _ = uid_messaging.config()
     if settings.get('provider_file') != str(Path(uid_session.__file__).resolve()):
         return None
@@ -64,8 +103,8 @@ def generation(data):
         data.get('last_verified_at', data['captured_at'])]).encode()).hexdigest()
 
 
-def tick():
-    global ACTIVE
+def tick(*,force=False):
+    global ACTIVE, ACTIVE_ACCOUNT
     # Same admission order as normal service shutdown. Release GUARD during IO
     # so shutdown can promptly reject an in-flight check instead of blocking.
     with GUARD:
@@ -80,6 +119,7 @@ def tick():
             if not uid_messaging.GUARD.acquire(blocking=False):
                 return
             ACTIVE = True
+            ACTIVE_ACCOUNT = state_key()
         finally:
             intent_outreach.GUARD.release()
     try:
@@ -90,10 +130,11 @@ def tick():
             if previous.get('status') in ('checking', 'retry_wait'):
                 write({**previous, 'status': 'paused', 'detail': '相关监控已关闭，未继续会话续验'})
             return
-        path = app.DATA_DIR / 'private' / 'uid-http' / 'session.dpapi'
+        path = account_scope.directory() / 'private' / 'uid-http' / 'session.dpapi'
         try:
             data = uid_session.load(path, check_age=False)
-            if data['sender_uid'] != sender:
+            selected=account_scope.current()
+            if data['sender_uid'] != sender or selected and data['account']!=selected['account_id']:
                 raise ValueError('account mismatch')
         except Exception:
             if previous.get('status') != 'attention' or previous.get('reason') != 'session_unavailable':
@@ -107,7 +148,7 @@ def tick():
         due = data.get('last_verified_at', data['captured_at']) + uid_session.MAX_AGE - LEAD_SECONDS
         if previous.get('status') == 'retry_wait':
             due = previous['next_run_at']
-        if now < due:
+        if now < due and (not force or previous.get('status')=='retry_wait'):
             if not previous:
                 write(dict(status='waiting', generation=key, next_run_at=due, failures=0,
                            detail='到期前自动进行账号身份与 IM 只读续验'))
@@ -142,10 +183,11 @@ def tick():
     finally:
         with GUARD:
             ACTIVE = False
+            ACTIVE_ACCOUNT = None
             uid_messaging.GUARD.release()
 
 
-def recover():
+def recover_one():
     with GUARD, app.db() as c:
         previous = read(c)
     if previous.get('status') == 'checking':
@@ -158,6 +200,40 @@ def recover():
                    detail='上次会话续验中断，按原重试次数恢复' if retry else '会话续验多次中断，需要核对'))
 
 
+def recover():
+    for selected in managed_accounts(include_disabled=True):
+        with account_scope.use(selected):recover_one()
+
+
+def cycle():
+    for selected in managed_accounts():
+        if STOP.is_set():break
+        with account_scope.use(selected):
+            try:tick()
+            except Exception:
+                # A failure belongs only to its account. Other eligible accounts
+                # retain their own expiry, backoff, and original saved session.
+                with app.db() as c:previous=read(c)
+                write(dict(previous,status='attention',reason='internal_error',checked_at=time.time(),
+                           detail='该账号会话续验出现程序错误，需要核对；其他账号继续运行'))
+
+
+def check_account(body,mode='live'):
+    if mode!='live' or set(body)!={'account_id'} or not isinstance(body['account_id'],str):
+        raise ValueError('账号核对参数无效')
+    with app.db() as c:
+        row=c.execute('SELECT * FROM collection_accounts WHERE account_id=?',(body['account_id'],)).fetchone()
+    if not row:raise ValueError('账号不存在')
+    with account_scope.use(dict(row)):
+        if not configured_sender():raise ValueError('该账号没有启用消息任务，或正在登录；未发起核对')
+        before=state().get('checked_at')
+        # A manual check does not erase a genuine rejection or skip an existing
+        # network cooldown. It only brings a healthy waiting check forward.
+        tick(force=True)
+        result=state()
+        return dict(account_id=row['account_id'],performed=result.get('checked_at')!=before,renewal=result)
+
+
 def start_service():
     global THREAD
     if THREAD and THREAD.is_alive():
@@ -165,14 +241,13 @@ def start_service():
     STOP.clear()
     def loop():
         while not STOP.wait(10):
-            try:
-                tick()
+            try:cycle()
             except Exception:
-                # Keep the local service alive; never expose raw exceptions.
-                with app.db() as c:
-                    previous = read(c)
-                write(dict(previous, status='attention', reason='internal_error', checked_at=time.time(),
-                           detail='会话续验出现程序错误，需要核对；其他采集继续运行'))
+                try:
+                    with app.db() as c:previous=read(c)
+                    write(dict(previous,status='attention',reason='internal_error',checked_at=time.time(),
+                               detail='账号续验调度出现程序错误，需要核对'))
+                except Exception:pass  # The health monitor reports an unavailable store.
     THREAD = threading.Thread(target=loop, name='uid-session-renewal', daemon=True)
     THREAD.start()
 

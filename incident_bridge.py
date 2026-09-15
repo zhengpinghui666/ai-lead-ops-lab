@@ -46,6 +46,10 @@ def faults(report):
             result[channel] = {'reason': 'read_failure', 'items': issues[:20]}
     if any(str(i).startswith('probe:') for i in report.get('issues', [])):
         result['health'] = {'reason': 'probe_failed'}
+    renewals = sorted(i for i in report.get('issues', []) if isinstance(i, str) and
+                      re.fullmatch(r'account_sessions:[a-zA-Z0-9_-]{1,64}:attention', i))
+    if renewals:
+        result['account_sessions'] = {'reason': 'renewal_attention', 'items': renewals[:20]}
     return result
 
 

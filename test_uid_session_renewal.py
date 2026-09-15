@@ -14,19 +14,22 @@ import uid_protocol as wire
 import uid_session as session
 import uid_session_renewal as renewal
 import uid_transport
+import account_scope
+import collection_accounts
 from test_uid_session import data, SENDER, RECEIVER
 
 
-def response(operation, prepared, *, bad=None):
+def response(operation, prepared, *, bad=None, sender=None):
+    sender=sender or SENDER
     if operation == 'identity':
-        return 200, 'application/json', json.dumps({'status_code': 0, 'user': {'uid': RECEIVER if bad == 'identity' else SENDER}}).encode()
+        return 200, 'application/json', json.dumps({'status_code': 0, 'user': {'uid': RECEIVER if bad == 'identity' else sender}}).encode()
     assert operation == 'im_check', 'renewal must never send, create or join'
     request = wire.decode(prepared['payload'])
     query = wire.decode(wire.one(wire.decode(wire.one(request, 8, 2)), 1000, 2))
     assert wire.one(query, 2, 0) == 1
     raw = (wire.field(1, 1001) + wire.field(2, wire.one(request, 2, 0) + (1 if bad == 'sequence' else 0))
            + wire.field(3, 409 if bad == 'business' else 0) + wire.field(4, 'OK')
-           + wire.field(5, 0 if bad == 'inbox' else 1) + wire.field(13, int(RECEIVER if bad == 'im_uid' else SENDER))
+           + wire.field(5, 0 if bad == 'inbox' else 1) + wire.field(13, int(RECEIVER if bad == 'im_uid' else sender))
            + wire.field(6, wire.field(1000, b'')))
     return 200, 'application/x-protobuf', raw
 
@@ -252,6 +255,132 @@ class RenewalWorkerTests(unittest.TestCase):
             return response(op, p)
         self.assertEqual(self.tick(exchange).call_count, 2)
 
+
+class MultiAccountRenewalTests(unittest.TestCase):
+    store=RenewalWorkerTests.store
+
+    def setUp(self):
+        RenewalWorkerTests.setUp(self)
+        self.primary=dict(account_id='synthetic_account',sender_uid=SENDER,storage='primary')
+        self.isolated=dict(account_id='isolated_account',sender_uid=RECEIVER,storage='isolated')
+        self.other_path=collection_accounts.directory(self.isolated)/'private/uid-http/session.dpapi'
+        value=dict(self.value,account=self.isolated['account_id'],sender_uid=RECEIVER)
+        with runtime.data_lock(self.other_path.parent):session.save(value,self.other_path)
+        with app.db() as c:
+            for row,roles in ((self.primary,['outreach']),(self.isolated,['groups'])):
+                c.execute('INSERT INTO collection_accounts VALUES(?,?,?,?,?,?,?)',
+                    (row['account_id'],row['sender_uid'],'fixture',row['storage'],1,json.dumps(roles),app.now()))
+            c.execute("INSERT INTO monitored_groups(account_uid,conversation_id,conversation_short_id,name,description,notice,member,participants,matched,enabled,checked_at) VALUES(?,'fixture','7657809277079257637','瓦群','','',1,3,1,1,?)",(RECEIVER,app.now()))
+
+    def result(self,row):
+        with account_scope.use(row):return renewal.state()
+
+    def test_both_due_accounts_renew_only_their_own_vault_and_ledger(self):
+        originals=[session.load(path,check_age=False) for path in (self.path,self.other_path)]
+        calls=[]
+        def exchange(op,p):
+            row=account_scope.current();calls.append((row['account_id'],op))
+            self.assertTrue(renewal.pending())
+            other=self.isolated if row['storage']=='primary' else self.primary
+            with account_scope.use(other):self.assertFalse(renewal.pending())
+            return response(op,p,sender=row['sender_uid'])
+        with patch.object(uid_transport,'request',side_effect=exchange):renewal.cycle()
+        self.assertEqual(len(calls),4)
+        for row,path,old in zip((self.primary,self.isolated),(self.path,self.other_path),originals):
+            value=session.load(path)
+            self.assertEqual(value['account'],row['account_id']);self.assertEqual(value['sender_uid'],row['sender_uid'])
+            self.assertEqual(value['captured_at'],old['captured_at'])
+            self.assertEqual(value['identity_cookie'],old['identity_cookie'])
+            self.assertEqual(value['sequence'],old['sequence']+1)
+            self.assertEqual(self.result(row)['last_result']['status'],'im_read_verified')
+        with patch.object(uid_transport,'request') as request:renewal.cycle()
+        request.assert_not_called();self.assertIsNone(account_scope.current())
+        with app.db() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM messages').fetchone()[0],0)
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM message_jobs').fetchone()[0],0)
+
+    def test_isolated_network_retry_does_not_block_primary_and_survives_restart(self):
+        def exchange(op,p):
+            if account_scope.current()['storage']=='isolated':raise uid_transport.TransportError('timeout','connect')
+            return response(op,p)
+        with patch.object(uid_transport,'request',side_effect=exchange):renewal.cycle()
+        self.assertEqual(self.result(self.primary)['last_result']['status'],'im_read_verified')
+        isolated=self.result(self.isolated);self.assertEqual(isolated['status'],'retry_wait')
+        with account_scope.use(self.primary):self.assertFalse(renewal.pending())
+        with account_scope.use(self.isolated):self.assertTrue(renewal.pending())
+        renewal.recover()
+        self.assertEqual(self.result(self.isolated)['failures'],isolated['failures'])
+        with patch.object(uid_transport,'request') as request:renewal.cycle()
+        request.assert_not_called()
+        with account_scope.use(self.isolated):renewal.write(dict(status='checking',failures=3))
+        renewal.recover()
+        self.assertEqual(self.result(self.isolated)['status'],'attention')
+        with account_scope.use(self.isolated):self.assertTrue(renewal.pending())
+        with account_scope.use(self.primary):self.assertFalse(renewal.pending())
+        self.assertEqual(self.result(self.isolated)['failures'],4)
+        self.assertEqual(self.result(self.primary)['failures'],0)
+
+    def test_disabled_role_login_and_wrong_account_do_not_issue_isolated_requests(self):
+        with account_scope.use(self.primary),patch.object(uid_transport,'request',side_effect=response):renewal.tick()
+        for changes in ("enabled=0", "roles='[]'"):
+            with app.db() as c:c.execute('UPDATE collection_accounts SET '+changes+' WHERE account_id=?',(self.isolated['account_id'],))
+            with patch.object(uid_transport,'request') as request:renewal.cycle()
+            request.assert_not_called()
+            with app.db() as c:c.execute("UPDATE collection_accounts SET enabled=1,roles='[\"groups\"]' WHERE account_id=?",(self.isolated['account_id'],))
+        with app.db() as c:c.execute("INSERT INTO account_login_jobs VALUES('fixture',?,'manual_required','fixture',?,?,NULL)",(self.isolated['account_id'],app.now(),app.now()))
+        with patch.object(uid_transport,'request') as request:renewal.cycle()
+        request.assert_not_called()
+        with app.db() as c:c.execute("UPDATE account_login_jobs SET finished_at=?",(app.now(),))
+        value=session.load(self.other_path,check_age=False);value['account']='different_account'
+        with runtime.data_lock(self.other_path.parent):session.save(value,self.other_path)
+        before=self.other_path.read_bytes()
+        with patch.object(uid_transport,'request') as request:renewal.cycle()
+        request.assert_not_called();self.assertEqual(before,self.other_path.read_bytes())
+        self.assertEqual(self.result(self.isolated)['reason'],'session_unavailable')
+
+    def test_one_internal_failure_does_not_end_other_account_cycle(self):
+        def selected_tick():
+            if account_scope.current()['storage']=='isolated':raise ValueError('synthetic-secret')
+            renewal.write(dict(status='waiting',detail='primary kept'))
+        with patch.object(renewal,'tick',side_effect=selected_tick):renewal.cycle()
+        self.assertEqual(self.result(self.primary)['detail'],'primary kept')
+        self.assertEqual(self.result(self.isolated)['reason'],'internal_error')
+        self.assertNotIn('synthetic-secret',json.dumps(self.result(self.isolated)))
+
+    def test_renewal_gate_notifies_without_waiting_for_group_read_failures(self):
+        import importlib.util
+        from incident_bridge import faults
+        spec=importlib.util.spec_from_file_location('renewal_health',Path(__file__).parent/'scripts/monitor-health.py')
+        health=importlib.util.module_from_spec(spec);spec.loader.exec_module(health)
+        for status in ('waiting','retry_wait','attention'):
+            with account_scope.use(self.isolated):renewal.write(dict(status=status,detail='private fixture'))
+            with app.db() as c:
+                issues=health.assess_renewals(c)['issues']
+                self.assertEqual(c.execute('SELECT failures FROM monitored_groups').fetchone()[0],0)
+            events=faults(dict(service='running',issues=issues))
+            self.assertEqual(bool(events),status=='attention')
+            self.assertNotIn('private fixture',json.dumps(events))
+        with app.db() as c:
+            c.execute('UPDATE monitored_groups SET enabled=0')
+            self.assertEqual(health.assess_renewals(c)['issues'],[])
+
+    def test_manual_check_keeps_scope_and_never_skips_rejection_or_backoff(self):
+        with patch.object(uid_transport,'request',side_effect=lambda op,p:response(op,p,sender=RECEIVER)) as request:
+            result=renewal.check_account({'account_id':self.isolated['account_id']})
+        self.assertTrue(result['performed']);self.assertEqual(request.call_count,2)
+        self.assertEqual(result['renewal']['last_result']['status'],'im_read_verified')
+        value=session.load(self.other_path)
+        for status in ('attention','retry_wait'):
+            with account_scope.use(self.isolated):
+                renewal.write(dict(status=status,generation=renewal.generation(value),next_run_at=time.time()+100,checked_at=1))
+            with patch.object(uid_transport,'request') as request:
+                result=renewal.check_account({'account_id':self.isolated['account_id']})
+            request.assert_not_called();self.assertFalse(result['performed'])
+            self.assertEqual(result['renewal']['status'],status)
+        with patch.object(uid_transport,'request') as request:
+            for body in ({'account_id':'missing'},{'account_id':self.isolated['account_id'],'force':True}):
+                with self.assertRaises(ValueError):renewal.check_account(body)
+        request.assert_not_called();self.assertIsNone(account_scope.current())
 
 if __name__ == '__main__':
     unittest.main()

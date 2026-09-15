@@ -381,6 +381,8 @@ class Handler(BaseHTTPRequestHandler):
             elif action == 'collection-account-save':
                 import collection_accounts
                 result=collection_accounts.save(body,mode)
+            elif action == 'account-renewal-check':
+                result=uid_session_renewal.check_account(body,mode)
             elif action in ('account-create','account-save','account-login-start','account-login-command'):
                 import account_admin
                 result={'account-create':account_admin.create,'account-save':account_admin.save,

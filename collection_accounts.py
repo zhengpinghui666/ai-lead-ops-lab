@@ -78,6 +78,10 @@ def state(mode='live'):
         row['session']={k:status.get(k) for k in ('ready','status','account','expires_at')}
         im=uid_session.local_status(directory(row)) if mode=='live' else {}
         row['im_session']={k:im.get(k) for k in ('im_read_verified','checked_at')}
+        import account_scope,uid_session_renewal
+        with account_scope.use(row):
+            row['session_renewal']=uid_session_renewal.state() if mode=='live' else {}
+
         if row['im_session'].get('im_read_verified'):
             try:
                 saved=uid_session.load(directory(row)/'private/uid-http/session.dpapi')

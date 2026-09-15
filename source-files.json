@@ -343,5 +343,6 @@
   "uid_transport.py",
   "video_discovery.py",
   "video_metadata.py",
-  "work_cadence.py"
+  "work_cadence.py",
+  "DELIVERY_STATUS_20260915.md"
 ]
