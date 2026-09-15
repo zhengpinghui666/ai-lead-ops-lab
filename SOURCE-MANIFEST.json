@@ -18,8 +18,8 @@
     },
     {
       "name": "AFTERNOON_REQUIREMENTS_20260914.md",
-      "sha256": "9faae9968da1706b751895a58576c63f8a3b54551853ddcbc5a291f09e0d79b3",
-      "bytes": 13379
+      "sha256": "e8326a30963fd72ce03cf73d76d7610faa0c61ecaa0c20c6c8b41309890e3eba",
+      "bytes": 13950
     },
     {
       "name": "ASSET_VERTICALITY.md",
@@ -203,8 +203,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "b4020a3dd49834296b5e5d023f861461d5f9179faf33d62a6d4435dbb4a2fbb4",
-      "bytes": 197661
+      "sha256": "8904d95d2f53d2d5e2cff960e92d03b71a2f6c0253ed9031362c04cebbeb87fc",
+      "bytes": 201765
     },
     {
       "name": "UID_HTTP.md",
@@ -343,8 +343,8 @@
     },
     {
       "name": "clubops.py",
-      "sha256": "024028a0df1c6279ba8cb85f7f1944ace93ae7c065063e5094a4acd4a00235e4",
-      "bytes": 61788
+      "sha256": "f7bb42f7399fbd0b8aad1bd1424c7e80ed91d56b3af5947028c775c43ea30088",
+      "bytes": 61899
     },
     {
       "name": "collection_accounts.py",
@@ -548,8 +548,8 @@
     },
     {
       "name": "group_profiles.py",
-      "sha256": "92e90bee98f02d59c62ce76ddc84ba59250b04e365cea50ae61b3e52f86bf785",
-      "bytes": 11087
+      "sha256": "33c2d91577710e7200dba44df003c93eb782fbb7469a34097a1ab024e1e1d44e",
+      "bytes": 11383
     },
     {
       "name": "group_public.py",
@@ -1278,8 +1278,8 @@
     },
     {
       "name": "test_group_profiles.py",
-      "sha256": "1ce16369900e6815b8449c176624acd2c43dca79d21b828699be687368caa8d9",
-      "bytes": 5073
+      "sha256": "b9185b6ba9316f7f87ff4757aaea5a012cd30c22613f4cc1cf0efea0514b820d",
+      "bytes": 10202
     },
     {
       "name": "test_group_public.py",

@@ -78,6 +78,33 @@ def seed_observed(c,account):
         WHERE g.account_uid=? AND g.member=1 AND g.matched=1''',(account,))
 
 
+def select_candidates(c,account,instant):
+    """Read-only, account-scoped selection with the existing priority and cap."""
+    targets=[dict(r) for r in c.execute('''SELECT p.* FROM group_profiles p
+        WHERE p.account_uid=? AND p.uid IN (
+          SELECT m.uid FROM group_messages m JOIN monitored_groups g ON g.id=m.group_id
+            WHERE g.account_uid=? AND g.enabled=1 AND g.member=1 AND g.matched=1
+          UNION
+          SELECT u.external_id FROM comments x JOIN people u ON x.person_id=u.id
+            WHERE julianday(x.published_at)>=julianday(?,'-1 day'))
+        AND p.sec_uid!='' AND p.next_check_at<=?
+        ORDER BY (p.nickname='') DESC,p.uid IN (
+          SELECT u.external_id FROM people u JOIN leads l ON l.person_id=u.id
+            JOIN message_jobs j ON j.lead_id=l.id) DESC,p.checked_at,p.uid LIMIT 20''',
+        (account,account,instant,instant))]
+    group=None
+    if not targets:
+        row=c.execute('''SELECT g.*,COALESCE(s.cursor,0) AS profile_cursor FROM monitored_groups g
+            LEFT JOIN group_profile_scans s ON s.group_id=g.id
+            WHERE g.account_uid=? AND g.enabled=1 AND g.member=1 AND g.matched=1
+            AND COALESCE(s.next_check_at,'')<=? AND EXISTS(SELECT 1 FROM group_messages m
+              JOIN group_profiles p ON p.uid=m.uid AND p.account_uid=g.account_uid
+              WHERE m.group_id=g.id AND p.sec_uid='')
+            ORDER BY COALESCE(s.checked_at,''),g.id LIMIT 1''',(account,instant)).fetchone()
+        group=dict(row) if row else None
+    return targets,group
+
+
 def tick(*,member_reader=None,profile_reader=None):
     import group_monitor as monitor
     if monitor.STOP.is_set() or not monitor.GUARD.acquire(blocking=False):return
@@ -89,22 +116,10 @@ def tick(*,member_reader=None,profile_reader=None):
             cfg=c.execute('SELECT value FROM settings WHERE key=?',(throttle,)).fetchone()
             if cfg and json.loads(cfg[0])>app.now():return
             seed_observed(c,account)
-            targets=[dict(r) for r in c.execute('''SELECT DISTINCT p.* FROM group_profiles p
-                WHERE p.account_uid=? AND (EXISTS(SELECT 1 FROM group_messages m JOIN monitored_groups g ON g.id=m.group_id
-                  WHERE m.uid=p.uid AND g.account_uid=p.account_uid AND g.enabled=1 AND g.member=1 AND g.matched=1)
-                  OR EXISTS(SELECT 1 FROM people u JOIN comments x ON x.person_id=u.id WHERE u.external_id=p.uid
-                    AND julianday(x.published_at)>=julianday('now','-1 day')))
-                AND p.sec_uid!='' AND p.next_check_at<=?
-                ORDER BY (p.nickname='') DESC, EXISTS(SELECT 1 FROM people u JOIN leads l ON l.person_id=u.id
-                  JOIN message_jobs j ON j.lead_id=l.id WHERE u.external_id=p.uid) DESC,p.checked_at,p.uid LIMIT 20''',(account,app.now()))]
-            if not targets:
-                row=c.execute('''SELECT g.*,COALESCE(s.cursor,0) AS profile_cursor FROM monitored_groups g
-                    LEFT JOIN group_profile_scans s ON s.group_id=g.id
-                    WHERE g.account_uid=? AND g.enabled=1 AND g.member=1 AND g.matched=1
-                    AND COALESCE(s.next_check_at,'')<=? AND EXISTS(SELECT 1 FROM group_messages m
-                      JOIN group_profiles p ON p.uid=m.uid AND p.account_uid=g.account_uid
-                      WHERE m.group_id=g.id AND p.sec_uid='') ORDER BY COALESCE(s.checked_at,''),g.id LIMIT 1''',(account,app.now())).fetchone()
-                group=dict(row) if row else None
+        # Commit seeding before selecting candidates. A read must not retain
+        # the SQLite writer reservation and stall comment ingestion.
+        with app.db() as c:
+            targets,group=select_candidates(c,account,app.now())
         if not targets and not group:return
         acquired=uid_messaging.GUARD.acquire(blocking=False)
         if not acquired:return
