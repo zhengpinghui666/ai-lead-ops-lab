@@ -18,8 +18,8 @@
     },
     {
       "name": "AFTERNOON_REQUIREMENTS_20260914.md",
-      "sha256": "a2d14418fa470411b806004d51f3528956146a12aa72165deeb4b04a531de3c4",
-      "bytes": 12042
+      "sha256": "69ffd44d9a4209a242a9c53c2f81212fcebbf759e101a82189e82043772d9f55",
+      "bytes": 12817
     },
     {
       "name": "ASSET_VERTICALITY.md",
@@ -203,8 +203,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "6507f08ec1fb8db10ca18dcae04d42d799a7b43644bd8a6f77e21aeb049d91e2",
-      "bytes": 188228
+      "sha256": "f16e4f7d79c9f1b6a1500c387eab6ef5684d207d9027cd2a7d2235597141b031",
+      "bytes": 193454
     },
     {
       "name": "UID_HTTP.md",
@@ -233,8 +233,8 @@
     },
     {
       "name": "WORK_CADENCE.md",
-      "sha256": "7c71eb5a8e79ab083d7325be55c05107d28718edf6aa6e53bf97f6565fc158bb",
-      "bytes": 5549
+      "sha256": "4bbf09820f3501decab471c01dc76c276efcd44da8a43e45af0b335fa040bdab",
+      "bytes": 7249
     },
     {
       "name": "account_admin.py",
@@ -1208,8 +1208,8 @@
     },
     {
       "name": "test_discovery_tracking.py",
-      "sha256": "f9cac8c47e1a1b88aa0b7a3bb65f586fe8244b695396d71990e7b110e3a069ce",
-      "bytes": 67045
+      "sha256": "bd0a6ed139007513909949ad64becc0c90df17a21c7ed72e0b8485496a215c73",
+      "bytes": 68573
     },
     {
       "name": "test_freshness_audit.py",
@@ -1623,8 +1623,8 @@
     },
     {
       "name": "test_work_cadence.py",
-      "sha256": "d68cf386c74c0d92972a96e1454d77ee81d831e1f37fda8fec39794276cd60ab",
-      "bytes": 7669
+      "sha256": "23acdb8b184f1a1b43365f1c96fefb94a9d720fbfa298a07a91d98db7d0d3795",
+      "bytes": 9661
     },
     {
       "name": "test_workbench_state.py",
@@ -1723,8 +1723,8 @@
     },
     {
       "name": "work_cadence.py",
-      "sha256": "5a5c414e0b1ed85d8f6ba1f63207f86b48c32a2386eb3a1f1bd08074355ce077",
-      "bytes": 7228
+      "sha256": "3f865752865ecb5da93dad5265a7db0e62fe15ccbeb5bfa23d1e6bd6b5684d07",
+      "bytes": 7828
     }
   ]
 }

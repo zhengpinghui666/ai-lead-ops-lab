@@ -8,7 +8,7 @@ import re
 from datetime import datetime, timezone
 
 VERSION = 'work-cadence-v1'
-POLICY_VERSION = 'work-cadence-v2-quiet-decay'
+POLICY_VERSION = 'work-cadence-v3-history-quiet'
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS work_comment_signals (
  video_id TEXT NOT NULL, external_id TEXT NOT NULL,
@@ -106,6 +106,7 @@ def assess(*,vertical,quiet,base_interval,stats):
     # A service-specific title is independent evidence, so a thin or noisy
     # observed sample cannot silently remove its monitoring for a month.
     if vertical and interval>3600:tier,score,interval='title_watch',max(score,40),3600
+    relevance_score=score
     activity=stats.get('recent_hour',0);five=stats.get('recent_five_minutes',0)
     previous=stats.get('previous_hour',0)
     related=vertical or confidence and ratio>=.03
@@ -114,7 +115,15 @@ def assess(*,vertical,quiet,base_interval,stats):
     if burst:interval=min(interval,max(30,base//2));boost='burst';score=max(score,95)
     elif related and activity>=3:interval=min(interval,base);boost='active';score=max(score,80)
     elif vertical and not confidence and activity and quiet<2:interval=min(interval,base)
+    # Old service-related samples prove relevance, not ongoing activity.
+    # Keep the sample evidence, but release priority after repeated quiet reads.
+    # Any recent publication restores the prior priority, even before settle.
+    historical_quiet=bool(basis=='observed_history' and confidence and relevance_score>=70
+                          and not activity and not five and quiet>=2)
+    if historical_quiet:
+        interval=max(interval,min(3600,interval*2**(quiet-1)))
     return dict(version=POLICY_VERSION,tier=tier,score=score,interval_seconds=min(2592000,int(interval)),
+                relevance_score=relevance_score,historical_quiet_backoff=historical_quiet,
                 ratio=round(ratio,4) if ratio is not None else None,sample_count=n,service_hits=hits,
                 sample_basis=basis,sufficient_samples=confidence,
                 recent_five_minutes=five,recent_hour=activity,previous_hour=previous,boost=boost,

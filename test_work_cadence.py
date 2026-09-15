@@ -103,6 +103,39 @@ class WorkCadenceTests(unittest.TestCase):
         p=self.policy(dict(samples=100,hits=0,recent_five_minutes=50,recent_hour=100,previous_hour=2))
         self.assertEqual(p['boost'],'none');self.assertEqual(p['tier'],'monthly')
 
+    def test_quiet_historical_relevance_yields_priority_without_losing_relevance(self):
+        stats=dict(samples=0,hits=0,total_samples=100,total_hits=30,recent_hour=0)
+        first=self.policy(stats,vertical=True,quiet=1)
+        quiet=self.policy(stats,vertical=True,quiet=5)
+        self.assertGreater(quiet['interval_seconds'],first['interval_seconds'])
+        self.assertEqual(quiet['score'],90,'Keep evidence-backed work in the relevant rotation')
+        self.assertEqual(quiet['relevance_score'],90)
+        self.assertEqual((quiet['ratio'],quiet['sample_count'],quiet['tier']),(.3,100,'high'))
+        self.assertTrue(quiet['historical_quiet_backoff'])
+        self.assertLessEqual(quiet['interval_seconds'],3600)
+        self.assertEqual(self.policy(stats,vertical=True,quiet=0)['score'],90)
+        self.assertFalse(self.policy(stats,vertical=True,quiet=0)['historical_quiet_backoff'])
+
+    def test_recent_signal_and_recent_sample_protect_priority(self):
+        history=dict(samples=0,total_samples=100,total_hits=30)
+        for activity in (1,3,20):
+            p=self.policy(dict(history,recent_hour=activity),vertical=True,quiet=5)
+            self.assertFalse(p['historical_quiet_backoff'])
+            self.assertGreaterEqual(p['score'],90)
+        p=self.policy(dict(samples=100,hits=30,recent_hour=0),vertical=True,quiet=5)
+        self.assertFalse(p['historical_quiet_backoff'])
+        self.assertEqual(p['score'],90)
+
+    def test_historical_quiet_backoff_never_shortens_existing_low_tiers(self):
+        for hits in (0,1,2,3,10,30):
+            stats=dict(samples=0,total_samples=100,total_hits=hits,recent_hour=0)
+            for vertical in (True,False):
+                early=self.policy(stats,vertical=vertical,quiet=0)
+                late=self.policy(stats,vertical=vertical,quiet=99)
+                self.assertGreaterEqual(late['interval_seconds'],early['interval_seconds'])
+                if hits<10:self.assertFalse(late['historical_quiet_backoff'])
+
+
     def test_migration_is_idempotent_and_does_not_rewrite_the_archive(self):
         self.c.execute('CREATE TABLE collection_observations(task_id,kind,external_id,page_url,comment_text,published_at,observed_at)')
         for task,text,observed in [(1,'普通评论',at(-120)),(2,'想点女陪',NOW)]:

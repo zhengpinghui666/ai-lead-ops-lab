@@ -238,6 +238,28 @@ class DiscoveryTrackingTests(unittest.TestCase):
         _,job=self.choose(self.plan(video_limit=5))
         self.assertTrue(all(r['group']=='rotation' for r in job['work_selection']['slots']))
 
+    def test_quiet_history_waits_but_recent_relevance_and_reactivation_stay_fast(self):
+        import work_cadence
+        self.save();self.record([work(),work(1)])
+        recent=work(1)['video_id']
+        with app.db() as c:
+            for vid,age in ((VID,700000),(recent,10000)):
+                for i in range(60):
+                    work_cadence.record(c,vid,'sample-'+str(i),'想点女陪' if i<20 else '普通内容',
+                                        discovery.future(NOW,-age),NOW)
+            c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=?,quiet_streak=5',
+                      (discovery.future(NOW,-120),discovery.future(NOW,-90)))
+            chosen,audit=discovery.select_work_targets(c,self.plan(),NOW,set(),set())
+            self.assertEqual([r['video_id'] for r in chosen],[recent])
+            later=discovery.future(NOW,3600)
+            chosen,audit=discovery.select_work_targets(c,self.plan(),later,set(),set())
+            self.assertIn(VID,[r['video_id'] for r in chosen],'Old work remains monitored when due')
+            # A newly observed recent comment must promote even before settle resets quiet.
+            work_cadence.record(c,VID,'new-sample','想点陪',discovery.future(NOW,-1),NOW)
+            chosen,audit=discovery.select_work_targets(c,self.plan(),NOW,set(),set())
+            self.assertIn(VID,[r['video_id'] for r in chosen])
+            self.assertFalse(next(r for r in audit['slots'] if r['video_id']==VID)['cadence']['historical_quiet_backoff'])
+
     def test_repeated_read_does_not_extend_publication_activity_window(self):
         self.save();self.record([work()])
         published=discovery.future(NOW,-3500)
