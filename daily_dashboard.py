@@ -179,11 +179,14 @@ def snapshot(mode='live', reference=None):
         queued = c.execute("SELECT COUNT(*) FROM semantic_jobs WHERE status IN ('queued','running','cancelling')").fetchone()[0]
         policy = c.execute("SELECT value FROM settings WHERE key='intent_outreach_policy'").fetchone()
         outreach = bool(json.loads(policy[0]).get('enabled')) if policy else False
+        import daily_intent_goal, semantic
+        intent_goal = daily_intent_goal.summary(c,start,end,model_engine=semantic.state()['engine'] if mode=='live' else None)
+        series['qualified_intent_users']=[intent_goal['daily'].get(day,0) for day in dates]
     import incident_bridge
     feedback=incident_bridge.feedback(app.DATA_DIR) if mode=='live' else dict(mode='demo',realtime_connected=False)
     return dict(date=start.date().isoformat(), timezone='Asia/Shanghai', as_of=end.isoformat(),
                 labels=dates, granularity='day', history_days=90,
-                totals=totals, series=series, captcha=captcha, dm=dm,
+                totals=totals, series=series, captcha=captcha, dm=dm, intent_goal=intent_goal,
                 runtime=dict(monitor=dict(plan) if plan else None, latest_batch=dict(last) if last else None,
                              model_pending=queued, outreach_enabled=outreach, feedback=feedback),
                 conversions=dict(official_account_follows=None,customer_service_adds=None,orders=None))

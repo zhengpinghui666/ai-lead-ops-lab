@@ -352,3 +352,6 @@ main>#lead-detail{max-width:900px;position:static}main>#lead-detail .card-body{p
 .daily-plot>.empty>svg{flex-shrink:0}
 .lead-list-status{display:flex;flex:1;min-height:160px;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--muted);padding:24px}
 @media(max-width:700px){.lead-pagination{padding:10px 12px;gap:8px}.lead-pagination nav{gap:8px}.lead-pagination .button{padding:6px 10px}}
+
+/* Daily intent target shares the existing KPI card; no extra first-level panel. */
+.intent-goal-progress{display:block;height:4px;background:rgba(8,127,119,.12);border-radius:4px;margin-top:8px;overflow:hidden}.intent-goal-progress>i{display:block;height:100%;background:var(--accent,#087f77);border-radius:inherit}

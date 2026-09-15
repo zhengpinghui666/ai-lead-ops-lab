@@ -78,8 +78,8 @@
     },
     {
       "name": "DELIVERY_STATUS_20260915.md",
-      "sha256": "c4d8a97ad6d5467c8350f877542a2f909a19987fd2fe78217230068e50a55e40",
-      "bytes": 7487
+      "sha256": "e077e606d2b0ef2c40524d159cc2cd3cc110d64d37411ed5720d7785120a0754",
+      "bytes": 7652
     },
     {
       "name": "DISCOVERY_TRACKING.md",
@@ -208,8 +208,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "f98326b113e8a5eda838b8f8cfd8bbedf156340a8a38632b47ff6cc1964d2c66",
-      "bytes": 204882
+      "sha256": "4dffedc77c080299a3a995c6039f5baa04673efcb4f8da6999e4bbadf660edeb",
+      "bytes": 207470
     },
     {
       "name": "UID_HTTP.md",
@@ -463,8 +463,13 @@
     },
     {
       "name": "daily_dashboard.py",
-      "sha256": "fbc7a8198a8efdff508ce8692c8e90af9a1986dddfaa20008b22b6ec6444e458",
-      "bytes": 13100
+      "sha256": "d3b9da649515fc3e32ca7537b5d85e4d1e4f9afed264c0425112eb1a8d681a0e",
+      "bytes": 13385
+    },
+    {
+      "name": "daily_intent_goal.py",
+      "sha256": "e85980865e6c7eae6e42eb307e46c0eadfcee5c8e0ec43b760cf991313fca0eb",
+      "bytes": 5010
     },
     {
       "name": "demand_freshness.py",
@@ -478,8 +483,8 @@
     },
     {
       "name": "discovery_tracking.py",
-      "sha256": "55578d3d4bd51ae1d91d387ec4f1d6e807d41640b2bb10ba87e9f494f5247388",
-      "bytes": 41765
+      "sha256": "d205203e68c0dc6ccab474991335f05dc47638db19c04f1c20bc39d3b1098935",
+      "bytes": 44626
     },
     {
       "name": "evaluation/intent-development-v1.json",
@@ -568,8 +573,8 @@
     },
     {
       "name": "incident_push.py",
-      "sha256": "a61aebe61a557c85d3ddcd6fa0e5de28d5aa0e6e2a49c3fcc94311eb554d9a06",
-      "bytes": 5026
+      "sha256": "e1a4afa7d4ca86e47098489132a389a11b370d952f49302c58918f1f9b94c836",
+      "bytes": 5843
     },
     {
       "name": "integrations/iphone/forwarder-core.cjs",
@@ -993,8 +998,8 @@
     },
     {
       "name": "source-files.json",
-      "sha256": "1ada2ad58a2c5cba17468f1aa482c78dee8723e0e244c54b21a9fb3e474f5117",
-      "bytes": 10155
+      "sha256": "cd43603f35094694d38bbfbcae47ecc2eddb6f26f3a30751ac66e8f155eea888",
+      "bytes": 10214
     },
     {
       "name": "start.ps1",
@@ -1008,8 +1013,8 @@
     },
     {
       "name": "static/app.css",
-      "sha256": "4e5ec209a7e3e5865cf3935d14f8dce079d479ff6e33fdaa36d3f82c7593d028",
-      "bytes": 87512
+      "sha256": "2383914ed7a49ca7eb97af6391a785d1eb19596f21baf19980a6d7388f1734a9",
+      "bytes": 87838
     },
     {
       "name": "static/app.html",
@@ -1018,8 +1023,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "c708101151a944332ae84bf797c3ee209829da668cd66f0b99ab3cb3ab102e08",
-      "bytes": 237747
+      "sha256": "de3cde0800f3327565ffa98a60a9d04690498c9efa1d0c6cdb84e97f6f552e3e",
+      "bytes": 238954
     },
     {
       "name": "static/bark.js",
@@ -1207,14 +1212,19 @@
       "bytes": 10626
     },
     {
+      "name": "test_daily_intent_goal.py",
+      "sha256": "f92428e920df055e7f0e6e51d63eb34c1a76cdeba75c987a84dd96faf7ec613c",
+      "bytes": 7222
+    },
+    {
       "name": "test_demand_freshness.py",
       "sha256": "3936980e6ddaac3ec84c5d061f7a6be878c0bbc04860a148093e635426eb5bd1",
       "bytes": 10852
     },
     {
       "name": "test_discovery_tracking.py",
-      "sha256": "bc69cd0d30518efb683d0fcf3fbc93e4f630f357034c21f2f8004b269499629d",
-      "bytes": 72801
+      "sha256": "c91a920c8c1c7c83efd5537dd242f1fe4721ac49c30db4f8e032aeb281413257",
+      "bytes": 76581
     },
     {
       "name": "test_freshness_audit.py",
@@ -1238,8 +1248,8 @@
     },
     {
       "name": "test_frontend_monitor_history.cjs",
-      "sha256": "2c3d5d14ea96c5ab984bdfe859651c51dd2ce1508914ed653cd5a61bd20acdbd",
-      "bytes": 11302
+      "sha256": "e74625e39f08751340cbb33866b9a0f43f82566a7036c56a9acc64e80e6ac66e",
+      "bytes": 12205
     },
     {
       "name": "test_frontend_navigation.cjs",
@@ -1308,8 +1318,8 @@
     },
     {
       "name": "test_incident_push.py",
-      "sha256": "40932f34c7e7733c48f2b29a1271134744b1c068ddb8202a189688a3e3da510d",
-      "bytes": 2065
+      "sha256": "ba7dc46f853ddc2fb32672183c42bd3ea158e41a63dc5cda066d31dca0de1209",
+      "bytes": 2950
     },
     {
       "name": "test_incident_watch.py",

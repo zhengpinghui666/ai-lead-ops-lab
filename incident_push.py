@@ -17,6 +17,21 @@ MAX_BYTES=8*1024*1024
 PIPE_PREFIX='\\\\.\\pipe\\codex-browser-use-'
 
 
+def resolve_server(config, *, cache_root=None):
+    configured=Path(config['server'])
+    if configured.is_file():return configured
+    # Desktop upgrades remove versioned WindowsApps paths. Resolve only the
+    # same installed bundled plugin, never an arbitrary executable on PATH.
+    root=Path(cache_root) if cache_root is not None else Path(os.environ.get('CODEX_HOME') or Path.home()/'.codex')/'plugins/cache/openai-bundled/codex-app-tools'
+    candidates=[]
+    for path in root.glob('*/server.mjs'):
+        version=path.parent.name
+        if path.is_file() and re.fullmatch(r'\d+(?:\.\d+){1,3}',version):
+            candidates.append((tuple(map(int,version.split('.'))),path))
+    if not candidates:raise OSError('Installed app adapter unavailable')
+    return max(candidates,key=lambda item:item[0])[1]
+
+
 def resolve_pipe(config):
     """The per-launch pipe can rotate when the desktop app restarts."""
     candidates=[]
@@ -33,7 +48,7 @@ def resolve_pipe(config):
 
 class Client:
     def __init__(self, config):
-        node=Path(config['node']);server=Path(config['server'])
+        node=Path(config['node']);server=resolve_server(config)
         if not node.is_file() or not server.is_file():raise OSError('App adapter unavailable')
         env={**os.environ,'CODEX_APP_TOOLS_PIPE_PATH':resolve_pipe(config)}
         self.process=subprocess.Popen([str(node),str(server)],stdin=subprocess.PIPE,

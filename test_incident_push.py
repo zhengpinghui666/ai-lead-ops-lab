@@ -1,6 +1,9 @@
 import json
 import unittest
+import tempfile
+from pathlib import Path
 from incident_push import push
+from incident_push import resolve_server
 
 THREAD='01a09666-68bb-7860-979d-b3415b851bed'
 
@@ -18,6 +21,17 @@ class Fake:
 
 
 class PushTests(unittest.TestCase):
+    def test_removed_desktop_adapter_uses_installed_same_plugin(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);configured=root/'old'/'server.mjs'
+            for version in ('0.1.9','0.1.10','untrusted-name','0.1.11'):
+                folder=root/version;folder.mkdir()
+                if version!='0.1.11':(folder/'server.mjs').write_text('fixture')
+            self.assertEqual(resolve_server({'server':str(configured)},cache_root=root),root/'0.1.10/server.mjs')
+            configured.parent.mkdir();configured.write_text('configured')
+            self.assertEqual(resolve_server({'server':str(configured)},cache_root=root),configured)
+            with self.assertRaises(OSError):resolve_server({'server':str(root/'missing')},cache_root=root/'missing-cache')
+
     def test_existing_task_only_and_no_execution_overrides(self):
         client=Fake();result=push({},THREAD,'Synthetic incident',client_factory=lambda c:client)
         self.assertEqual(result['status'],'pushed');self.assertTrue(client.closed)

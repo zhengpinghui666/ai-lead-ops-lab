@@ -37,7 +37,7 @@ const deadline=setTimeout(()=>{console.error('FAIL: history fixture left an unre
  let pending=switchTo('accepted');
  let html=run('monitorResultsPanel()');
  assert.match(html,/采集通过 <b>20<\/b>/,'Known counts survive a first visit to a filter');
- assert.match(html,/有意向 <b>2<\/b>/);
+ assert.match(html,/点单（板板） <b>2<\/b>/);
  assert.match(html,/aria-busy="true"/);assert.match(html,/role="status"/);
  assert.doesNotMatch(html,/暂无|0 条符合查看条件/,'Loading cannot masquerade as no results');
  assert.match(html,/data-step="1" disabled/);
@@ -115,5 +115,12 @@ const deadline=setTimeout(()=>{console.error('FAIL: history fixture left an unre
  assert.equal(restored,true,'Refreshing results keeps the same comment explanation open');
  assert.equal(focused,true,'Keyboard focus remains on its explanation toggle');
  assert.equal(scroll.scrollTop,112,'Refreshing an explanation preserves result scroll position');
+ run("S.collector={tasks:[{id:99,status:'network_error',detail:'HTTP 连接失败，未自动重试。',active:false}],monitor:{enabled:true,status:'running',last_task_id:99,next_run_at:'2026-09-15T03:41:47Z'}};");
+ assert.match(run('monitorOverview()'),/已安排 .* 自动重试/,'A scheduled retry shows the current monitor state');
+ assert.doesNotMatch(run('monitorOverview()'),/未自动重试/);
+ run("S.collector.monitor.enabled=false;S.collector.monitor.status='attention';");
+ assert.doesNotMatch(run('monitorOverview()'),/已安排 .* 自动重试/,'A paused monitor must not promise a retry');
+ run("S.collector.tasks[0].status='completed';");
+ assert.doesNotMatch(run('monitorOverview()'),/最近批次 #99/,'Successful recovery removes the old warning');
  console.log('PASS: request races, pagination, stable loading counts, scoped caches, error/retry, workspace isolation, honest empty states, explanation escaping and expansion/focus preservation. Local fixtures only.');
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>clearTimeout(deadline));

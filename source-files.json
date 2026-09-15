@@ -14,6 +14,7 @@
   "COMMENT_READ_PRIORITY.md",
   "DAILY_DASHBOARD.md",
   "DELIVERY.md",
+  "DELIVERY_STATUS_20260915.md",
   "DISCOVERY_TRACKING.md",
   "EXTERNAL_ACCESS.md",
   "GITHUB_BACKUP.md",
@@ -91,6 +92,7 @@
   "config/team-access-requirements.txt",
   "config/uid-http.example.json",
   "daily_dashboard.py",
+  "daily_intent_goal.py",
   "demand_freshness.py",
   "design-qa.md",
   "discovery_tracking.py",
@@ -239,6 +241,7 @@
   "test_comment_keywords.py",
   "test_comment_paging.py",
   "test_daily_dashboard.py",
+  "test_daily_intent_goal.py",
   "test_demand_freshness.py",
   "test_discovery_tracking.py",
   "test_freshness_audit.py",
@@ -343,6 +346,5 @@
   "uid_transport.py",
   "video_discovery.py",
   "video_metadata.py",
-  "work_cadence.py",
-  "DELIVERY_STATUS_20260915.md"
+  "work_cadence.py"
 ]

@@ -474,6 +474,29 @@ def valid_empty_search_response(response):
             and type(s.get(key+'_count')) is int and s[key+'_count']==0 for key in ('aweme_list','item_list')))
 
 
+def disconnected_search_wait(c, task):
+    """No-response browser connection failures; caller still proves HTTP health."""
+    if not task or task['kind']!='search' or task['transport']!='local_browser' or task['status']!='network_error':return None
+    allowed={'net::ERR_CONNECTION_CLOSED','net::ERR_CONNECTION_RESET','net::ERR_CONNECTION_ABORTED',
+             'net::ERR_CONNECTION_TIMED_OUT','net::ERR_TIMED_OUT','net::ERR_NETWORK_CHANGED',
+             'net::ERR_INTERNET_DISCONNECTED','net::ERR_NAME_NOT_RESOLVED'}
+    rows=c.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=? ORDER BY id',(task['id'],)).fetchall()
+    if not rows:return None
+    seen=set();failure=None
+    try:
+        for row in rows:
+            if row['stage'] not in ('navigation','finished-error'):return None
+            snapshot=json.loads(row['snapshot']);error=snapshot.get('navigation_error')
+            if error not in allowed or failure is not None and error!=failure:return None
+            if snapshot.get('navigation_http_status') is not None or snapshot.get('responses')!=[] or snapshot.get('video_links')!=0:return None
+            text=snapshot.get('visible_text','')
+            if error.removeprefix('net::') not in text:return None
+            if any(word in text for word in ('验证码','安全验证','访问受限','操作频繁','请求过多','登录后查看')):return None
+            failure=error;seen.add(row['stage'])
+        return 300 if seen=={'navigation','finished-error'} else None
+    except (ValueError,TypeError,AttributeError):return None
+
+
 def empty_search_wait(c, task):
     """Defer proven browser outages/empty shells without stopping HTTP work.
 
@@ -490,13 +513,28 @@ def empty_search_wait(c, task):
         import collection_scheduler
         requested=(collection_scheduler.transient_browser_body_wait(c,task,resource_missing_only=True) if task['status']=='partial'
                    else collection_scheduler.transient_http_wait(c,task))
+        if requested is None:requested=disconnected_search_wait(c,task)
         if requested is None:return 0
         # A different, recently verified HTTP channel must actually have worked.
-        baseline=c.execute("SELECT * FROM collection_tasks WHERE transport='http' AND id<? ORDER BY id DESC LIMIT 1",(task['id'],)).fetchone()
+        bound=c.execute('SELECT account_id,sender_uid,storage FROM collection_task_accounts WHERE task_id=?',(task['id'],)).fetchone()
+        if bound:
+            baseline=c.execute('''SELECT t.* FROM collection_tasks t JOIN collection_task_accounts a ON a.task_id=t.id
+              WHERE t.transport='http' AND t.id<? AND t.status='completed'
+                AND a.account_id=? AND a.sender_uid=? AND a.storage=?
+                AND t.comments+t.filtered_old+t.filtered_unknown+t.filtered_future+t.filtered_keyword+t.filtered_blocked>0
+              ORDER BY t.id DESC LIMIT 1''',(task['id'],*bound)).fetchone()
+        else:
+            if c.execute('SELECT 1 FROM collection_accounts LIMIT 1').fetchone():return 0
+            baseline=c.execute('''SELECT * FROM collection_tasks WHERE transport='http' AND id<? AND status='completed'
+              AND comments+filtered_old+filtered_unknown+filtered_future+filtered_keyword+filtered_blocked>0
+              ORDER BY id DESC LIMIT 1''',(task['id'],)).fetchone()
         if not baseline or baseline['status']!='completed' or not baseline['finished_at']:return 0
         if sum(baseline[k] for k in ('comments','filtered_old','filtered_unknown','filtered_future','filtered_keyword','filtered_blocked'))<=0:return 0
         age=(datetime.fromisoformat(task['finished_at'])-datetime.fromisoformat(baseline['finished_at'])).total_seconds()
         if not 0<=age<=1800:return 0
+        # Metadata-only success is not comment health, but must not erase an
+        # actual recent read. A later HTTP failure still invalidates that proof.
+        if c.execute("SELECT 1 FROM collection_tasks WHERE transport='http' AND id>? AND id<? AND status!='completed' LIMIT 1",(baseline['id'],task['id'])).fetchone():return 0
         if c.execute("SELECT 1 FROM collection_tasks WHERE id>? AND status IN ('needs_login','needs_verification','rate_limited','access_denied','session_expired','identity_failed') LIMIT 1",(baseline['id'],)).fetchone():return 0
         return max(300,requested)
     if c.execute('SELECT 1 FROM collection_observations WHERE task_id=? LIMIT 1',(task['id'],)).fetchone():return 0

@@ -676,6 +676,49 @@ class DiscoveryTrackingTests(unittest.TestCase):
             c.execute("UPDATE collection_tasks SET finished_at='2026-09-12T00:00:00+00:00' WHERE id=?",(self.base,))
             self.assertEqual(discovery.empty_search_wait(c,row),0,'Stale HTTP health is not proof the other channel is usable')
 
+    def test_no_response_connection_failure_defers_only_search(self):
+        task,_=self.empty_search();col.update(task,status='network_error')
+        snapshot=dict(page_url='非抖音内容页',navigation_error='net::ERR_CONNECTION_CLOSED',
+            navigation_http_status=None,responses=[],video_links=0,visible_text='无法访问此网站\nERR_CONNECTION_CLOSED')
+        with app.db() as c:
+            c.execute('DELETE FROM collection_diagnostics WHERE task_id=?',(task,))
+            for stage in ('navigation','finished-error'):
+                c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(task,stage,json.dumps(snapshot),NOW))
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            self.assertEqual(discovery.empty_search_wait(c,row),300)
+            for change in [dict(navigation_http_status=403),dict(navigation_http_status=429),dict(responses=[dict(status=200)]),
+                    dict(navigation_error='net::ERR_CERT_AUTHORITY_INVALID'),dict(visible_text='ERR_CONNECTION_CLOSED 安全验证'),dict(video_links=1)]:
+                c.execute("UPDATE collection_diagnostics SET snapshot=? WHERE task_id=? AND stage='finished-error'",(json.dumps({**snapshot,**change}),task))
+                self.assertEqual(discovery.empty_search_wait(c,row),0,change)
+            c.execute("UPDATE collection_diagnostics SET snapshot=? WHERE task_id=?",(json.dumps(snapshot),task))
+            c.execute('UPDATE collection_tasks SET finished_at=? WHERE id=?',(discovery.future(NOW,-1801),self.base))
+            self.assertEqual(discovery.empty_search_wait(c,row),0,'Still requires recent independently healthy comments')
+
+    def test_empty_author_success_does_not_erase_recent_comment_health(self):
+        with app.db() as c:
+            author=c.execute("""INSERT INTO collection_tasks(request_id,kind,target,video_limit,comment_limit,
+              interactive,status,transport,created_at,updated_at,finished_at)
+              VALUES('empty-author','author','fixture',1,1,0,'completed','http',?,?,?)""",(NOW,NOW,NOW)).lastrowid
+        task,_=self.empty_search(navigation_http_status=502);col.update(task,status='network_error')
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            self.assertEqual(discovery.empty_search_wait(c,row),300)
+            c.execute("UPDATE collection_tasks SET status='network_error' WHERE id=?",(author,))
+            self.assertEqual(discovery.empty_search_wait(c,row),0,'A later failed HTTP channel is not healthy')
+
+    def test_search_isolation_needs_the_same_frozen_account(self):
+        task,_=self.empty_search(navigation_http_status=502);col.update(task,status='network_error')
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            for account,uid in [('first','12345'),('second','23456')]:
+                c.execute("INSERT INTO collection_accounts VALUES(?,?,'fixture','isolated',1,'[\"comments\",\"discovery\"]',?)",(account,uid,NOW))
+            self.assertEqual(discovery.empty_search_wait(c,row),0,'No account binding in a multi-account workspace')
+            for rid,account,uid in [(self.base,'first','12345'),(task,'second','23456')]:
+                c.execute("INSERT INTO collection_task_accounts VALUES(?,?,?,'isolated','comments',?)",(rid,account,uid,NOW))
+            self.assertEqual(discovery.empty_search_wait(c,row),0,'Another account cannot prove this one healthy')
+            c.execute("UPDATE collection_task_accounts SET account_id='first',sender_uid='12345' WHERE task_id=?",(task,))
+            self.assertEqual(discovery.empty_search_wait(c,row),300)
+
     def test_empty_search_start_requires_independent_healthy_http_read(self):
         monitor=monitoring.save(dict(transport='local_browser'))
         task,_=self.empty_search()
