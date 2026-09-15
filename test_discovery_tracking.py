@@ -998,4 +998,66 @@ class DiscoveryTrackingTests(unittest.TestCase):
         self.assertEqual(len(list((app.DATA_DIR/'backups').glob('*before-work-cadence-*'))),1)
 
 
+
+class GlobalLaneTests(DiscoveryTrackingTests):
+    def seed_history(self,vid,*,enabled=1,role='comments'):
+        import comment_paging
+        with app.db() as c:
+            c.execute("INSERT OR IGNORE INTO collection_accounts VALUES('synthetic','12345','fixture','isolated',?,?,?)",(enabled,json.dumps([role]),NOW))
+            c.execute("INSERT OR REPLACE INTO collection_task_accounts VALUES(?,'synthetic','12345','isolated','comments',?)",(self.base,NOW))
+            c.execute('INSERT OR REPLACE INTO collection_page_progress VALUES(?,?,?,?,?,?,?)',
+                (self.source,vid,'synthetic-tag',1,json.dumps(dict(version=comment_paging.VERSION,main_cursor=50,replies=[])),self.base,NOW))
+
+    def test_history_queue_does_not_depend_on_front_due_and_keeps_account(self):
+        self.save();self.record([work()]);self.seed_history(VID)
+        with app.db() as c:
+            c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=?',(NOW,discovery.future(NOW,600)))
+            job=discovery.history_job(c,self.plan(),NOW,set())
+            self.assertEqual(job['read_lane'],'history');self.assertEqual(job['target'],VID)
+            self.assertEqual(job['history_account_task'],self.base)
+            self.assertIsNone(discovery.history_job(c,self.plan(),NOW,{VID}))
+            c.execute("UPDATE collection_accounts SET enabled=0")
+            self.assertIsNone(discovery.history_job(c,self.plan(),NOW,set()))
+
+    def test_three_front_turns_then_history_without_starving_front(self):
+        self.save();self.record([work()]);self.seed_history(VID)
+        with patch('discovery_tracking.author_rows',return_value=[]):
+            lanes=[]
+            for turn in range(8):
+                _,job=self.choose(self.plan(run_count=0))
+                lanes.append(job['read_lane'])
+                with app.db() as c:
+                    n=20000+turn
+                    self.checkpoint_history(c,n,VID)
+                    c.execute("INSERT INTO discovery_jobs(task_id,kind,key,config,settled) VALUES(?,'work','work',?,1)",(n,json.dumps(job)))
+            self.assertEqual(lanes,['front','front','front','history']*2)
+
+    def test_history_settlement_never_claims_fresh_front_check(self):
+        self.save();self.record([work()]);self.seed_history(VID)
+        with app.db() as c:
+            c.execute('UPDATE discovery_works SET last_checked_at=?,next_check_at=?,quiet_streak=2',(NOW,discovery.future(NOW,100)))
+            before=tuple(c.execute('SELECT last_checked_at,next_check_at,quiet_streak FROM discovery_works').fetchone())
+            job=discovery.history_job(c,self.plan(),NOW,set());job['policy']=discovery.config(c)
+            self.checkpoint_history(c,30000,VID,finished=discovery.future(NOW,30))
+            discovery.attach(c,30000,job)
+            discovery.settle(c,c.execute('SELECT * FROM collection_tasks WHERE id=30000').fetchone())
+            self.assertEqual(tuple(c.execute('SELECT last_checked_at,next_check_at,quiet_streak FROM discovery_works').fetchone()),before)
+            self.assertEqual(c.execute('SELECT settled FROM discovery_jobs WHERE task_id=30000').fetchone()[0],1)
+
+    def test_history_skips_removed_work_wrong_role_expired_cursor_and_author_pause(self):
+        self.save();self.record([work()]);self.seed_history(VID,role='outreach')
+        with app.db() as c:
+            self.assertIsNone(discovery.history_job(c,self.plan(),NOW,set()))
+            c.execute('UPDATE collection_accounts SET roles=?',(json.dumps(['comments']),))
+            self.assertIsNotNone(discovery.history_job(c,self.plan(),NOW,set()))
+            c.execute('UPDATE collection_page_progress SET updated_at=?',(discovery.future(NOW,-21601),))
+            self.assertIsNone(discovery.history_job(c,self.plan(),NOW,set()))
+            c.execute('UPDATE collection_page_progress SET updated_at=?',(NOW,))
+            c.execute('UPDATE discovery_works SET enabled=0')
+            self.assertIsNone(discovery.history_job(c,self.plan(),NOW,set()))
+
+for _n in dir(DiscoveryTrackingTests):
+    if _n.startswith('test_') and _n not in GlobalLaneTests.__dict__:setattr(GlobalLaneTests,_n,None)
+
+
 if __name__=='__main__':unittest.main()

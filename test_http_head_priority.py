@@ -7,7 +7,7 @@ from test_collector_http import record,body
 VIDEOS=['7664994032866659594','7664994032866659595','7664994032866659596']
 
 class HeadPriorityTests(unittest.TestCase):
-    def run_batch(self,*,concurrency=2,cancel_at=None,gate=None,budget=None,replies=False):
+    def run_batch(self,*,concurrency=2,cancel_at=None,gate=None,budget=None,replies=False,lane=None):
         calls=[];events=[];cancel=threading.Event();lock=threading.Lock()
         class Client:
             def page(inner,operation,**kw):
@@ -26,7 +26,7 @@ class HeadPriorityTests(unittest.TestCase):
             if cancel_at=='first_comment' and event['type']=='comment':cancel.set()
             if cancel_at=='after_heads' and event.get('stage')=='work_read_queue' and event['snapshot']['processing']['phase']=='history_and_replies':cancel.set()
         worker.collect(dict(kind='video',target='\n'.join(VIDEOS),page_concurrency=concurrency,
-            video_limit=3,comment_limit=20),emit,cancel,client=Client())
+            video_limit=3,comment_limit=20,discovery_job={'read_lane':lane} if lane else None),emit,cancel,client=Client())
         return calls,events
 
     def test_all_front_pages_precede_history_at_one_and_two_workers(self):
@@ -75,5 +75,30 @@ class HeadPriorityTests(unittest.TestCase):
                 done={e['video_id'] for e in events if e['type']=='checkpoint' and e.get('status')=='done'}
                 self.assertEqual(done,read)
                 self.assertEqual([e['active_pages'] for e in events if e['type']=='parallel'][-1],0)
+
+
+class IndependentLaneTests(HeadPriorityTests):
+    def test_front_finishes_without_entering_history(self):
+        calls,events=self.run_batch(concurrency=2,replies=True,lane='front')
+        self.assertEqual(len(calls),3)
+        self.assertTrue(all(op=='comments' and c==0 for _,op,c in calls))
+        self.assertEqual(events[-1]['status'],'completed')
+        self.assertEqual(sum(e.get('type')=='checkpoint' and e.get('status')=='done' for e in events),3)
+        markers=[e['snapshot']['processing'] for e in events if e.get('stage')=='work_read_queue']
+        self.assertEqual(len(markers),1);self.assertEqual(markers[0]['lane'],'front')
+
+    def test_history_without_valid_own_cursor_reads_front_instead(self):
+        calls,events=self.run_batch(lane='history')
+        self.assertEqual(events[-1]['status'],'completed')
+        self.assertTrue(all(calls.index((v,'comments',0))<calls.index((v,'comments',10)) for v in VIDEOS))
+
+    def test_front_platform_gate_still_stops_without_history(self):
+        calls,events=self.run_batch(lane='front',gate='needs_verification',concurrency=1)
+        self.assertEqual(events[-1]['status'],'needs_verification')
+        self.assertTrue(all(c==0 for _,_,c in calls))
+
+for _n in dir(HeadPriorityTests):
+    if _n.startswith('test_') and _n not in IndependentLaneTests.__dict__:setattr(IndependentLaneTests,_n,None)
+
 
 if __name__=='__main__':unittest.main()

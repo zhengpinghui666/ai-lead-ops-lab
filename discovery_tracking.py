@@ -323,6 +323,40 @@ def select_work_targets(c,plan,instant,focused,paused):
     return selected,audit
 
 
+def history_job(c,plan,instant,paused):
+    """Bounded global continuation queue; independent of the front-check due time."""
+    import comment_paging
+    marks=','.join('?' for _ in paused) or "''"
+    rows=c.execute(f"""SELECT p.*,a.account_id,a.sender_uid,a.storage,
+        (SELECT MAX(j.task_id) FROM discovery_jobs j JOIN collection_checkpoints cp ON cp.task_id=j.task_id
+         WHERE json_extract(j.config,'$.read_lane')='history' AND cp.video_id=p.video_id) history_task
+        FROM collection_page_progress p JOIN discovery_works w ON w.video_id=p.video_id
+        JOIN videos v ON v.source_id=p.source_id AND v.external_id=p.video_id
+        JOIN collection_task_accounts b ON b.task_id=p.task_id
+        JOIN collection_accounts a ON a.account_id=b.account_id AND a.sender_uid=b.sender_uid AND a.storage=b.storage
+        WHERE w.enabled=1 AND w.relevant=1 AND v.enabled=1 AND a.enabled=1
+        AND EXISTS(SELECT 1 FROM json_each(a.roles) WHERE value='comments')
+        AND NOT EXISTS(SELECT 1 FROM account_login_jobs l WHERE l.account_id=a.account_id AND l.finished_at IS NULL)
+        AND (w.author_sec_uid IS NULL OR NOT EXISTS(SELECT 1 FROM discovery_authors d WHERE d.sec_uid=w.author_sec_uid AND d.enabled=0))
+        AND w.video_id NOT IN ({marks}) AND julianday(p.updated_at)<=julianday(?)
+        AND julianday(p.updated_at)>=julianday(?,'-6 hours')
+        ORDER BY COALESCE(history_task,0),p.updated_at,p.video_id""",(*paused,instant,instant)).fetchall()
+    selected=[];owner=None
+    for row in rows:
+        try:state=comment_paging.validate(json.loads(row['state']))
+        except (TypeError,ValueError):continue
+        if state['main_cursor'] is None and not state['replies']:continue
+        if owner is None:owner=row['account_id']
+        if row['account_id']!=owner:continue
+        selected.append(row)
+        if len(selected)==plan['video_limit']:break
+    if not selected:return None
+    return dict(kind='video',target='\n'.join(r['video_id'] for r in selected),transport='http',
+        key='work',channel='work',read_lane='history',history_account_task=selected[0]['task_id'],
+        queue_selection=dict(version='comment-lanes-v1',reason='reserved_history',
+            targets=[r['video_id'] for r in selected],newest_order_verified=False))
+
+
 def choose(c,plan,instant):
     """Return (enabled, job). Weighted rotation prevents either layer starving."""
     cfg=config(c)
@@ -374,7 +408,7 @@ def choose(c,plan,instant):
     paused=paused_targets(c)
     focused={r['sec_uid'] for r in authors if r['focused'] and r['enabled']}
     rows,selection=select_work_targets(c,plan,instant,focused,paused)
-    if rows:jobs['work']=dict(kind='video',target='\n'.join(r['video_id'] for r in rows),transport='http',key='work',channel='work',work_selection=selection)
+    if rows:jobs['work']=dict(kind='video',target='\n'.join(r['video_id'] for r in rows),transport='http',key='work',channel='work',work_selection=selection,read_lane='front')
     rotation=['work','author','work','search'];start=plan['run_count']%len(rotation)
     chosen=next((jobs[rotation[(start+i)%len(rotation)]] for i in range(len(rotation)) if rotation[(start+i)%len(rotation)] in jobs),None)
     # Use observed publication activity, not cumulative collection counts or
@@ -399,6 +433,12 @@ def choose(c,plan,instant):
                 ORDER BY j.task_id DESC LIMIT 1""").fetchone()
             preferred='search' if last and last['kind']=='author' else 'author'
             chosen=jobs[preferred if preferred in available else available[0]];reason='reserved_discovery'
+    # Three front batches then a bounded continuation batch. Discovery still
+    # keeps its existing reserved turn. When no front work is due, history may
+    # use the idle work slot; it never changes front-check timestamps.
+    if (chosen is None or chosen.get('channel')=='work') and (not rows or selection['turn']%4==3):
+        history=history_job(c,plan,instant,paused)
+        if history:chosen=history;reason='reserved_history'
     if chosen:
         chosen={**chosen,'dispatch_selection':dict(version='active-work-cadence-v1',reason=reason,
             due_vertical_active_slots=active,due_high_weight_slots=high_weight,consecutive_work_batches=streak,max_work_streak=3)}
@@ -542,6 +582,11 @@ def settle(c,task):
           AND julianday(published_at)>=julianday(?,'-1 hour') AND julianday(published_at)<=julianday(observed_at)
           AND NOT EXISTS(SELECT 1 FROM collection_observations p WHERE p.kind='comment' AND p.page_url=o.page_url AND p.external_id=o.external_id AND p.task_id<o.task_id)''',
           (task['id'],f'https://www.douyin.com/video/{vid}',task['created_at'])).fetchone()[0]
+        if frozen.get('read_lane')=='history':
+            # New recent activity can boost the next front check. A quiet old
+            # page neither moves that timestamp nor increases its quiet streak.
+            if new:c.execute('UPDATE discovery_works SET quiet_streak=0,new_recent_comments=new_recent_comments+? WHERE video_id=?',(new,vid))
+            continue
         quiet=0 if new else min(row[0]+1,5)
         # A quiet read is still recorded, but cannot immediately demote work
         # with genuinely recent comments. Re-reading old text never extends it.

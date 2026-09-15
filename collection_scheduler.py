@@ -68,6 +68,12 @@ def validated_work_queue_marker(snapshot, task, previous):
     """Recognize only our ordered local queue receipts, never platform evidence."""
     if not isinstance(snapshot,dict) or set(snapshot)!={'processing'}:return None
     p=snapshot['processing']
+    if isinstance(p,dict) and p.get('version')=='comment-lanes-v1':
+        if (set(p)!={'version','phase','works','page_concurrency','newest_order_verified','lane'} or previous is not None
+            or p['lane'] not in ('front','history') or p['phase']!=('front_pages' if p['lane']=='front' else 'history_and_replies')
+            or p['newest_order_verified'] is not False or type(p['works']) is not int or not 1<=p['works']<=task['video_limit']
+            or type(p['page_concurrency']) is not int or p['page_concurrency']!=min(task['page_concurrency'],task['video_limit'])):return None
+        return p
     if not isinstance(p,dict) or set(p)!={'version','phase','works','page_concurrency','newest_order_verified'}:return None
     if (p['version']!='front-page-priority-v1' or p['newest_order_verified'] is not False
             or type(p['works']) is not int or not 1<=p['works']<=task['video_limit']
@@ -592,6 +598,10 @@ def tick(instant=None):
                 elif p['status'] == 'running':
                     finished = datetime.fromisoformat(task['finished_at'])
                     due = (finished + timedelta(seconds=p['interval_seconds'])).astimezone(timezone.utc).isoformat(timespec='seconds')
+                    if p['continuous'] and (discovery_tracking.worker_config(c,task['id']) or {}).get('read_lane')=='front':
+                        # Front checks use start-to-start cadence, never overlap
+                        # batches and never shorten error/platform backoff.
+                        due=max(finished,datetime.fromisoformat(task['created_at'])+timedelta(seconds=p['interval_seconds'])).astimezone(timezone.utc).isoformat(timespec='seconds')
                     detail = '上一批完成，等待下一批；间隔不代表平台认可的请求频率'
                 c.execute('UPDATE collection_plans SET settled_count=settled_count+1,settled_task_id=?,status=?,detail=?,next_run_at=?,updated_at=? WHERE id=?', (task['id'], new_status, detail, due, instant, p['id']))
                 if task['status'] != 'completed':

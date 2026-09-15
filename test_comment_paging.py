@@ -169,4 +169,57 @@ class PersistenceTests(unittest.TestCase):
         self.assertFalse(any(e['type']=='comment_paging' for e in events))
 
 
+
+class IncrementalRepliesTests(unittest.TestCase):
+    def reply_page(self,total):
+        return {**page(10,parents=[PARENT]),'reply_counts':{PARENT:total}}
+
+    def test_unchanged_completed_reply_is_skipped_growth_requeues(self):
+        r=paging.Rotation(instant=1000)
+        r.accept(r.next(),self.reply_page(2),True)
+        r.accept(r.next(),page(2,False),True)
+        saved=r.snapshot()
+        r=paging.Rotation(saved,instant=1010)
+        r.accept(r.next(),self.reply_page(2),True)
+        self.assertEqual(r.next(),('comments','',10))
+        r=paging.Rotation(saved,instant=1010)
+        r.accept(r.next(),self.reply_page(3),True)
+        self.assertEqual(r.next(),('replies',PARENT,0))
+
+    def test_growth_refreshes_reply_head_without_erasing_deep_cursor(self):
+        r=paging.Rotation(instant=1000)
+        r.accept(r.next(),self.reply_page(30),True)
+        r.accept(r.next(),page(10),True)
+        r=paging.Rotation(r.snapshot(),instant=1010)
+        r.accept(r.next(),self.reply_page(31),True)
+        self.assertEqual(r.next(),('replies',PARENT,0))
+        r.accept(r.next(),page(10),True)
+        self.assertEqual(r.snapshot()['replies'],[[PARENT,10]])
+        r=paging.Rotation(r.snapshot(),head=False,instant=1011)
+        self.assertEqual(r.next(),('replies',PARENT,10))
+
+    def test_unchanged_count_is_periodically_rechecked_and_old_state_upgraded(self):
+        legacy={'version':'comment-page-rotation-v1','main_cursor':80,'replies':[]}
+        r=paging.Rotation(legacy,instant=1000)
+        r.accept(r.next(),self.reply_page(1),True)
+        r.accept(r.next(),page(1,False),True)
+        r=paging.Rotation(r.snapshot(),instant=1301)
+        r.accept(r.next(),self.reply_page(1),True)
+        self.assertEqual(r.next(),('replies',PARENT,0))
+        self.assertEqual(r.snapshot()['main_cursor'],80)
+
+    def test_repeated_front_or_pinned_comment_does_not_reset_history_cursor(self):
+        r=paging.Rotation({'version':paging.VERSION,'main_cursor':90,'replies':[]},instant=1000)
+        r.accept(r.next(),page(10),True)
+        self.assertEqual(r.snapshot()['main_cursor'],90)
+        r=paging.Rotation(r.snapshot(),head=False)
+        self.assertEqual(r.next(),('comments','',90))
+        r.accept(r.next(),page(100),True)
+        self.assertEqual(r.snapshot()['main_cursor'],100)
+
+    def test_parser_preserves_reply_counts_on_empty_text_parent(self):
+        result=http.parse_page(body([record(text='',reply_comment_total=7)]), 'comments',VIDEO)
+        self.assertEqual(result['reply_counts'],{result['reply_targets'][0]:7})
+
+
 if __name__=='__main__':unittest.main()

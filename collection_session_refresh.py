@@ -33,7 +33,9 @@ def failure_status(reason,evidence):
     return 'failed'
 
 
-def ensure(directory,binding,*,probe=None,cancelled=lambda:False):
+def ensure(directory,binding,*,probe=None,cancelled=lambda:False,minimum_valid_seconds=0):
+    if type(minimum_valid_seconds) is not int or not 0<=minimum_valid_seconds<=300:
+        raise RefreshError('invalid_lease_margin')
     file=sessions.path(directory)
     try:
         with runtime.data_lock(file.parent):
@@ -41,7 +43,7 @@ def ensure(directory,binding,*,probe=None,cancelled=lambda:False):
             if value.get('account')!=binding['account_id'] or value.get('sender_uid')!=binding['sender_uid']:
                 raise RefreshError('account_mismatch')
             verified=value.get('last_verified_at',value['captured_at'])
-            if time.time()-verified<=sessions.MAX_AGE:return value,None
+            if time.time()-verified<=sessions.MAX_AGE-minimum_valid_seconds:return value,None
             if cancelled():raise RefreshError('cancelled')
             proof=(probe or uid_bootstrap.probe)(dict(expected_account=binding['account_id'],
                 cookie=sessions.cookie_header(value,'identity',check_age=False),user_agent=value['user_agent']))

@@ -41,6 +41,24 @@ class RefreshTests(unittest.TestCase):
         value,proof=refresh.ensure(self.directory,self.binding,probe=probe)
         self.assertIsNone(proof);probe.assert_not_called();self.assertEqual(value,self.value)
 
+    def test_batch_margin_revalidates_before_expiry_without_changing_capture(self):
+        self.value['last_verified_at']=time.time()-sessions.MAX_AGE+20;self.save(self.value)
+        probe=Mock(return_value=self.verified())
+        value,proof=refresh.ensure(self.directory,self.binding,probe=probe,minimum_valid_seconds=300)
+        self.assertEqual(probe.call_count,1);self.assertEqual(proof['status'],'identity_verified')
+        self.assertEqual(value['captured_at'],self.value['captured_at'])
+        self.assertEqual(value['cookies'],self.value['cookies'])
+        self.assertGreater(value['last_verified_at'],self.value['last_verified_at'])
+        refresh.ensure(self.directory,self.binding,probe=probe,minimum_valid_seconds=300)
+        self.assertEqual(probe.call_count,1)
+
+    def test_invalid_margin_never_probes_or_writes(self):
+        for margin in (-1,301,True,1.5):
+            probe=Mock()
+            with self.subTest(margin=margin),self.assertRaises(refresh.RefreshError):
+                refresh.ensure(self.directory,self.binding,probe=probe,minimum_valid_seconds=margin)
+            probe.assert_not_called();self.assertEqual(self.file.read_bytes(),self.before)
+
     def test_rejected_unrecognized_and_wrong_identity_do_not_extend(self):
         for result in [dict(status='http_rejected',http_status=429),dict(status='unrecognized_response'),
             dict(status='needs_login'),self.verified(verification_indicated=True),dict(status='identity_verified',sender_uid='987654321')]:

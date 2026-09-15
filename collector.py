@@ -257,7 +257,13 @@ def start(body, mode='live', *, resume_from=None, lookback_hours=None, include_k
         task_id = c.execute('INSERT INTO collection_tasks(request_id,kind,target,video_limit,comment_limit,interactive,status,detail,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)', (request_id, kind, target, videos, comments, interactive, 'queued', '等待后端 HTTP 读取' if transport == 'http' else '等待本机浏览器启动', t, t)).lastrowid
         c.execute('UPDATE collection_tasks SET transport=? WHERE id=?', (transport, task_id))
         import collection_accounts
-        collection_accounts.bind(c,task_id,kind,resume_from=original_verification if original_verification is not None else resume_from)
+        account_parent=original_verification if original_verification is not None else resume_from
+        if account_parent is None and discovery_job and discovery_job.get('read_lane')=='history':
+            account_parent=discovery_job['history_account_task']
+            prior=collection_accounts.binding(c,account_parent)
+            if not prior or not any(a['account_id']==prior['account_id'] for a in collection_accounts.role_accounts(c,'comments')):
+                raise ValueError('历史队列原账号已停用或不再承担评论采集')
+        collection_accounts.bind(c,task_id,kind,resume_from=account_parent)
         c.execute('UPDATE collection_tasks SET page_concurrency=?,lookback_hours=?,comment_since=?,include_keywords=?,exclude_keywords=? WHERE id=?', (concurrency, lookback_hours, comment_since, include_keywords, exclude_keywords, task_id))
         if discovery_job:
             import discovery_tracking
@@ -595,7 +601,7 @@ def run(task_id, control):
         if task['transport']=='http':
             import comment_paging
             import collector_http_session
-            try:paging_tag=comment_paging.session_tag(collector_http_session.load(account_directory))
+            try:paging_tag=comment_paging.session_tag(collector_http_session.load(account_directory,check_age=False))
             except (OSError,ValueError):pass  # The worker reports the actual session gate.
             config.update(paging_source_id=control['source_id'],paging_session_tag=paging_tag)
         process.stdin.write(json.dumps(config, ensure_ascii=False) + '\n')

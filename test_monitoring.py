@@ -88,6 +88,41 @@ class MonitorTests(unittest.TestCase):
                 c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps({'responses':[{**selection,**injected}]}),diagnostic))
                 self.assertIsNone(sch.transient_data_wait(c,t))
 
+    def test_independent_lane_network_marker_retains_bounded_retry(self):
+        self.http_baseline();task=sch.tick(NOW);self.data_network_failure(task)
+        ids=self.queue_markers(task,phases=('front_pages',))
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            marker=json.loads(c.execute('SELECT snapshot FROM collection_diagnostics WHERE id=?',(ids[0],)).fetchone()[0])
+            for lane in ('front','history'):
+                marker['processing'].update(version='comment-lanes-v1',lane=lane,
+                    phase='front_pages' if lane=='front' else 'history_and_replies')
+                c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps(marker),ids[0]))
+                self.assertEqual(sch.transient_data_wait(c,row),0)
+            marker['processing']['newest_order_verified']=True
+            c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps(marker),ids[0]))
+            self.assertIsNone(sch.transient_data_wait(c,row))
+
+    def test_front_cadence_counts_from_start_and_never_overlaps(self):
+        import discovery_tracking as discovery
+        self.http_baseline()
+        for seconds in (8,40):
+            with self.subTest(duration=seconds):
+                mon.command('start');task=sch.tick(app.now())
+                with app.db() as c:
+                    discovery.attach(c,task,dict(kind='video',channel='work',key='work',target=VIDEO,
+                        read_lane='front',policy=discovery.config(c)))
+                    c.execute('UPDATE discovery_jobs SET settled=1 WHERE task_id=?',(task,))
+                    created=c.execute('SELECT created_at FROM collection_tasks WHERE id=?',(task,)).fetchone()[0]
+                self.now.return_value=(datetime.fromisoformat(created)+timedelta(seconds=seconds)).isoformat()
+                self.finish(task)
+                with patch('collector.start',side_effect=ValueError('test prevents dispatch')):
+                    # Settle before the next due instant so no second task starts.
+                    sch.tick(created)
+                due=mon.state()['next_run_at']
+                self.assertEqual(due,(datetime.fromisoformat(created)+timedelta(seconds=max(30,seconds))).isoformat())
+                mon.command('stop')
+
     def data_network_failure(self, task):
         self.finish(task, 'network_error')
         evidence = [

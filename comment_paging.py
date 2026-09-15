@@ -4,10 +4,13 @@ from datetime import datetime
 import hashlib
 import json
 import re
+import time
 
 import clubops as app
 
-VERSION='comment-page-rotation-v1'
+VERSION='comment-page-rotation-v2'
+LEGACY_VERSION='comment-page-rotation-v1'
+REPLY_REFRESH_SECONDS=300
 MAX_REPLIES=200
 MAX_AGE=6*3600
 SCHEMA='''CREATE TABLE IF NOT EXISTS collection_page_progress (
@@ -29,7 +32,10 @@ def cursor(value,nullable=False):
 
 
 def validate(state):
-    if not isinstance(state,dict) or set(state)!={'version','main_cursor','replies'} or state['version']!=VERSION:
+    if not isinstance(state,dict):raise ValueError('评论分页状态版本无效')
+    if set(state)=={'version','main_cursor','replies'} and state.get('version') in (VERSION,LEGACY_VERSION):
+        state={**state,'version':VERSION,'reply_checks':[],'reply_rechecks':[]}
+    if set(state)!={'version','main_cursor','replies','reply_checks','reply_rechecks'} or state['version']!=VERSION:
         raise ValueError('评论分页状态版本无效')
     cursor(state['main_cursor'],True)
     if not isinstance(state['replies'],list) or len(state['replies'])>MAX_REPLIES:raise ValueError('回复队列超出范围')
@@ -38,10 +44,20 @@ def validate(state):
         if not isinstance(row,list) or len(row)!=2 or not isinstance(row[0],str) or not re.fullmatch(r'[0-9]{5,30}',row[0]) or row[0] in seen:
             raise ValueError('回复分页身份无效')
         cursor(row[1]);seen.add(row[0])
+    checks=state['reply_checks'];rechecks=state['reply_rechecks']
+    if not isinstance(checks,list) or len(checks)>MAX_REPLIES or not isinstance(rechecks,list) or len(rechecks)>MAX_REPLIES:
+        raise ValueError('回复增量记录超出范围')
+    checked=set()
+    for entry in checks:
+        if (not isinstance(entry,list) or len(entry)!=3 or not isinstance(entry[0],str)
+            or not re.fullmatch(r'[0-9]{5,30}',entry[0]) or entry[0] in checked):raise ValueError('回复增量身份无效')
+        cursor(entry[1]);cursor(entry[2]);checked.add(entry[0])
+    if len(set(rechecks))!=len(rechecks) or any(not isinstance(x,str) or x not in seen for x in rechecks):
+        raise ValueError('回复刷新来源无效')
     return state
 
 
-def empty():return dict(version=VERSION,main_cursor=0,replies=[])
+def empty():return dict(version=VERSION,main_cursor=0,replies=[],reply_checks=[],reply_rechecks=[])
 
 
 def load(c,source_id,video_id,tag,instant):
@@ -88,14 +104,18 @@ def save(c,task_id,source_id,message,expected_tag):
 
 
 class Rotation:
-    def __init__(self,state=None):
+    def __init__(self,state=None,*,head=True,instant=None):
         state=validate(state or empty())
         self.main=state['main_cursor'];self.replies=deque(tuple(r) for r in state['replies'])
-        self.head=True;self.prefer_reply=True
+        self.head=head;self.prefer_reply=True
         self.known={r[0] for r in self.replies}
+        self.checks={r[0]:r[1:] for r in state['reply_checks']}
+        self.rechecks=deque(state['reply_rechecks'])
+        self.instant=int(time.time() if instant is None else instant)
 
     def next(self):
         if self.head:return 'comments','',0
+        if self.rechecks:return 'replies',self.rechecks[0],0
         if self.replies and (self.prefer_reply or self.main is None or len(self.replies)>=MAX_REPLIES-20):
             parent,offset=self.replies[0];return 'replies',parent,offset
         if self.main is not None:return 'comments','',self.main
@@ -108,10 +128,17 @@ class Rotation:
         deferred=0
         if op=='comments':
             for target in page.get('reply_targets',[]):
+                total=page.get('reply_counts',{}).get(target)
+                checked=self.checks.get(target)
+                reliable=type(total) is int and 0<total<2**63
+                refresh=not reliable or not checked or total!=checked[0] or self.instant-checked[1]>=REPLY_REFRESH_SECONDS
+                if not refresh:continue
                 if target not in self.known:
-                    if len(self.replies)<MAX_REPLIES:
-                        self.replies.append((target,0));self.known.add(target)
-                    else:deferred+=1
+                    if len(self.replies)>=MAX_REPLIES:deferred+=1;continue
+                    self.replies.append((target,0));self.known.add(target)
+                elif reliable and checked and target not in self.rechecks and any(p==target and c>0 for p,c in self.replies):
+                    self.rechecks.append(target)
+                if reliable:self.checks[target]=[total,self.instant]
             if self.head:
                 # Always refresh page zero; a saved continuation follows it.
                 if not more and fully_consumed:self.main=None
@@ -121,13 +148,20 @@ class Rotation:
             # Otherwise repeat the page next batch, including deferred parents.
             self.prefer_reply=True
         else:
-            if not self.replies or self.replies[0]!=(parent,offset):raise ValueError('回复队列来源不一致')
-            self.replies.popleft()
-            if not fully_consumed:self.replies.appendleft((parent,offset))
-            elif more:self.replies.append((parent,following))
+            refresh=bool(self.rechecks and self.rechecks[0]==parent and offset==0)
+            if refresh:
+                if fully_consumed:self.rechecks.popleft()
+            else:
+                if not self.replies or self.replies[0]!=(parent,offset):raise ValueError('回复队列来源不一致')
+                self.replies.popleft()
+                if not fully_consumed:self.replies.appendleft((parent,offset))
+                elif more:self.replies.append((parent,following))
             self.prefer_reply=False
         return dict(operation=op,parent=parent,requested_cursor=offset,next_cursor=following,has_more=more,
                     fully_consumed=fully_consumed,deferred_replies=deferred)
 
     def snapshot(self):
-        return validate(dict(version=VERSION,main_cursor=self.main,replies=[list(r) for r in self.replies]))
+        pending={p for p,_ in self.replies}
+        checks=sorted(self.checks.items(),key=lambda r:(r[0] in pending,r[1][1]),reverse=True)[:MAX_REPLIES]
+        return validate(dict(version=VERSION,main_cursor=self.main,replies=[list(r) for r in self.replies],
+            reply_checks=[[p,*v] for p,v in checks],reply_rechecks=list(self.rechecks)))

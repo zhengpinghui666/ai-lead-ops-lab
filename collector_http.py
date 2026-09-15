@@ -183,6 +183,7 @@ def parse_page(body, operation, video='', parent='', title='', *, requested_curs
     if len(items) > 1000 or (not items and more and not empty_reply_page):
         raise ReadError('schema_changed', {'reason': 'invalid_page_size' if items else 'empty_page_with_more'})
     rows, skipped, reply_targets, non_text_reply_targets, seen = [], 0, [], [], set()
+    reply_counts = {}
     nontext = 0
     for item in items:
         if not isinstance(item, dict):
@@ -215,6 +216,7 @@ def parse_page(body, operation, video='', parent='', title='', *, requested_curs
             has_replies = operation == 'comments' and type(item.get('reply_comment_total')) is int and item['reply_comment_total'] > 0
             if has_replies and cid not in reply_targets:
                 reply_targets.append(cid)
+                reply_counts[cid] = item['reply_comment_total']
             if not raw.strip():
                 skipped += 1
                 nontext += 1
@@ -242,7 +244,7 @@ def parse_page(body, operation, video='', parent='', title='', *, requested_curs
         raise ReadError('schema_changed')
     result = {'rows': rows, 'cursor': cursor, 'has_more': bool(more), 'search_id': search_id,
               'skipped': skipped, 'skipped_reasons': {'non_text':nontext,'invalid_record':skipped-nontext},
-              'reply_targets': reply_targets, 'non_text_reply_targets': non_text_reply_targets}
+              'reply_targets': reply_targets, 'non_text_reply_targets': non_text_reply_targets, 'reply_counts': reply_counts}
     if empty_visible:
         field='reply_visibility' if operation=='replies' else 'comment_visibility'
         result[field] = {'state': 'terminal_without_visible_'+operation, 'declared_total': body['total'], 'returned_rows': 0}

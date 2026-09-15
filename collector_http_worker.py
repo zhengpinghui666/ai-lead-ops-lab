@@ -8,6 +8,7 @@ import video_metadata
 import video_discovery
 import candidate_pool
 import comment_paging
+import collection_session_refresh
 import clubops as app
 from pathlib import Path
 
@@ -37,8 +38,11 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
         if cancel.is_set():
             raise http.ReadError('cancelled')
         if client is None:
+            saved_session=session is None
             try:
-                session = session or sessions.load()
+                # Validate structure first; the original account gate and a
+                # bounded identity revalidation precede any data request.
+                session = session or sessions.load(check_age=False)
             except FileNotFoundError:
                 raise http.ReadError('needs_login') from None
             except Exception:
@@ -50,7 +54,30 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                                  comment_since=config.get('comment_since'))
             operation = {'search': 'search', 'author': 'detail'}.get(config['kind'], 'comments') if not config.get('resume_targets') else 'comments'
             client.check_gate(operation)
-            identity = (identity_probe or uid_bootstrap.probe)({'expected_account': session['account'],
+            identity=None
+            if saved_session:
+                proof=[]
+                def verify_original_account(payload):
+                    result=(identity_probe or uid_bootstrap.probe)(payload)
+                    proof.append(result)
+                    return result
+                try:
+                    session,identity=collection_session_refresh.ensure(None,
+                        assigned or dict(account_id=session['account'],sender_uid=session['sender_uid']),
+                        probe=verify_original_account,cancelled=lambda:cancel.is_set() or stopped.is_set(),
+                        minimum_valid_seconds=300)
+                    client.session=session
+                    client.check_gate(operation)
+                except collection_session_refresh.RefreshError as exc:
+                    if exc.reason=='cancelled':raise http.ReadError('cancelled') from None
+                    if exc.reason=='identity_unverified' and proof:
+                        # Reuse the actual single identity response below so
+                        # network errors and platform gates retain their normal
+                        # diagnostic/status and bounded-recovery semantics.
+                        identity=proof[0]
+                    else:
+                        raise http.ReadError('session_expired',{'reason':exc.reason}) from None
+            identity = identity or (identity_probe or uid_bootstrap.probe)({'expected_account': session['account'],
                 'cookie': sessions.cookie_header(session, 'identity'), 'user_agent': session['user_agent']})
             diagnostic({'operation': 'identity', 'transport': 'http', 'status': identity['status'],
                 'identity_check_version': 'identity-check-v2', 'collection_account':session['account'],
@@ -147,6 +174,8 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
             emit({'type': 'status', 'status': 'completed' if healthy_empty or restricted_empty else 'no_data', 'detail': '作者入口检查完成，受限作品已停止跟踪；本次未读取评论，其他公开作品继续' if restricted_empty else '作者作品检查完成，本次没有文案匹配的作品，等待下次检查' if healthy_empty else '本次有限发现未找到可读取的相关视频；未扩大范围或切换入口'})
             return
         emit({'type': 'targets', 'records': targets})
+        lane=(config.get('discovery_job') or {}).get('read_lane','combined')
+        if lane not in ('front','history','combined'):raise http.ReadError('schema_changed')
 
         def read_video(target):
             if cancel.is_set() or stopped.is_set():
@@ -208,7 +237,10 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                 if durable:
                     with app.db() as connection:
                         revision,state,reset=comment_paging.load(connection,config['paging_source_id'],vid,tag,app.now())
-                rotation=comment_paging.Rotation(state)
+                # A history job may only use its own still-valid cursor. A new
+                # session starts with a real front read instead of foreign offsets.
+                history_only=lane=='history' and durable and reset=='continued'
+                rotation=comment_paging.Rotation(state,head=not history_only)
                 while remaining() and (request:=rotation.next()) is not None:
                     operation,parent,cursor=request
                     if operation=='replies':
@@ -227,6 +259,7 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                         revision+=1
                         emit(dict(type='comment_paging',video_id=vid,session_tag=tag,revision=revision,
                                   state=rotation.snapshot(),page=receipt))
+                    if lane=='front':break
                     if head_pending and operation=='comments' and cursor==0:
                         head_pending=False
                         # Release this slot before any history/reply read so
@@ -280,16 +313,16 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
         readers=[read_video(row) for row in targets]
         def queue_phase(phase):
             emit({'type':'diagnostic','stage':'work_read_queue','snapshot':{'processing':dict(
-                version='front-page-priority-v1',phase=phase,works=len(targets),page_concurrency=limit,
-                newest_order_verified=False)}})
+                version='front-page-priority-v1' if lane=='combined' else 'comment-lanes-v1',phase=phase,works=len(targets),page_concurrency=limit,
+                newest_order_verified=False,**({'lane':lane} if lane!='combined' else {}))}})
         def drain(reader):
             for _ in reader:pass
         try:
             with ThreadPoolExecutor(max_workers=limit) as pool:
-                queue_phase('front_pages')
-                futures=[pool.submit(next,reader,None) for reader in readers]
+                queue_phase('history_and_replies' if lane=='history' else 'front_pages')
+                futures=[pool.submit(drain if lane=='history' else lambda r:next(r,None),reader) for reader in readers]
                 for future in as_completed(futures):future.result()
-                if not cancel.is_set() and not stopped.is_set():
+                if lane=='combined' and not cancel.is_set() and not stopped.is_set():
                     queue_phase('history_and_replies')
                     futures=[pool.submit(drain,reader) for reader in readers]
                     for future in as_completed(futures):future.result()

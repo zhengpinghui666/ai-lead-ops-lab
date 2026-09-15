@@ -46,6 +46,68 @@ class FakeSigner:
 
 
 class HTTPReadTests(unittest.TestCase):
+    def test_saved_session_near_or_past_expiry_is_verified_once_before_data(self):
+        import uid_session
+        for remaining in (20,-20,1000):
+            with self.subTest(remaining=remaining),tempfile.TemporaryDirectory() as td, \
+                    patch.object(sessions.runtime,'data_dir',return_value=Path(td)), \
+                    patch.object(uid_session,'crypt',side_effect=lambda raw,**kw:raw[::-1]):
+                clock=[time.time()];value=session();value['captured_at']=clock[0]-sessions.MAX_AGE+remaining
+                original=dict(value);file=sessions.path();file.parent.mkdir(parents=True)
+                file.write_bytes(sessions.MAGIC+json.dumps(value).encode()[::-1])
+                def probe(_):
+                    return dict(status='identity_verified',sender_uid=value['sender_uid'],http_status=200,
+                                verification_indicated=False,http_attempts=1)
+                def read_page(*a,**kw):
+                    clock[0]+=30
+                    # A second request would cross the old 12h cutoff. The
+                    # renewed snapshot must still pass the normal age guard.
+                    current=sessions.load();sessions.cookie_header(current,'comments')
+                    return http.parse_page(body(),'comments',VIDEO)
+                events=[]
+                with patch.object(sessions.time,'time',side_effect=lambda:clock[0]), \
+                        patch.object(http.Client,'page',side_effect=read_page) as read, \
+                        patch.object(worker.uid_bootstrap,'probe',side_effect=probe) as identity:
+                    worker.collect(dict(kind='video',target=VIDEO,video_limit=1,page_concurrency=1,comment_limit=1),events.append,threading.Event())
+                self.assertEqual(events[-1]['status'],'completed',events[-1])
+                self.assertEqual(identity.call_count,1);read.assert_called_once()
+                saved=sessions.load(check_age=False)
+                self.assertEqual({k:v for k,v in saved.items() if k!='last_verified_at'},original)
+                self.assertEqual('last_verified_at' in saved,remaining<300)
+                self.assertNotIn('TEST_ONLY_SECRET',json.dumps(events))
+
+    def test_expired_saved_session_platform_gate_stops_before_revalidation(self):
+        import uid_session
+        with tempfile.TemporaryDirectory() as td,patch.object(sessions.runtime,'data_dir',return_value=Path(td)), \
+                patch.object(uid_session,'crypt',side_effect=lambda raw,**kw:raw[::-1]):
+            value=session();value['captured_at']-=sessions.MAX_AGE+20
+            file=sessions.path();file.parent.mkdir(parents=True);raw=sessions.MAGIC+json.dumps(value).encode()[::-1];file.write_bytes(raw)
+            sessions.record_endpoint_status(value,'comments','needs_verification',verification_scope='account')
+            events=[]
+            with patch.object(worker.uid_bootstrap,'probe') as probe,patch.object(http.Client,'page') as read:
+                worker.collect(dict(kind='video',target=VIDEO,video_limit=1,page_concurrency=1,comment_limit=1),events.append,threading.Event())
+            self.assertEqual(events[-1]['status'],'needs_verification');probe.assert_not_called();read.assert_not_called()
+            self.assertEqual(file.read_bytes(),raw)
+
+    def test_expired_revalidation_rejects_unknown_wrong_account_and_limits(self):
+        import uid_session
+        cases=[(dict(status='http_failed',http_attempts=1,transport_error='timeout',transport_phase='response_headers'),'network_error'),
+               (dict(status='http_rejected',http_status=429),'rate_limited'),
+               (dict(status='http_rejected',http_status=403),'access_denied'),
+               (dict(status='http_rejected',http_status=401),'needs_login'),
+               (dict(status='identity_verified',sender_uid='999999',http_status=200),'identity_failed'),
+               (dict(status='identity_verified',sender_uid=session()['sender_uid'],http_status=200,verification_indicated=True),'needs_verification')]
+        for proof,status in cases:
+            with self.subTest(status=status),tempfile.TemporaryDirectory() as td,patch.object(sessions.runtime,'data_dir',return_value=Path(td)), \
+                    patch.object(uid_session,'crypt',side_effect=lambda raw,**kw:raw[::-1]):
+                value=session();value['captured_at']-=sessions.MAX_AGE+20
+                file=sessions.path();file.parent.mkdir(parents=True);raw=sessions.MAGIC+json.dumps(value).encode()[::-1];file.write_bytes(raw)
+                events=[]
+                with patch.object(worker.uid_bootstrap,'probe',return_value=proof) as probe,patch.object(http.Client,'page') as read:
+                    worker.collect(dict(kind='video',target=VIDEO,video_limit=1,page_concurrency=1,comment_limit=1),events.append,threading.Event())
+                self.assertEqual(events[-1]['status'],status,events[-1]);self.assertEqual(probe.call_count,1);read.assert_not_called()
+                self.assertEqual(file.read_bytes(),raw)
+
     def test_profile_gender_is_explicit_numeric_only(self):
         for gender in [0,1,2,3,None,True,'2']:
             row=http.parse_page(body([record(user={'uid':'358898446378682','gender':gender})]),'comments',VIDEO)['rows'][0]
