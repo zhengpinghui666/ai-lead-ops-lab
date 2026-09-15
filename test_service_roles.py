@@ -15,6 +15,18 @@ from test_semantic import prediction
 
 
 class RoleTests(unittest.TestCase):
+    def test_waiting_for_price_enquiries_is_supply_not_buying(self):
+        for text in ('等个问价','等一个问价','等人来问价','等问价','等个询价'):
+            self.assertEqual(service_roles.classify(text,'无畏契约陪玩')['category'],'seller')
+            for kind in ('comment','live','group'):
+                source=dict(kind=kind,text=text,title='无畏契约陪玩',parent='')
+                row=dict(category='buyer',analysis_method='model');service_roles.project(row,source)
+                self.assertEqual(row['category'],'seller')
+                result=semantic.validate_result(prediction(source,'buyer'),source)
+                self.assertEqual(result['category'],'seller');self.assertEqual(result['proposed_category'],'buyer')
+        for text in ('怎么点','问个价','等你报价','我想问价','不是我等问价，是他说的'):
+            self.assertIsNone(service_roles.classify(text,'无畏契约陪玩'))
+
     def test_ordinary_teamup_projects_uncertain_models_but_preserves_human_review(self):
         for method in ('model','human','pending'):
             row=dict(category='uncertain',analysis_method=method)

@@ -78,8 +78,8 @@
     },
     {
       "name": "DELIVERY_STATUS_20260915.md",
-      "sha256": "e077e606d2b0ef2c40524d159cc2cd3cc110d64d37411ed5720d7785120a0754",
-      "bytes": 7652
+      "sha256": "faea8c819ea834fc677cc16e49abad5853065548bcf2a8ef0c09af78b700a098",
+      "bytes": 7889
     },
     {
       "name": "DISCOVERY_TRACKING.md",
@@ -208,8 +208,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "4dffedc77c080299a3a995c6039f5baa04673efcb4f8da6999e4bbadf660edeb",
-      "bytes": 207470
+      "sha256": "22b129fdd8552f934a3497c401118fa0c44aca095e94b0a3f65794228947b732",
+      "bytes": 212344
     },
     {
       "name": "UID_HTTP.md",
@@ -253,8 +253,8 @@
     },
     {
       "name": "analysis_store.py",
-      "sha256": "5eb4c5f3bbfaa55acae78ca4a10f39d2f8104fcf7f20d20dc812276ad769ddd5",
-      "bytes": 7891
+      "sha256": "0c3b9f2ecac88866fb81f6ee325bfb1988660b8e0c0443d1a764cbe431c9ef7d",
+      "bytes": 7959
     },
     {
       "name": "asset_keywords.py",
@@ -483,8 +483,8 @@
     },
     {
       "name": "discovery_tracking.py",
-      "sha256": "d205203e68c0dc6ccab474991335f05dc47638db19c04f1c20bc39d3b1098935",
-      "bytes": 44626
+      "sha256": "16246ca9ae6ee7fec02214be2d8436c85b1d4889997c5b73e6aab9c134de6d10",
+      "bytes": 46028
     },
     {
       "name": "evaluation/intent-development-v1.json",
@@ -678,8 +678,8 @@
     },
     {
       "name": "intent_outreach.py",
-      "sha256": "1c1906eeaec803dc9d1cbee4ac8842bcbb8a0b8542b055958df9f259a9b4dcf4",
-      "bytes": 21192
+      "sha256": "6d10a033bc402613e0c3208e2005afcd334f83ff2a260380da93f3d31ae8a1a0",
+      "bytes": 23024
     },
     {
       "name": "intent_rules.py",
@@ -973,8 +973,8 @@
     },
     {
       "name": "semantic.py",
-      "sha256": "b583ea2f270cf67f4979a0aa4b20ed39c932af07fbcc87f99c1814989dfd2ce4",
-      "bytes": 42876
+      "sha256": "380a80d487b026ec7002997885946f7630cfd978dccb8749adbbd49cd715ce2a",
+      "bytes": 43426
     },
     {
       "name": "semantic_api.py",
@@ -983,8 +983,13 @@
     },
     {
       "name": "semantic_queue.py",
-      "sha256": "1fea75a49613a70e7f09c861e3176f2ac5736c6016e10a6e5b182eeb7732ce5a",
-      "bytes": 12647
+      "sha256": "144cce7d1c5353c4b1a17899c5b1e9135e02c581533b97a215b7668c562e69db",
+      "bytes": 14209
+    },
+    {
+      "name": "semantic_retry.py",
+      "sha256": "43631d3ba7e7abaa483b52d84a834c9af5434e36970b1e39355c972c79371d90",
+      "bytes": 4267
     },
     {
       "name": "server.py",
@@ -993,13 +998,13 @@
     },
     {
       "name": "service_roles.py",
-      "sha256": "cc912c830ee436bfb928e446780b784088894aecbdc05eadc19687e3abd90f9b",
-      "bytes": 5015
+      "sha256": "ab0b12b20259dc5c42a9460f67170309a7f092c7725b2ddd87edcccdf63c876c",
+      "bytes": 5076
     },
     {
       "name": "source-files.json",
-      "sha256": "cd43603f35094694d38bbfbcae47ecc2eddb6f26f3a30751ac66e8f155eea888",
-      "bytes": 10214
+      "sha256": "7adcfffa3ebb807ebd94bcd639582b9503098e25f7deb5c59da2976cc4f8c119",
+      "bytes": 10267
     },
     {
       "name": "start.ps1",
@@ -1023,8 +1028,8 @@
     },
     {
       "name": "static/app.js",
-      "sha256": "de3cde0800f3327565ffa98a60a9d04690498c9efa1d0c6cdb84e97f6f552e3e",
-      "bytes": 238954
+      "sha256": "efedb2cc6ae46627e9a63f8ca0bea5762155274f037ac2a54a5e9cb3ccfcdd83",
+      "bytes": 239190
     },
     {
       "name": "static/bark.js",
@@ -1223,8 +1228,8 @@
     },
     {
       "name": "test_discovery_tracking.py",
-      "sha256": "c91a920c8c1c7c83efd5537dd242f1fe4721ac49c30db4f8e032aeb281413257",
-      "bytes": 76581
+      "sha256": "12bd8c4605366dae29e5293a89c7f6adf0b3b35fa683628608dabd3eeb674a57",
+      "bytes": 78493
     },
     {
       "name": "test_freshness_audit.py",
@@ -1288,8 +1293,8 @@
     },
     {
       "name": "test_group_monitor.py",
-      "sha256": "64f5d8aeb4c46db50905d152c6f0e226daeef6aa5f67feab8cca5e0f7d2f1e83",
-      "bytes": 25189
+      "sha256": "de1e985206d3d8509c0077428eb06142b6da16cedf77e06a9ac3a30a6aa458ba",
+      "bytes": 25527
     },
     {
       "name": "test_group_profiles.py",
@@ -1328,8 +1333,8 @@
     },
     {
       "name": "test_intent_outreach.py",
-      "sha256": "36f53c6090c97544865792c091afc3e8aaf9804c9bec199d8feb2a14203abd8d",
-      "bytes": 19129
+      "sha256": "ae01b3774a0fa724cdd5514b8936ac044408aea9548578f8060666c03d22c8e7",
+      "bytes": 22745
     },
     {
       "name": "test_intent_rules.py",
@@ -1557,14 +1562,19 @@
       "bytes": 15489
     },
     {
+      "name": "test_semantic_retry.py",
+      "sha256": "87fb45580d8948aa9507df36eacce1f527f33d88f2786120e0501a483a107d5f",
+      "bytes": 7385
+    },
+    {
       "name": "test_service_lifecycle.py",
       "sha256": "b5aba7793715883c77c2190a7825a8c8998bfffafeb067f707ca80a8ec7b6324",
       "bytes": 7196
     },
     {
       "name": "test_service_roles.py",
-      "sha256": "abd7fd3ef993fde60d73c4dcd90b97642b88be61df35a17be58d78cc0be7ae09",
-      "bytes": 6947
+      "sha256": "d548efcfc08f592fedc52317f6d418e929133faf13ce9259c9bd0870c4428cf7",
+      "bytes": 7910
     },
     {
       "name": "test_team_access.py",
@@ -1603,8 +1613,8 @@
     },
     {
       "name": "test_uid_messaging.py",
-      "sha256": "718569c5d0a647d468e7faf6648ea106dbc7378b95ad76e4cea3285e6bf319f3",
-      "bytes": 41028
+      "sha256": "f5c7326c1f11a25554d8f26c919888c947678210d3518fd168210ecac68a93d8",
+      "bytes": 41298
     },
     {
       "name": "test_uid_session.cjs",
@@ -1703,8 +1713,8 @@
     },
     {
       "name": "uid_messaging.py",
-      "sha256": "122ef88fe58bb391105b1489e46c14095f80fe33b50796d75a85121f22e5d731",
-      "bytes": 27090
+      "sha256": "ea67f41ca55b305e22f596f279c0248887ebc8ef4599d7bce8c30291f3fe8971",
+      "bytes": 27462
     },
     {
       "name": "uid_protocol.py",

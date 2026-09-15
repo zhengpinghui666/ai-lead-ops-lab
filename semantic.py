@@ -13,7 +13,7 @@ import clubops as app
 import analysis_store as store
 
 VERSION = 'intent-schema-v1'
-PROMPT_VERSION = 'intent-prompt-v10'
+PROMPT_VERSION = 'intent-prompt-v11'
 MODEL_FORMAT_VERSION = 'ollama-fields-v1'
 API_FORMAT_VERSION = 'chat-fields-v1'
 CONFIG_FILE = 'semantic.json'
@@ -344,7 +344,7 @@ region、rank_label、time、budget、party_size 的 value 必须与 quote 完�
 classification_quote 是 text 中的分类依据；category 不是 uncertain 时不能为空。它不能代替 game 或其他字段自己的 quote。
 certainty 只判断作者当前的需求角色及可提供服务的需求是否清楚，不判断预算、时间等字段是否齐全，也不把愿否付费未知等同于角色未知。明确询价或清楚的求带需求可为 buyer、clear，预算未知仍留空；角色、需求对象或是否仍在找人不明时才用 uncertain。
 reason 写简短可审查理由，不给概率、不声称已经同意联系或成交。
-“多少钱”“怎么收费”是询价，不是预算；普通“陪玩”“陪练”不能直接补成某种服务方向。分散的时间片段不能拼成一句。
+先判断询价方向：“怎么点”“问个价”“等你报价”是作者想了解服务；“等个问价”“等人来问价”是等待客户询价的接单表达，归seller，不能仅因问价二字归buyer。“多少钱”“怎么收费”是询价，不是预算；普通“陪玩”“陪练”不能直接补成某种服务方向。分散的时间片段不能拼成一句。
 完整字段示例，text 为“无畏契约国服新手，今晚想买一小时教学，预算最多100元”，parent 和 title 为空时：
 {"category":"buyer","certainty":"clear","reason":"作者明确购买新手教学","classification_quote":"想买一小时教学","game":{"value":"无畏契约","source":"text","quote":"无畏契约"},"facts":{"service_type":{"value":"新手陪练","quote":"新手"},"region":{"value":"国服","quote":"国服"},"rank_label":{"value":"","quote":""},"time":{"value":"今晚","quote":"今晚"},"budget":{"value":"预算最多100元","quote":"预算最多100元"},"party_size":{"value":"","quote":""}}}
 示例只演示字段与证据格式。实际证据必须来自本次输入；任何分类都需要当前作者原文与已保存上下文的依据，不套用示例的事实字段。'''
@@ -417,9 +417,15 @@ def validate_result(value, source):
         author=source.get('author') or {}
         if not (author_roles.evidence(source['text'],author.get('nickname',''),author.get('signature','')) or author_roles.evidence(author.get('self_description',''))):
             value=dict(value,certainty='uncertain',reason='模型提出俱乐部身份，但已保存的作者资料或自述依据不足，保留待判断。')
+    proposed_category=value['category']
+    if value['category']=='buyer':
+        import service_roles
+        role=service_roles.classify(source['text'],source.get('title',''),source.get('parent',''))
+        if role:
+            value=dict(value,category=role['category'],certainty='clear',reason='服务方向复核：'+role['reason'])
     facts = dict(facts, evidence=checked, model_schema=VERSION, model_prompt=PROMPT_VERSION)
     return dict(category=value['category'] if value['certainty'] == 'clear' else 'uncertain',
-                proposed_category=value['category'], certainty=value['certainty'], confidence=None,
+                proposed_category=proposed_category, certainty=value['certainty'], confidence=None,
                 reason=value['reason'].strip(), game=value['game'], facts=facts, analysis_method='model')
 
 
@@ -608,7 +614,7 @@ def analyze_one(body, mode='live', *, adapter_factory=None, cancel_event=None, e
             route=asset_verticality.routing(c,kind,record_id,refresh_asset=True)
             if not route['model_allowed']:
                 raise ValueError(route['reason']+' 未调用模型。')
-            if len(source['text']) > 5000 or len(source['parent']) > 5000 or len(source['title']) > 1000:
+            if any(len(source[field]) > 5000 for field in ('text','parent','title')):
                 raise ValueError('本条原文或上下文超过模型输入上限，保留规则与人工核对')
             store.capture_rule(c, kind, record_id)
             run_id = c.execute('''INSERT INTO intent_results(evidence_type,record_id,method,engine,request_id,input_hash,input_json,status,started_at)

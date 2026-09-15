@@ -7,6 +7,8 @@ import clubops as app
 import analysis_store as store
 import semantic
 import asset_verticality
+import semantic_retry
+from datetime import datetime
 
 CAPACITY = 200
 STOP = threading.Event()
@@ -15,6 +17,7 @@ ACTIVE = {}
 THREAD = None
 THREADS = []
 MAX_WORKERS = 4
+RETRY_SCAN_AT = 0
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS semantic_jobs (
  id INTEGER PRIMARY KEY, evidence_type TEXT NOT NULL, record_id INTEGER NOT NULL,
@@ -24,7 +27,7 @@ CREATE TABLE IF NOT EXISTS semantic_jobs (
  UNIQUE(evidence_type,record_id,input_hash,engine)
 );
 CREATE INDEX IF NOT EXISTS idx_semantic_jobs_status ON semantic_jobs(status,id);
-'''
+''' + semantic_retry.SCHEMA
 
 
 def human_reviewed(c, kind, row):
@@ -92,11 +95,13 @@ def retained_result(c, kind, record_id, model, engine):
 def state(mode='live'):
     with app.db(mode) as c:
         counts = {r['status']: r['n'] for r in c.execute('SELECT status,COUNT(*) n FROM semantic_jobs GROUP BY status')}
-        rows = [dict(r) for r in c.execute('''SELECT id,evidence_type,record_id,status,detail,result_id,created_at,started_at,finished_at
-            FROM semantic_jobs ORDER BY id DESC LIMIT 20''')]
+        counts['retry_wait']=c.execute("SELECT COUNT(*) FROM semantic_jobs j JOIN semantic_job_retries r ON r.job_id=j.id WHERE j.status='failed' AND r.scheduled=1").fetchone()[0]
+        rows = [dict(r) for r in c.execute('''SELECT j.id,evidence_type,record_id,status,detail,result_id,created_at,started_at,finished_at,
+            COALESCE(r.retries,0) AS retry_count,CASE WHEN j.status='failed' AND r.scheduled=1 THEN r.due_at END AS retry_at
+            FROM semantic_jobs j LEFT JOIN semantic_job_retries r ON r.job_id=j.id ORDER BY j.id DESC LIMIT 20''')]
     settings, _ = semantic.config()
     return dict(capacity=CAPACITY, counts=counts, rows=rows, concurrency_limit=semantic.concurrency(settings),
-                active=counts.get('queued', 0)+counts.get('running', 0)+counts.get('cancelling', 0),
+                active=counts.get('queued', 0)+counts.get('running', 0)+counts.get('cancelling', 0)+counts['retry_wait'],
                 worker_running=any(t.is_alive() for t in THREADS))
 
 
@@ -113,7 +118,7 @@ def cancel_all(mode='live', *, detail='用户停止自动分析；保留规则�
     with app.LOCKS[mode], app.db(mode) as c:
         scope = ' AND evidence_type=?' if evidence_type else ''
         params = (evidence_type,) if evidence_type else ()
-        queued = c.execute("UPDATE semantic_jobs SET status='cancelled',detail=?,finished_at=? WHERE status='queued'" + scope, (detail, app.now()) + params).rowcount
+        queued = c.execute("UPDATE semantic_jobs SET status='cancelled',detail=?,finished_at=? WHERE (status='queued' OR status='failed' AND id IN (SELECT job_id FROM semantic_job_retries WHERE scheduled=1))" + scope, (detail, app.now()) + params).rowcount
         # Final model result and job outcome commit together under this lock.
         # A cancellation arriving after completion cannot relabel that result.
         running = [r[0] for r in c.execute("SELECT id FROM semantic_jobs WHERE status IN ('running','cancelling')" + scope, params)]
@@ -128,6 +133,7 @@ def cancel_all(mode='live', *, detail='用户停止自动分析；保留规则�
 
 
 def run_one(*, adapter_factory=None):
+    global RETRY_SCAN_AT
     job_id = None
     try:
         if STOP.is_set():
@@ -137,6 +143,9 @@ def run_one(*, adapter_factory=None):
             limit = semantic.concurrency(settings)
             if STOP.is_set() or len(ACTIVE) >= limit or semantic.GUARD.full(limit):
                 return False
+            if not issues and time.monotonic()>=RETRY_SCAN_AT:
+                RETRY_SCAN_AT=time.monotonic()+5
+                semantic_retry.promote(c,settings,semantic.state(),datetime.fromisoformat(app.now()),capacity=CAPACITY)
             # New comments and newly observed live messages precede historical work.
             # Observation time prioritizes work; it is not a claimed publication time.
             row = c.execute("""SELECT j.* FROM semantic_jobs j
@@ -171,13 +180,21 @@ def run_one(*, adapter_factory=None):
                 finish(c,job_id,dict(status='skipped',detail=route['reason']+' 未调用模型。'))
                 return True
             existing = store.latest(c, job['evidence_type'], job['record_id'], 'model', job['input_hash'])
-            if existing and (existing['engine'] == job['engine'] or retained_result(c, job['evidence_type'], job['record_id'], existing, job['engine'])):
+            retry=c.execute('SELECT * FROM semantic_job_retries WHERE job_id=?',(job_id,)).fetchone()
+            if retry and retry['retries']:
+                import demand_freshness
+                if not demand_freshness.record(c,job['evidence_type'],job['record_id'])['eligible']:
+                    finish(c,job_id,dict(status='stale',detail='需求已超出24小时，不再重试模型'))
+                    return True
+            retrying_failure=bool(retry and retry['retries'] and existing and existing['status']=='failed' and existing['id']==retry['source_result_id'] and existing['engine']==job['engine'])
+            if existing and not retrying_failure and (existing['engine'] == job['engine'] or retained_result(c, job['evidence_type'], job['record_id'], existing, job['engine'])):
                 finish(c, job_id, dict(status='skipped', detail='此版本原文已有模型分析记录，未重复调用', id=existing['id']))
                 return True
             event = threading.Event()
             ACTIVE[job_id] = event
             c.execute("UPDATE semantic_jobs SET status='running',started_at=? WHERE id=?", (app.now(), job_id))
         request = dict(evidence_type=job['evidence_type'], id=job['record_id'], input_hash=job['input_hash'], request_id=f'queue-job-{job_id}')
+        if retry and retry['retries']:request['request_id']+=f"-retry-{retry['retries']}"
         try:
             semantic.analyze_one(request, adapter_factory=adapter_factory, cancel_event=event, expected_config=settings,
                                  on_finish=lambda c, result: finish(c, job_id, result))

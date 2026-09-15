@@ -339,7 +339,9 @@ class QueueTests(unittest.TestCase):
         grant = self.outreach_grant()
         with patch('monitoring.observation_analysis', side_effect=[dict(category='buyer', game=app.TARGET_GAME, analysis_method='model'), dict(category='seller', analysis_method='human')]):
             result = channel.send_one(self.job['id'], transport=self.accepted, operator_authorization=grant)
-        self.assertEqual(result['status'], 'unknown')
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['evidence']['phase'], 'prepare_send')
+        self.assertFalse(result['evidence']['submission_reserved'])
         with app.db() as c:
             self.assertEqual(c.execute('SELECT COUNT(*) FROM messages').fetchone()[0], 0)
 
@@ -539,7 +541,9 @@ class QueueTests(unittest.TestCase):
             before()
             self.fail('must not submit')
         result = channel.send_one(self.job['id'], transport=change)
-        self.assertEqual(result['status'], 'unknown')
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['evidence']['phase'], 'prepare_send')
+        self.assertFalse(result['evidence']['submission_reserved'])
         self.assertEqual(app.state()['messages'], [])
 
     def test_blocked_and_not_allowed_do_not_create_attempts(self):

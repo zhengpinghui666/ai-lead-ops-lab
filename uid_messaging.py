@@ -190,9 +190,10 @@ def authorized_outreach(c, authorization, job, person, settings):
 
 
 def eligible_demand_copy(analysis, content):
+    from intent_outreach import confirmed_buyer
     game = analysis.get('game')
     method = analysis.get('analysis_method')
-    return (analysis.get('category') == 'buyer' and method in ('rules','model','human')
+    return (confirmed_buyer(analysis)
         and (game == app.TARGET_GAME or not game and method in ('model','human') and '瓦陪陪' in content))
 
 
@@ -335,10 +336,11 @@ def _send_one(job_id, transport, resume_note=None, authorization=None, retry_not
     submission_reserved = False
     submission_checked = False
     freshness_block = None
+    eligibility_block = False
     timing_at_submit = None
 
     def before_submit():
-        nonlocal submission_reserved, submission_checked, freshness_block, timing_at_submit
+        nonlocal submission_reserved, submission_checked, freshness_block, timing_at_submit, eligibility_block
         if submission_checked:
             raise ValueError('本次消息已保留提交次数；不会再次提交')
         submission_checked = True
@@ -355,6 +357,9 @@ def _send_one(job_id, transport, resume_note=None, authorization=None, retry_not
             except demand_freshness.FreshnessError as exc:
                 freshness_block = exc.evidence
                 raise
+            except ValueError:
+                eligibility_block = True
+                raise
             if updated_person != person or updated_job['content'] != job['content'] or updated_job['status'] != 'submitting':
                 raise ValueError('发送对象、联系依据或内容已变化')
             c.execute("UPDATE uid_message_attempts SET phase='send',updated_at=? WHERE job_id=?", (app.now(), job_id))
@@ -368,7 +373,7 @@ def _send_one(job_id, transport, resume_note=None, authorization=None, retry_not
             raise ValueError()
     except Exception:
         result = {'status': 'unknown', 'detail': '提交结果不确定；请核对会话，不会自动重发', 'phase': 'unknown'}
-    if freshness_block is not None and not submission_reserved:
+    if (freshness_block is not None or eligibility_block) and not submission_reserved:
         result = dict(status='failed', phase='prepare_send')
     # Store only this allowlist, not credentials, raw responses, arbitrary errors.
     evidence = {key: result[key] for key in ('phase', 'http_status', 'response_sha256', 'server_message_id', 'conversation_id', 'conversation_short_id', 'platform_code', 'send_status', 'check_code', 'platform_message', 'platform_reason_code', 'transport_phase', 'transport_error', 'response_bytes') if key in result}
@@ -379,6 +384,8 @@ def _send_one(job_id, transport, resume_note=None, authorization=None, retry_not
     evidence['submission_reserved'] = submission_reserved or result['status'] != 'failed' or result.get('phase') not in ('identity', 'create', 'ticket', 'prepare_send')
     if freshness_block is not None:
         evidence['demand_freshness'] = freshness_block
+    if eligibility_block:
+        evidence['eligibility_blocked'] = True
     if timing_at_submit is not None:
         evidence['demand_time_check'] = timing_at_submit
     if authorization is not None:
@@ -396,6 +403,8 @@ def _send_one(job_id, transport, resume_note=None, authorization=None, retry_not
             detail = ('平台拒绝：'+evidence['platform_message']) if evidence.get('platform_message') else '发送未成功；请查看返回阶段与回执'
         if freshness_block is not None:
             detail = freshness_block['detail'] + '；消息尚未提交'
+        elif eligibility_block:
+            detail = '发送前复核未通过：当前需求分类或发送授权已变化；消息尚未提交'
     with app.LOCKS['live'], app.db() as c:
         c.execute('UPDATE uid_message_attempts SET status=?,phase=?,detail=?,evidence=?,updated_at=? WHERE job_id=?', (result['status'], result.get('phase', 'unknown'), detail, json.dumps(evidence), app.now(), job_id))
         c.execute('UPDATE message_jobs SET status=?,detail=?,updated_at=? WHERE id=?', (result['status'], detail, app.now(), job_id))

@@ -96,7 +96,8 @@ def compatible_engine(recorded, current):
         return True
     return any(f':intent-prompt-v{old}:' in recorded and
                recorded.replace(f':intent-prompt-v{old}:', f':intent-prompt-v{new}:') == current
-               for old, new in ((6, 7), (6, 8), (7, 8), (6, 9), (7, 9), (8, 9), (6, 10), (7, 10), (8, 10), (9, 10)))
+               for old, new in ((6, 7), (6, 8), (7, 8), (6, 9), (7, 9), (8, 9), (6, 10), (7, 10), (8, 10), (9, 10),
+                                (6,11),(7,11),(8,11),(9,11),(10,11)))
 
 
 def project(c, row, *, model_engine=None, details=True):

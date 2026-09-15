@@ -694,6 +694,28 @@ class DiscoveryTrackingTests(unittest.TestCase):
             c.execute('UPDATE collection_tasks SET finished_at=? WHERE id=?',(discovery.future(NOW,-1801),self.base))
             self.assertEqual(discovery.empty_search_wait(c,row),0,'Still requires recent independently healthy comments')
 
+    def test_search_navigation_timeout_requires_same_search_shell_and_http_health(self):
+        task,_=self.empty_search()
+        from urllib.parse import quote
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            snapshot=dict(page_url='https://www.douyin.com/search/'+quote(row['target']),
+                navigation_error='navigation_timeout',navigation_http_status=None,responses=[],video_links=0,
+                visible_text='抖音 搜索 综合 视频 用户 直播 筛选')
+            c.execute('DELETE FROM collection_diagnostics WHERE task_id=?',(task,))
+            for stage in ('search-empty','finished-error'):
+                c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(task,stage,json.dumps(snapshot),NOW))
+            self.assertEqual(discovery.empty_search_wait(c,row),300)
+            for change in [dict(navigation_http_status=403),dict(navigation_http_status=429),dict(navigation_error=None),
+                    dict(responses=[dict(status=200)]),dict(page_url='https://www.douyin.com/search/other'),dict(video_links=1),
+                    dict(visible_text='综合 视频 用户 直播 筛选 安全验证'),dict(visible_text='综合 视频 用户 直播 筛选 登录'),
+                    dict(visible_text='')]:
+                c.execute("UPDATE collection_diagnostics SET snapshot=? WHERE task_id=? AND stage='finished-error'",(json.dumps({**snapshot,**change}),task))
+                self.assertEqual(discovery.empty_search_wait(c,row),0,change)
+            c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE task_id=?',(json.dumps(snapshot),task))
+            c.execute('UPDATE collection_tasks SET finished_at=? WHERE id=?',(discovery.future(NOW,-1801),self.base))
+            self.assertEqual(discovery.empty_search_wait(c,row),0)
+
     def test_empty_author_success_does_not_erase_recent_comment_health(self):
         with app.db() as c:
             author=c.execute("""INSERT INTO collection_tasks(request_id,kind,target,video_limit,comment_limit,

@@ -1,5 +1,6 @@
 """Synthetic, offline automatic outreach integration checks."""
 import unittest
+import json
 from unittest.mock import patch
 import clubops as app
 import intent_outreach as outreach
@@ -181,6 +182,54 @@ class OutreachTests(unittest.TestCase):
         with app.db() as c:
             self.assertEqual(c.execute('SELECT contact_basis FROM people').fetchone()[0], '')
             self.assertIn('policy_revision', c.execute('SELECT evidence FROM uid_message_attempts').fetchone()[0])
+
+    def test_every_nonbuyer_class_is_blocked_and_old_draft_cancelled(self):
+        for category in ('seller','recruit','club','social','noise','uncertain','pending',''):
+            with self.subTest(category=category),patch('monitoring.observation_analysis',return_value=dict(
+                    category=category,game=app.TARGET_GAME,analysis_method='model')),patch('uid_transport.send') as transport:
+                self.assertFalse(channel.eligible_demand_copy(dict(category=category,game=app.TARGET_GAME,analysis_method='model'),'点陪'))
+                outreach.tick()
+                transport.assert_not_called()
+        with app.db() as c:
+            policy=outreach.read(c,outreach.POLICY_KEY)
+            row=outreach.candidate(c,policy)
+        job=outreach.prepare_draft(row,policy,'点陪🥣看我主业')
+        with patch('monitoring.observation_analysis',return_value=dict(category='seller',game=app.TARGET_GAME,analysis_method='model')):
+            with app.db() as c:
+                self.assertEqual(outreach.cancel_nonbuyer_jobs(c,outreach.read(c,outreach.POLICY_KEY)),[job['id']])
+                self.assertEqual(c.execute('SELECT status FROM message_jobs WHERE id=?',(job['id'],)).fetchone()[0],'cancelled')
+                self.assertEqual(c.execute('SELECT COUNT(*) FROM uid_message_attempts').fetchone()[0],0)
+
+    def test_reclassified_rejection_is_cancelled_without_changing_platform_receipt(self):
+        from datetime import datetime,timedelta,timezone
+        def reject(config,receiver,message,client,before):
+            before();return dict(status='failed',phase='send',http_status=200,check_code='2')
+        outreach.authorize_retries('合成：明确拒绝后重试')
+        with patch('uid_transport.send',side_effect=reject):outreach.tick()
+        with app.db() as c:
+            c.execute('UPDATE uid_message_attempts SET updated_at=?',((datetime.now(timezone.utc)-timedelta(minutes=20)).isoformat(),))
+            receipt=dict(c.execute('SELECT * FROM uid_message_attempts').fetchone())
+        with patch('monitoring.observation_analysis',return_value=dict(category='club',game=app.TARGET_GAME,analysis_method='human')),patch('uid_transport.send') as transport:
+            outreach.tick();transport.assert_not_called()
+        with app.db() as c:
+            self.assertEqual(dict(c.execute('SELECT * FROM uid_message_attempts').fetchone()),receipt)
+            self.assertEqual(c.execute('SELECT status FROM message_jobs WHERE id=?',(receipt['job_id'],)).fetchone()[0],'cancelled')
+            self.assertIsNone(outreach.retry_candidate(c,outreach.read(c,outreach.POLICY_KEY)))
+
+    def test_classification_change_during_preparation_never_submits(self):
+        def change(config,receiver,message,client,before):
+            with patch('monitoring.observation_analysis',return_value=dict(category='seller',game=app.TARGET_GAME,analysis_method='model')):
+                before()
+            self.fail('A nonbuyer must never reach submission')
+        with patch('uid_transport.send',side_effect=change):outreach.tick()
+        self.assertEqual(outreach.state()['status'],'waiting')
+        with app.db() as c:
+            attempt=c.execute('SELECT * FROM uid_message_attempts').fetchone()
+            self.assertEqual((attempt['status'],attempt['phase']),('failed','prepare_send'))
+            evidence=json.loads(attempt['evidence'])
+            self.assertFalse(evidence['submission_reserved'])
+            self.assertTrue(evidence['eligibility_blocked'])
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM messages').fetchone()[0],0)
 
     def test_unknown_game_mentions_valorant_and_preserves_unknown_classification(self):
         outreach.replace_greeting('合成：游戏待确认时明确介绍瓦陪陪')

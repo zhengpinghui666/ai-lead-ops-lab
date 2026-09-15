@@ -497,6 +497,27 @@ def disconnected_search_wait(c, task):
     except (ValueError,TypeError,AttributeError):return None
 
 
+def timed_out_search_shell(c, task):
+    """Only the known no-response search navigation timeout, not a platform gate."""
+    from urllib.parse import urlsplit,unquote
+    if task['status']!='no_data':return False
+    seen=set()
+    try:
+        for row in c.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=?',(task['id'],)):
+            if row['stage'] not in ('search-empty','finished-error'):return False
+            s=json.loads(row['snapshot']);url=urlsplit(s.get('page_url',''))
+            if (s.get('navigation_error')!='navigation_timeout' or s.get('navigation_http_status') is not None
+                    or s.get('responses')!=[] or s.get('video_links')!=0
+                    or url.scheme!='https' or url.hostname!='www.douyin.com'
+                    or unquote(url.path)!='/search/'+task['target']):return False
+            text=s.get('visible_text','')
+            if not all(word in text for word in ('综合','视频','用户','直播','筛选')):return False
+            if any(word in text for word in ('验证码','安全验证','访问受限','操作频繁','请求过多','登录','验证失败')):return False
+            seen.add(row['stage'])
+        return seen=={'search-empty','finished-error'}
+    except (ValueError,TypeError,AttributeError):return False
+
+
 def empty_search_wait(c, task):
     """Defer proven browser outages/empty shells without stopping HTTP work.
 
@@ -509,9 +530,10 @@ def empty_search_wait(c, task):
     frozen=worker_config(c,task['id'])
     if not frozen or frozen.get('channel')!='search' or frozen.get('target')!=task['target']:
         return 0
-    if task['status'] in ('network_error','partial'):
+    timeout_shell=timed_out_search_shell(c,task)
+    if task['status'] in ('network_error','partial') or timeout_shell:
         import collection_scheduler
-        requested=(collection_scheduler.transient_browser_body_wait(c,task,resource_missing_only=True) if task['status']=='partial'
+        requested=300 if timeout_shell else (collection_scheduler.transient_browser_body_wait(c,task,resource_missing_only=True) if task['status']=='partial'
                    else collection_scheduler.transient_http_wait(c,task))
         if requested is None:requested=disconnected_search_wait(c,task)
         if requested is None:return 0

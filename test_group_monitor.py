@@ -277,6 +277,9 @@ class MonitorTests(unittest.TestCase):
         with app.db() as c:
             job=c.execute('SELECT * FROM semantic_jobs').fetchone();self.assertEqual(job['status'],'completed',job['detail'])
             raw=self.raw(c);self.assertTrue(monitor.eligible(c,raw,semantic.state()['engine'],SENDER))
+            for category in ('seller','recruit','club','social','noise','uncertain','pending',''):
+                with patch('group_monitor.project',return_value=dict(category=category,game=app.TARGET_GAME,analysis_method='model')):
+                    self.assertFalse(monitor.eligible(c,raw,semantic.state()['engine'],SENDER),category)
             self.assertFalse(monitor.eligible(c,raw,'another-engine',SENDER))
             c.execute('UPDATE monitored_groups SET member=0')
             self.assertFalse(monitor.eligible(c,raw,semantic.state()['engine'],SENDER))

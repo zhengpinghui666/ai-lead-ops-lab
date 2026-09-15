@@ -18,24 +18,56 @@ GREETING_TEMPLATE = '你好{称呼}，想点个陪陪吗？感兴趣可以看看
 LEGACY_CONTENT = '点陪🥣看我主业'
 
 
-def evidence_game(c, evidence):
-    """Bind copy to the chosen demand, not the user's latest unrelated comment."""
+def evidence_analysis(c, evidence):
+    """Read the chosen source's current classification, including corrections."""
     import monitoring
     import semantic
     kind = evidence.get('evidence_type') or next((k for k in ('comment', 'live', 'group') if k+'_id' in evidence), None)
     rid = evidence.get(kind+'_id', evidence.get('id')) if kind else None
     if kind == 'comment':
         row = c.execute('SELECT raw_text FROM comments WHERE id=?', (rid,)).fetchone()
-        return monitoring.observation_analysis(c, rid, row['raw_text'], semantic.state()['engine']).get('game', '') if row else ''
+        return monitoring.observation_analysis(c, rid, row['raw_text'], semantic.state()['engine']) if row else {}
     if kind == 'live':
         import live_workflow
         row = c.execute(live_workflow.SELECT+' WHERE m.id=?', (rid,)).fetchone()
-        return live_workflow.project(c, row, history=False).get('game', '') if row else ''
+        return live_workflow.project(c, row, history=False) if row else {}
     if kind == 'group':
         import group_monitor
         row = c.execute(group_monitor.SELECT+' WHERE m.id=?', (rid,)).fetchone()
-        return group_monitor.project(c, row).get('game', '') if row else ''
-    return ''
+        return group_monitor.project(c, row) if row else {}
+    return {}
+
+
+def evidence_game(c, evidence):
+    """Bind copy to the chosen demand, not the user's latest unrelated comment."""
+    return evidence_analysis(c,evidence).get('game','')
+
+
+def confirmed_buyer(analysis):
+    return analysis.get('category')=='buyer' and analysis.get('analysis_method') in ('model','human')
+
+
+def cancel_nonbuyer_jobs(c, policy):
+    """Cancel unsubmitted outreach/retries; retain every prior platform receipt."""
+    cancelled=[]
+    for raw in c.execute("""SELECT j.id,j.status,a.status attempt_status,a.evidence,p.external_id
+            FROM message_jobs j JOIN leads l ON l.id=j.lead_id JOIN people p ON p.id=l.person_id
+            LEFT JOIN uid_message_attempts a ON a.job_id=j.id
+            WHERE j.request_id LIKE 'intent-outreach-v1-%' AND j.status IN ('draft','failed')
+              AND (a.job_id IS NULL OR a.status='failed')""").fetchall():
+        grant=json.loads(raw['evidence'] or '{}').get('operator_authorization')
+        if grant:
+            keep=confirmed_buyer(evidence_analysis(c,grant))
+        elif raw['attempt_status'] is None:
+            keep=candidate(c,policy,recipient_uid=raw['external_id']) is not None
+        else:
+            keep=False
+        if not keep:
+            c.execute("UPDATE message_jobs SET status='cancelled',detail=?,updated_at=? WHERE id=?",
+                ('当前没有已确认的点单（板板）需求，已取消后续发送；原有回执保留',app.now(),raw['id']))
+            app.event(c,'intent_outreach','仅联系点单（板板）：取消发送任务 #'+str(raw['id']))
+            cancelled.append(raw['id'])
+    return cancelled
 
 
 def game_allowed(game, policy):
@@ -188,7 +220,7 @@ def retry_candidate(c, policy):
     if not policy.get('retry_rejected'):return None
     due=[]
     for raw in c.execute("""SELECT a.* FROM uid_message_attempts a JOIN message_jobs j ON j.id=a.job_id
-            WHERE j.request_id LIKE 'intent-outreach-v1-%' AND a.sender_uid=? AND a.status='failed' AND a.phase='send'
+            WHERE j.request_id LIKE 'intent-outreach-v1-%' AND j.status='failed' AND a.sender_uid=? AND a.status='failed' AND a.phase='send'
             ORDER BY a.updated_at,a.job_id""",(policy['sender_uid'],)):
         evidence=json.loads(raw['evidence'])
         if rejection_kind(dict(status=raw['status'],evidence=evidence)):continue
@@ -228,7 +260,7 @@ def previously_contacted(c,policy,recipient):
     return bool(c.execute(f'SELECT 1 FROM uid_message_attempts WHERE sender_uid IN ({slots}) AND recipient_uid=? LIMIT 1',(*accounts,recipient)).fetchone())
 
 
-def candidate(c, policy):
+def candidate(c, policy, *, recipient_uid=None):
     import monitoring
     import semantic
     import live_workflow
@@ -238,6 +270,9 @@ def candidate(c, policy):
     eligible = f"""p.do_not_contact=0 AND p.external_id NOT IN ({slots}) AND NOT EXISTS
         (SELECT 1 FROM uid_message_attempts a WHERE a.sender_uid IN ({slots}) AND a.recipient_uid=p.external_id)"""
     args = tuple(accounts+accounts)
+    if recipient_uid is not None:
+        eligible+=' AND p.external_id=?'
+        args+=(recipient_uid,)
     import group_monitor
     for raw in c.execute(group_monitor.SELECT + " JOIN people eligible_person ON eligible_person.id=m.person_id WHERE "
             + eligible.replace('p.', 'eligible_person.') + ' ORDER BY m.id DESC', args):
@@ -293,6 +328,7 @@ def tick():
             return
         with app.LOCKS['live'], app.db() as c:
             policy = read(c, POLICY_KEY)
+            if policy.get('enabled'):cancel_nonbuyer_jobs(c,policy)
             if rollback_rejected_template(c,policy):return
         with app.db() as c:
             policy, runtime = read(c, POLICY_KEY), read(c, RUNTIME_KEY)
@@ -333,7 +369,7 @@ def tick():
                 write(c, RUNTIME_KEY, dict(status='waiting', checked_at=app.now(), last_job_id=job['id'], detail=str(exc)))
             return
         evidence = result.get('evidence', {})
-        attention = not evidence.get('demand_freshness') and (result['status'] in ('unknown', 'not_connected')
+        attention = not (evidence.get('demand_freshness') or evidence.get('eligibility_blocked')) and (result['status'] in ('unknown', 'not_connected')
             or evidence.get('http_status') in (401, 403)
             or evidence.get('http_status')==429 and (not policy.get('retry_rejected') or len(evidence.get('delivery_history',[]))>=2)
             or result['status'] == 'failed' and evidence.get('phase') != 'send')
