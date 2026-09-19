@@ -1,3 +1,15 @@
+## 2026-09-19 17:27 当前：群/直播持续恢复；普通与原采集浏览器可读，HTTP仍阻塞
+
+本次首读新鲜health attention，服务276620和原健康任务运行，无重启。此前9/16—19心跳之间没有执行记录，不假装已逐小时巡检；全局goal实际paused，本轮仅执行新heartbeat授权维护。原7446经account-login-start作业d46afe8cb94f41b39d4b226d7054d7b2于17:07:35完成，新IM解除409阻塞。原51开启群全部真实完成，162页截至17:14:45，多个群后续自动页和next_run_at已核对。原live track74/library配置，1033 completed18帧0文字，1034自动running；9517原主profile通过既有IM bootstrap完成独立身份/IM只读核验，两个renewal均waiting。原inbox关闭、角色保持，未发测试/补发。
+
+评论保持attention：原4667搜索200空响应；本次4668原7446身份verified，但原已知作品7646766523524605146详情HTTP403/46字节。没有author_secret证据，不可隔离该作后忽略账号通道。用户已答日常浏览器同7446作品与评论均可见；原采集profile的4669于17:18:59也实读3条旧评论completed。单次直接HTTP评论页对照network_error/157ms，无HTTP状态，未重试；先前dependency_missing尝试0请求。不能断言只在详情端点失败，更不能用一次浏览器成功解除仍失败的HTTP自动队列门槛。不要再问已完成的可见性对照/旧4664滑块、清Cookie或换账号。旧人工4664早已读取并结算，9/15分类补丁101测试已部署，但后续新gate使完整恢复未验收。疑似manual recovery子任务未settle discovery_job仅记录待核对，本轮未修改生产代码或业务账本。
+
+17:27补充冻结final-runtime-verification.json：51群累计367页完成；直播1033—1037五批完成，1038自动running，1036新增36文字。模型50完成/4失败/1运行/0排队，平均18.42秒/最大53秒；失败为3格式或证据校验、1直播超时，保留未放宽。今日/24h真实需求仍1，attempts49/messages38不变。
+
+效果：9/15—18完整日真实需求4/1/0/0。初查今日0，恢复短窗口24条规则通过且完成模型，得到群真实需求1/100；所在群公告拒绝商业联系，故不自动私信。发送attempts49/messages38不变；关注/客服/订单/实际回复/已读未知。63高权重检查年龄P50约95.2h，评论停采是首要覆盖瓶颈。详见artifacts/recovery-20260919-1712/REPORT.md、runtime-verification.json和operational-reviews/20260919-1717-analysis.md；不将短窗口1条称长期达标。
+
+遗漏源码备份已补跑pushed 841e596899e29b59977ed0b4125d15db7c24c4bb，358白名单文件，API传输；本文更新后会再次确认最终回执，精确最新以data/github-backup/last-run.json为准。原已received评论通知f2cbe2ed-65c0-42e5-ba1f-8a7abe6d64cb须按unknown/investigating复盘并ack failed（处理未完成），不是resolved，也不是等待已回答的问题；释放旧接手状态对后续通知的阻塞。当前HTTP没有恢复，不逐小时重复同样请求。结束heartbeat需XML。
+
 ## 2026-09-15 21:54 当前：原7446评论已实读，自动搜索仍有验证码；直播1004连接故障恢复验收中
 
 用户已完成原7446重新登录。先移走5类网页存储并未恢复（4658仍空）；随后备份并清理原profile中71条Douyin Cookie、保留4条其他域Cookie及原路径，用户在原窗口重新登录。作业e20c9823b91340d5b18f2ef2f90adb88在21:41:24 completed并捕获原账号HTTP/IM新会话。4659浏览器和4660 HTTP均实际成功：2一级+1回复，3条均旧并过滤。空响应当前已缓解，但未识别具体失效Cookie或平台根因，不能记为永久软件修复。回退：data/private/repair-backups/comment-cookie-renewal-20260915-2140，禁止重复清理/覆盖。
