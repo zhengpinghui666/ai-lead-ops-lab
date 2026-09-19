@@ -100,6 +100,23 @@ class RoomPoolTests(unittest.TestCase):
             tracking.tick()
             self.assertEqual(pool.state()['rows'][0]['failures'], failure)
 
+    def test_connected_room_without_text_backs_off_without_becoming_failed(self):
+        self.begin()
+        for turn in range(2):
+            self.due()
+            with app.db() as c:c.execute("UPDATE live_rooms SET next_check_at='2020-01-01T00:00:00+00:00'")
+            sid=self.tick();self.finish(sid)
+            row=pool.state()['rows'][0]
+            self.assertEqual(row['failures'],0)
+            self.assertEqual(row['last_status'],'completed')
+            self.assertEqual(row['next_check_at'],pool.later(row['last_checked_at'],300 * 2**turn))
+        self.due()
+        with app.db() as c:c.execute("UPDATE live_rooms SET next_check_at='2020-01-01T00:00:00+00:00'")
+        sid=self.tick()
+        with app.db() as c:c.execute('UPDATE live_sessions SET observed=2,inserted=2 WHERE id=?',(sid,))
+        self.finish(sid);row=pool.state()['rows'][0]
+        self.assertEqual(row['next_check_at'],pool.later(row['last_checked_at'],60))
+
     def test_access_and_integrity_problems_pause_entire_rotation(self):
         for status in ('needs_login', 'needs_verification', 'rate_limited', 'access_denied', 'schema_changed', 'room_changed', 'failed'):
             self.begin(status)

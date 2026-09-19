@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict');
 const {spawn}=require('node:child_process');
 const path=require('node:path');
-function run(scenario,concurrency=2){return new Promise((resolve,reject)=>{
+function run(scenario,concurrency=2,extra={}){return new Promise((resolve,reject)=>{
   const child=spawn(process.execPath,[path.join(__dirname,'collector_runner.cjs')],{cwd:__dirname,windowsHide:true,env:{...process.env,CLUBOPS_PLAYWRIGHT:path.join(__dirname,'tests/fixtures/playwright_parallel_fixture.cjs'),CLUBOPS_FIXTURE_SCENARIO:scenario},stdio:['pipe','pipe','pipe']});
   const rows=[];let pending='',errors='',gateIndex=-1,cancelSent=false;
   const timeout=setTimeout(()=>{child.kill();reject(Error(`${scenario}: timeout`));},26000);
@@ -16,7 +16,7 @@ function run(scenario,concurrency=2){return new Promise((resolve,reject)=>{
     if(scenario==='cancel-parallel'&&r.type==='parallel'&&r.active_pages===2&&!cancelSent){cancelSent=true;child.stdin.write('{"command":"cancel"}\n');}
   }});
   child.on('error',reject);child.on('close',code=>{clearTimeout(timeout);if(code!==0)reject(Error(`${scenario}: ${errors}`));else resolve({rows,gateIndex});});
-  child.stdin.write(JSON.stringify({kind:'search',target:'合成测试，不访问平台',video_limit:3,comment_limit:2,page_concurrency:concurrency,interactive:true,profile_dir:'synthetic-only'})+'\n');
+  child.stdin.write(JSON.stringify({kind:'search',target:'合成测试，不访问平台',video_limit:scenario==='five-lane'?5:3,comment_limit:2,page_concurrency:concurrency,interactive:true,profile_dir:'synthetic-only',...extra})+'\n');
 });}
 const terminal=r=>r.rows.filter(x=>x.type==='status').at(-1)?.status;
 (async()=>{
@@ -46,6 +46,18 @@ const terminal=r=>r.rows.filter(x=>x.type==='status').at(-1)?.status;
       assert.ok(!r.rows.slice(denied+1).some(x=>x.type==='comment'||x.type==='fixture'&&['goto','wheel'].includes(x.action)),'Navigation limits stop later admissions and buffered commits immediately');
     }
   }
+  const five=await run('five-lane',5);assert.equal(terminal(five),'completed');
+  assert.equal(five.rows.filter(x=>x.type==='checkpoint'&&x.status==='done').length,5);
+  assert.ok(five.rows.some(x=>x.type==='parallel'&&x.peak_pages===5));
+  const invalid=await run('success',6);assert.equal(terminal(invalid),'failed');
+  const discovery={interactive:false,discovery_only:true,discovery_job:{channel:'search'},candidate_policy:{version:'candidate-rotation-v1',history:[],round:0,as_of_ms:0}};
+  const found=await run('success',2,discovery);assert.equal(terminal(found),'completed');
+  assert.equal(found.rows.filter(x=>x.type==='candidates').flatMap(x=>x.records).length,3);
+  assert.ok(found.rows.some(x=>x.stage==='search-discovery-complete'));
+  assert.ok(!found.rows.some(x=>x.type==='targets'||x.type==='comment'||x.type==='fixture'&&x.action==='goto'),'Discovery does not open work pages or claim comment completion');
+  const blocked=await run('search-rate-limit',2,discovery);assert.equal(terminal(blocked),'rate_limited');
+  assert.ok(!blocked.rows.some(x=>x.stage==='search-discovery-complete'));
+  const invalidDiscovery=await run('success',2,{...discovery,interactive:true});assert.equal(terminal(invalidDiscovery),'failed');
   const serial=await run('success',1);assert.equal(terminal(serial),'completed');assert.ok(serial.rows.filter(x=>x.type==='parallel').every(x=>x.peak_pages===1));
-  console.log('PASS: 12 isolated multi-page process scenarios: serial/parallel, correlation, shared verification, persistent gate, closure, response/navigation limits, gateway failures and cancel. No live access.');
+  console.log('PASS: 14 isolated multi-page process scenarios: serial/parallel, correlation, shared verification, persistent gate, closure, response/navigation limits, gateway failures and cancel. No live access.');
 })().catch(e=>{console.error(e);process.exitCode=1;});

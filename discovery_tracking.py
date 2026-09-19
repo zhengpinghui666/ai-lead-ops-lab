@@ -456,6 +456,85 @@ def worker_config(c,task_id):
     return json.loads(row[0]) if row else None
 
 
+def recent_account_http_proof(c, task, instant=None):
+    """Positive original-account evidence; never infer access from a browser shell."""
+    account=c.execute('SELECT * FROM collection_task_accounts WHERE task_id=?',(task['id'],)).fetchone()
+    if not account:return None
+    active=c.execute('SELECT * FROM collection_accounts WHERE account_id=? AND enabled=1',(account['account_id'],)).fetchone()
+    if not active or active['sender_uid']!=account['sender_uid'] or active['storage']!=account['storage'] or 'comments' not in json.loads(active['roles']):return None
+    proof=c.execute('''SELECT t.* FROM collection_tasks t JOIN collection_task_accounts a ON a.task_id=t.id
+      WHERE t.transport='http' AND a.account_id=? AND a.sender_uid=? AND a.storage=? ORDER BY t.id DESC LIMIT 1''',
+      (account['account_id'],account['sender_uid'],account['storage'])).fetchone()
+    if not proof or proof['status']!='completed' or not proof['finished_at']:return None
+    if sum(proof[k] for k in ('comments','filtered_old','filtered_unknown','filtered_future','filtered_keyword','filtered_blocked'))<=0:return None
+    try:age=(datetime.fromisoformat(instant or app.now())-datetime.fromisoformat(proof['finished_at'])).total_seconds()
+    except (ValueError,TypeError):return None
+    if not 0<=age<=900:return None
+    if c.execute('''SELECT 1 FROM collection_tasks t JOIN collection_task_accounts a ON a.task_id=t.id
+      WHERE a.account_id=? AND t.id>? AND t.status IN ('needs_login','needs_verification','rate_limited','access_denied','session_expired','identity_failed') LIMIT 1''',
+      (account['account_id'],proof['id'])).fetchone():return None
+    identities=[]
+    for row in c.execute('SELECT snapshot FROM collection_diagnostics WHERE task_id=?',(proof['id'],)):
+        try:responses=json.loads(row[0]).get('responses',[])
+        except (ValueError,TypeError):return None
+        identities.extend(r for r in responses if r.get('operation')=='identity')
+    if len(identities)!=1:return None
+    identity=identities[0]
+    if not (identity.get('status')=='identity_verified' and identity.get('identity_check_version')=='identity-check-v2'
+            and identity.get('collection_account')==account['account_id'] and identity.get('collection_sender_uid')==account['sender_uid']
+            and identity.get('http_status')==200 and identity.get('business_code')==0 and identity.get('verification_indicated') is False):return None
+    return proof
+
+
+def search_discovery_only(c,task):
+    job=worker_config(c,task['id'])
+    return bool(task['kind']=='search' and task['transport']=='local_browser' and not task['interactive']
+                and job and job.get('channel')=='search' and recent_account_http_proof(c,task))
+
+
+def verified_discovery_continuation(c,task):
+    """A completed discovery-only batch is not a failed comment-read baseline."""
+    if not task or task['status']!='completed' or not task['finished_at'] or not search_discovery_only(c,task):return False
+    rows=c.execute("SELECT snapshot FROM collection_diagnostics WHERE task_id=? AND stage='search-discovery-complete'",(task['id'],)).fetchall()
+    if len(rows)!=1:return False
+    try:value=json.loads(rows[0][0]).get('processing',{})
+    except (ValueError,TypeError):return False
+    selected=value.get('selected')
+    return bool(value.get('version')=='search-discovery-only-v1' and value.get('comment_reading')=='deferred_http'
+                and isinstance(selected,list) and 0<len(selected)<=30
+                and all(isinstance(x,str) and re.fullmatch(r'[0-9]{5,30}',x) for x in selected) and len(selected)==len(set(selected)))
+
+
+def verified_browser_work_recovery(c,task):
+    """Recover the note/no-comment UI incident only after all same targets read via HTTP.
+
+    The original failure remains. Later automated searches discover candidates only;
+    they cannot claim that an unopened comment page was successfully collected.
+    """
+    if not task or task['kind']!='search' or task['transport']!='local_browser' or task['status']!='needs_interaction' or not task['finished_at']:return False
+    job=worker_config(c,task['id'])
+    if not job or job.get('channel')!='search':return False
+    proof=recent_account_http_proof(c,task)
+    if not proof or proof['kind']!='video' or proof['created_at']<task['finished_at'] or proof['lookback_hours']!=task['lookback_hours'] or proof['comment_limit']!=task['comment_limit']:return False
+    selected=None;notes=[]
+    for row in c.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=?',(task['id'],)):
+        try:d=json.loads(row['snapshot'])
+        except (ValueError,TypeError):return False
+        if d.get('navigation_http_status') in (401,403,429) or d.get('navigation_retry_after_seconds'):return False
+        for response in d.get('responses',[]):
+            if response.get('http_status') in (401,403,429) or response.get('status') in (401,403,429,'needs_login','needs_verification','rate_limited','access_denied') or response.get('verification_indicated'):return False
+            if row['stage']=='candidate_selection' and response.get('policy')=='candidate-vertical-rotation-v2':
+                if selected is not None:return False
+                selected=response.get('selected')
+        if row['stage']=='needs_interaction':
+            match=re.fullmatch(r'https://www\.douyin\.com/note/([0-9]{5,30})',d.get('page_url',''))
+            if not match or d.get('responses')!=[] or d.get('navigation_http_status')!=200 or d.get('navigation_error'):return False
+            notes.append(match[1])
+    if not isinstance(selected,list) or not selected or len(selected)!=len(set(selected)) or not notes or not set(notes)<=set(selected):return False
+    checkpoints=c.execute('SELECT video_id,status FROM collection_checkpoints WHERE task_id=?',(proof['id'],)).fetchall()
+    return {r['video_id'] for r in checkpoints}==set(selected) and all(r['status']=='done' for r in checkpoints)
+
+
 def valid_empty_search_response(response):
     if not isinstance(response,dict):return False
     s=response.get('search_shape')

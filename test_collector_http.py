@@ -46,6 +46,15 @@ class FakeSigner:
 
 
 class HTTPReadTests(unittest.TestCase):
+    def test_visibility_probe_only_for_exact_sparse_terminal_main_response(self):
+        sparse={'status_code':0,'comments':None,'has_more':0}
+        for operation,cursor,payload,allowed in [('comments',0,sparse,True),('comments',10,sparse,False),
+                ('replies',0,sparse,False),('comments',0,{**sparse,'has_more':1},False),
+                ('comments',0,{**sparse,'cursor':0},False),('comments',0,{**sparse,'verify_type':'captcha'},False)]:
+            client=http.Client(session(),signer=FakeSigner(),transport=lambda *a:(200,'application/json',json.dumps(payload).encode()))
+            with self.assertRaises(http.ReadError) as raised:client.page(operation,video=VIDEO,parent=PARENT if operation=='replies' else '',cursor=cursor)
+            self.assertEqual(raised.exception.evidence.get('work_visibility_probe') is True,allowed)
+
     def test_saved_session_near_or_past_expiry_is_verified_once_before_data(self):
         import uid_session
         for remaining in (20,-20,1000):
@@ -134,7 +143,7 @@ class HTTPReadTests(unittest.TestCase):
 
     def test_valid_http_page_with_unwritable_status_is_not_schema_change(self):
         log=[]
-        with patch.object(http,'exchange',return_value=(200,'application/json',json.dumps(body()).encode())) as exchange, \
+        with patch.object(http.ThreadTransport,'__call__',return_value=(200,'application/json',json.dumps(body()).encode())) as exchange, \
                 patch.object(sessions,'record_endpoint_status',side_effect=PermissionError('synthetic lock')):
             client=http.Client(session(),signer=FakeSigner(),diagnostic=log.append)
             with self.assertRaises(http.ReadError) as caught:client.page('comments',video=VIDEO)
@@ -269,6 +278,32 @@ class HTTPReadTests(unittest.TestCase):
         events=[]
         worker.collect({'kind':'video','target':'\n'.join(videos),'page_concurrency':2,'video_limit':2,'comment_limit':1},events.append,threading.Event(),client=client)
         self.assertEqual(peak,2)
+        # The fixture can finish within one millisecond; the independent active
+        # counter above proves overlap even when timestamp endpoints are equal.
+        self.assertLessEqual(max(d['request_started_ms'] for d in diagnostics),min(d['response_received_ms'] for d in diagnostics))
+        self.assertTrue(all(d['request_elapsed_ms']>=0 for d in diagnostics))
+        self.assertCountEqual(calls,videos)
+        self.assertEqual([e['status'] for e in events if e['type']=='status'][-1],'completed')
+        self.assertCountEqual([e['record']['video_id'] for e in events if e['type']=='comment'],videos)
+
+    def test_explicit_video_pool_reads_five_concurrently_without_search(self):
+        videos=[str(int(VIDEO)+i) for i in range(5)];barrier=threading.Barrier(5)
+        gate=threading.Lock();calls=[];active=peak=0
+        def exchange(url, headers, cancelled):
+            nonlocal active,peak
+            query=parse_qs(urlsplit(url).query);vid=query['aweme_id'][0]
+            with gate: calls.append(vid);active+=1;peak=max(peak,active)
+            try:
+                barrier.wait(timeout=3)
+                data=body([record(cid=vid, aweme_id=vid)])
+                return 200,'application/json',json.dumps(data).encode()
+            finally:
+                with gate:active-=1
+        diagnostics=[]
+        client=http.Client(session(), signer=FakeSigner(),transport=exchange,diagnostic=diagnostics.append)
+        events=[]
+        worker.collect({'kind':'video','target':'\n'.join(videos),'page_concurrency':5,'video_limit':5,'comment_limit':1},events.append,threading.Event(),client=client)
+        self.assertEqual(peak,5)
         # The fixture can finish within one millisecond; the independent active
         # counter above proves overlap even when timestamp endpoints are equal.
         self.assertLessEqual(max(d['request_started_ms'] for d in diagnostics),min(d['response_received_ms'] for d in diagnostics))
@@ -558,9 +593,10 @@ class HTTPReadTests(unittest.TestCase):
             with self.subTest(reason=reason):
                 cancelled=threading.Event();calls=[]
                 class FakeSession:
-                    def __init__(self,**kwargs):assert kwargs=={'trust_env':False}
+                    def __init__(self,**kwargs):assert kwargs=={'trust_env':False,'discard_cookies':True}
                     def __enter__(self):return self
                     def __exit__(self,*args):pass
+                    def close(self):pass
                     def get(self,url,**kwargs):
                         calls.append(True)
                         if reason=='cancelled':cancelled.set()
@@ -653,7 +689,7 @@ class HTTPReadTests(unittest.TestCase):
                 with self.subTest(expected=expected, payload=payload):
                     value = session()
                     response = {'status_code': 0, 'data': [], 'cursor': 0, 'has_more': 0, **payload}
-                    with patch('collector_http.exchange', return_value=(200, 'application/json', json.dumps(response).encode())) as exchange:
+                    with patch.object(http.ThreadTransport,'__call__', return_value=(200, 'application/json', json.dumps(response).encode())) as exchange:
                         client = http.Client(value, signer=FakeSigner())
                         with self.assertRaises(http.ReadError):
                             client.page('search', keyword='合成测试')
@@ -868,6 +904,47 @@ class HTTPIntegrationTests(unittest.TestCase):
             person=connection.execute('SELECT profile_gender,profile_gender_observed_at FROM people').fetchone()
             self.assertEqual(person['profile_gender'],2)
             self.assertTrue(person['profile_gender_observed_at'])
+
+
+class ConnectionReuseTests(unittest.TestCase):
+    def test_connections_reused_per_thread_and_not_across_accounts(self):
+        made=[];barrier=threading.Barrier(2);errors=[]
+        class Session:
+            def __init__(self,**kw):self.kw=kw;self.calls=[];self.closed=0;made.append(self)
+            def get(self,url,**kw):
+                self.calls.append((threading.get_ident(),kw['headers'].get('Cookie')))
+                kw['content_callback'](b'{}')
+                return SimpleNamespace(status_code=200,headers={'content-type':'application/json'})
+            def close(self):self.closed+=1
+        transport=http.ThreadTransport(Session)
+        def read():
+            try:
+                barrier.wait(timeout=2)
+                for _ in range(2):self.assertEqual(transport('https://example.test/',{'Cookie':'account-a'},lambda:False)[0],200)
+            except Exception as exc:errors.append(exc)
+        threads=[threading.Thread(target=read) for _ in range(2)]
+        for thread in threads:thread.start()
+        for thread in threads:thread.join(timeout=3)
+        self.assertEqual(errors,[]);self.assertTrue(all(not t.is_alive() for t in threads))
+        self.assertEqual(len(made),2)
+        self.assertTrue(all(len(s.calls)==2 and len({x[0] for x in s.calls})==1 for s in made))
+        self.assertTrue(all(s.kw==dict(trust_env=False,discard_cookies=True,use_thread_local_curl=False) for s in made))
+        other=http.ThreadTransport(Session);other('https://example.test/',{'Cookie':'account-b'},lambda:False)
+        self.assertEqual(len(made),3);self.assertEqual(made[-1].calls[0][1],'account-b')
+        transport.close();transport.close();other.close();self.assertEqual([s.closed for s in made],[1,1,1])
+        with self.assertRaises(http.ReadError):transport('https://example.test/',{},lambda:False)
+
+    def test_reused_transport_does_not_retry_http_gate_or_network_failure(self):
+        class Session:
+            def __init__(self,**kw):self.calls=0
+            def get(self,url,**kw):self.calls+=1;return SimpleNamespace(status_code=429,headers={})
+            def close(self):pass
+        transport=http.ThreadTransport(Session)
+        self.assertEqual(transport('https://example.test/',{},lambda:False)[0],429)
+        client=transport.clients[0];self.assertEqual(client.calls,1)
+        with patch.object(client,'get',side_effect=OSError()),self.assertRaises(http.ReadError) as caught:
+            transport('https://example.test/',{},lambda:False)
+        self.assertEqual(caught.exception.status,'network_error');transport.close()
 
 
 if __name__ == '__main__':

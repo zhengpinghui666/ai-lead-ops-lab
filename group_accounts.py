@@ -56,11 +56,13 @@ def sources_for(c,uid):
     reconcile(c)
     return [r[0] for r in c.execute('''SELECT DISTINCT p.owner_sec_uid FROM group_account_assignments a
       JOIN public_group_candidates p ON p.group_id=a.conversation_id
+      LEFT JOIN public_group_owners o ON o.account_uid=a.account_uid AND o.sec_uid=p.owner_sec_uid
       WHERE a.account_uid=? AND p.matched=1 AND p.owner_sec_uid!=''
       AND NOT EXISTS(SELECT 1 FROM monitored_groups g WHERE g.account_uid=a.account_uid
         AND g.conversation_id=a.conversation_id AND g.member=1)
       AND NOT EXISTS(SELECT 1 FROM group_exits e WHERE e.account_uid=a.account_uid AND e.conversation_id=a.conversation_id)
-      ORDER BY p.owner_sec_uid LIMIT 3''',(uid,))]
+      AND (o.next_check_at IS NULL OR o.next_check_at<=?)
+      ORDER BY COALESCE(o.checked_at,''),p.owner_sec_uid LIMIT 3''',(uid,app.now()))]
 
 @contextmanager
 def selected(account_id='',*,require_role=False):

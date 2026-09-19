@@ -29,6 +29,20 @@ class GroupAccountTests(unittest.TestCase):
         with account_scope.use(row):
             return monitor.discover(reader=lambda account,**kw:dict(groups=[dict(GROUP,member=member)],has_more=False,evidence=[]))
     def group(self,c,uid):return dict(c.execute('SELECT * FROM monitored_groups WHERE account_uid=?',(uid,)).fetchone())
+    def test_transfer_catalog_respects_account_cooldown_and_visits_next_owner(self):
+        with app.db() as c:
+            for i in range(5):
+                gid=str(80000+i);owner='owner'+str(i)
+                c.execute('INSERT INTO group_account_assignments VALUES(?,?,?)',(gid,'111',app.now()))
+                c.execute('INSERT INTO public_group_candidates VALUES(?,?,?,?,?,?,?,?,?,?,?)',('222',gid,owner,'瓦群','',20,0,1,app.now(),'candidate',''))
+                if i<3:
+                    c.execute('INSERT INTO public_group_owners VALUES(?,?,?,?,?,?)',('111',owner,'',app.now(),'2999-01-01T00:00:00+00:00','checked'))
+            self.assertEqual(groups.sources_for(c,'111'),['owner3','owner4'])
+            c.execute("UPDATE public_group_owners SET next_check_at='2020-01-01T00:00:00+00:00' WHERE sec_uid='owner0'")
+            self.assertEqual(groups.sources_for(c,'111'),['owner3','owner4','owner0'])
+            c.execute("UPDATE group_account_assignments SET account_uid='222' WHERE conversation_id='80003'")
+            self.assertNotIn('owner3',groups.sources_for(c,'111'))
+
     def test_membership_is_never_inherited_from_other_account(self):
         self.catalog(self.a)
         with groups.selected('9517'):

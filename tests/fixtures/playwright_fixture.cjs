@@ -22,12 +22,42 @@ class Context extends EventEmitter {
   async close(){if(this.closed)return;this.closed=true;clearTimeout(this.closeTimer);clearTimeout(this.loadingTimer);this.emit('close');}
 }
 class Page extends EventEmitter {
-  constructor(ctx){super();this.ctx=ctx;this.address='about:blank';this.mouse={wheel:async()=>{}};}
+  constructor(ctx){super();this.ctx=ctx;this.address='about:blank';this.mouse={wheel:async()=>{}};
+    process.stdin.on('data',chunk=>{
+      if(!scenario.startsWith('comment-empty-manual-')||!String(chunk).includes('"command":"resume"'))return;
+      if(scenario==='comment-empty-manual-nochange')return;
+      const target=scenario==='comment-empty-manual-wrong-work'?'7600000000000000999':vid;
+      const url=`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${target}`;
+      const req={method:()=> 'GET'};this.emit('request',req);
+      const r=response(url,{status_code:0,has_more:0,comments:[{cid:'7600000000000000002',aweme_id:target,text:'人工检查后加载的合成评论',user:{uid:'123456789012'}}]});
+      r.request=()=>req;
+      if(scenario==='comment-empty-manual-limited')r.status=()=>429;
+      if(scenario==='comment-empty-manual-denied')r.status=()=>403;
+      if(scenario==='comment-empty-manual-schema')r.body=async()=>Buffer.from('{"status_code":0,"unknown":[]}');
+      this.emit('response',r);
+    });
+  }
   url(){return this.address;}
   isClosed(){return this.ctx.closed;}
   async title(){return scenario==='foreign-video'?'无畏契约港服陪玩 - 抖音':scenario==='mobile-video'?'无畏契约手游陪玩 - 抖音':scenario==='gateway-title-only'?'502 Bad Gateway':scenario==='public-comments-login-to-post'?'合成夹具：无畏契约陪玩 - 抖音':scenario.includes('verification')&&!verified?'验证码中间页':'合成夹具页面';}
   async goto(url){
     this.address=url;
+    if(scenario.startsWith('comment-empty')&&!url.includes('/search/')){
+      const endpoint=`https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=${vid}`;
+      const empty=response(endpoint,{});empty.body=async()=>Buffer.alloc(0);
+      if(scenario==='comment-empty'||scenario==='comment-empty-mixed'){
+        empty.request=()=>({headers:()=>({'user-agent':'Fixture Chrome/152.0.0.0'}),allHeaders:async()=>{
+          if(scenario==='comment-empty-mixed')throw Error('PRIVATE_HEADER_FAILURE_SENTINEL');
+          return {'bd-ticket-guard-client-data':'PRIVATE_TICKET_SENTINEL','Cookie':'PRIVATE_COOKIE_SENTINEL','uifid':'PRIVATE_UIFID_SENTINEL'};
+        }});
+      }
+      this.emit('response',empty);
+      if(scenario==='comment-empty-mixed')this.emit('response',response(endpoint,{status_code:0,unknown:[]}));
+      if(scenario==='comment-empty-login'||scenario==='comment-empty-limited'){
+        const denied=response(endpoint,{});denied.status=()=>scenario==='comment-empty-login'?401:429;this.emit('response',denied);
+      }
+      return {status:()=>200};
+    }
     if((scenario.startsWith('comment-loading-')||scenario.startsWith('panel-loading-'))&&!url.includes('/search/')){
       this.loading=true;
       if(!scenario.endsWith('-timeout')&&!scenario.endsWith('-unrelated'))this.ctx.loadingTimer=setTimeout(()=>{
@@ -137,4 +167,4 @@ class Page extends EventEmitter {
     return {count:async()=>missing&&text==='你要观看的视频不存在'?1:0,isVisible:async()=>missing};
   }
 }
-module.exports={devices:{'Desktop Chrome':{userAgent:'fixture Desktop Chrome'}},chromium:{launchPersistentContext:async(profile,options)=>{if(options.userAgent!=='fixture Desktop Chrome')throw Error('Desktop client configuration missing');return new Context();}}};
+module.exports={devices:{'Desktop Chrome':{userAgent:'fixture Desktop Chrome'}},chromium:{launchPersistentContext:async(profile,options)=>{if(Object.hasOwn(options,'userAgent'))throw Error('Installed browser identity must not be overridden by a stale device preset');return new Context();}}};

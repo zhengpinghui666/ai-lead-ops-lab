@@ -205,7 +205,7 @@ class DiscoveryTests(unittest.TestCase):
         events=[]
         worker.collect({'kind':'video','target':VIDEO,'video_limit':1,'comment_limit':10,'page_concurrency':1},
             events.append,threading.Event(),client=Client())
-        processing=[e['snapshot']['responses'][0] for e in events if e['type']=='diagnostic']
+        processing=[e['snapshot']['responses'][0] for e in events if e.get('stage')=='http_read']
         self.assertEqual(processing[0]['error_type'],'RuntimeError')
         self.assertEqual(processing[0]['video_id'],VIDEO)
         self.assertNotIn('PRIVATE_TOKEN',json.dumps(events))

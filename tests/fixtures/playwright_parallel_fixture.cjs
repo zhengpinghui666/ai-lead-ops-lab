@@ -3,6 +3,7 @@
 const {EventEmitter}=require('node:events');
 const scenario=process.env.CLUBOPS_FIXTURE_SCENARIO;
 const ids=['7600000000000000101','7600000000000000102','7600000000000000103'];
+if(scenario==='five-lane')ids.push('7600000000000000104','7600000000000000105');
 let verified=false,ctx;
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
 const trace=value=>process.stdout.write(JSON.stringify({type:'fixture',...value})+'\n');
@@ -29,6 +30,7 @@ class Page extends EventEmitter{
     if(url.includes('/search/'))searchKeyword=decodeURIComponent(new URL(url).pathname.slice('/search/'.length));
     this.address=url;
     if(url.includes('/search/')){
+      if(scenario==='search-rate-limit')return {status:()=>429};
       this.emit('response',response('https://www.douyin.com/aweme/v1/web/general/search/single/',{data:ids.map(aweme_id=>({aweme_info:{aweme_id,desc:`合成视频 ${aweme_id}`}}))}));
       return {status:()=>200};
     }
@@ -52,4 +54,4 @@ class Page extends EventEmitter{
   getByRole(){return this.locator('button');}
   getByText(){return {count:async()=>0,isVisible:async()=>false};}
 }
-module.exports={devices:{'Desktop Chrome':{userAgent:'fixture Desktop Chrome'}},chromium:{launchPersistentContext:async(profile,options)=>{if(options.userAgent!=='fixture Desktop Chrome')throw Error('Desktop client configuration missing');ctx=new Context();return ctx;}}};
+module.exports={devices:{'Desktop Chrome':{userAgent:'fixture Desktop Chrome'}},chromium:{launchPersistentContext:async(profile,options)=>{if(Object.hasOwn(options,'userAgent'))throw Error('Installed browser identity must not be overridden by a stale device preset');ctx=new Context();return ctx;}}};

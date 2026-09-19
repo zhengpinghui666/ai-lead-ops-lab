@@ -19,6 +19,7 @@ import captcha_runtime
 import runtime
 import candidate_pool
 
+MAX_PAGE_CONCURRENCY = 5
 BASE = Path(__file__).resolve().parent
 GUARD = threading.RLock()
 ACTIVE = {}  # Processes are ephemeral; task outcomes and observations are durable.
@@ -89,10 +90,10 @@ def dependencies():
 def page_options(body):
     value = body.get('page_concurrency', 1)
     if isinstance(value, bool) or not (isinstance(value, int) or isinstance(value, str) and value.isdigit()):
-        raise ValueError('视频读取并发必须为 1–4 的整数')
+        raise ValueError('视频读取并发必须为 1–5 的整数')
     value = int(value)
-    if not 1 <= value <= 4:
-        raise ValueError('视频读取并发范围为 1–4；不是平台安全频率保证')
+    if not 1 <= value <= MAX_PAGE_CONCURRENCY:
+        raise ValueError('视频读取并发范围为 1–5；不是平台安全频率保证')
     return value
 
 
@@ -373,12 +374,19 @@ def command(task_id, action, mode='live'):
         if not ctl:
             raise ValueError('会话已关闭；请新建一批采集，重复评论会自动去重')
         with app.db() as c:
-            task = c.execute('SELECT status FROM collection_tasks WHERE id=?', (task_id,)).fetchone()
+            task = c.execute('SELECT status,finished_at FROM collection_tasks WHERE id=?', (task_id,)).fetchone()
+        if not task or task['finished_at']:
+            return {'id': task_id, 'action': action}
         if action == 'resume' and task['status'] not in WAITING:
             raise ValueError('当前任务不是等待人工处理状态')
         if action == 'cancel':
             ctl['cancel'] = True
             ctl['cancel_at'] = time.monotonic()
+            # The worker may finish during stdin.write. Publish the pending state
+            # first, and never overwrite a terminal row that won this race.
+            with app.LOCKS['live'], app.db() as c:
+                c.execute("UPDATE collection_tasks SET status='cancelling',detail=?,updated_at=? WHERE id=? AND finished_at IS NULL",
+                          ('正在停止采集任务；已入库数据保留',app.now(),task_id))
         process = ctl['process']
         if process and process.poll() is None:
             try:
@@ -386,8 +394,6 @@ def command(task_id, action, mode='live'):
                 process.stdin.flush()
             except (BrokenPipeError, OSError):
                 pass
-        if action == 'cancel':
-            update(task_id, status='cancelling', detail='正在停止采集任务；已入库数据保留')
     return {'id': task_id, 'action': action}
 
 
@@ -559,6 +565,23 @@ def cached_video_metadata(c, task, source_id, resume_targets):
             {r['external_id']: video_metadata.project(c, r['id']) for r in rows})
 
 
+def store_diagnostic(c, task_id, stage, snapshot):
+    """Reserve bounded space for late failures; successful pages cannot hide them."""
+    encoded = json.dumps(snapshot, ensure_ascii=False)
+    critical = (bool(snapshot.get('navigation_error')) or stage in ('finished-error','diagnostic_overflow')
+                or any(isinstance(r,dict) and (r.get('status') not in ('valid_page','identity_verified')
+                    or r.get('verification_indicated') or r.get('response_shape',{}).get('verification_indicated')
+                    or r.get('skipped_reasons',{}).get('invalid_record',0)) for r in snapshot.get('responses',[])))
+    n = c.execute("SELECT COUNT(*) FROM collection_diagnostics WHERE task_id=? AND stage!='comment_paging'", (task_id,)).fetchone()[0]
+    if len(encoded) <= 20000 and (n < 25 or critical and n < 50):
+        c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                  (task_id,stage,encoded,app.now()))
+    elif critical and not c.execute("SELECT 1 FROM collection_diagnostics WHERE task_id=? AND stage='diagnostic_overflow'",(task_id,)).fetchone():
+        # Incomplete failure evidence must disable automatic recovery, not look healthy.
+        c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                  (task_id,'diagnostic_overflow','{"processing":{"reason":"critical_diagnostics_incomplete"}}',app.now()))
+
+
 def run(task_id, control):
     process = None
     terminal_received = False
@@ -574,6 +597,7 @@ def run(task_id, control):
             candidate_policy = candidate_pool.configuration(c, task) if not resumed else None
             import discovery_tracking
             discovery_job = discovery_tracking.worker_config(c,task_id)
+            discovery_only = discovery_tracking.search_discovery_only(c,task) if not resumed else False
         node, package = dependencies()
         if task['transport'] == 'http':
             import collector_http
@@ -594,6 +618,7 @@ def run(task_id, control):
         config = {**task, 'profile_dir': str(account_directory / 'browser-profile'), 'resume_targets': resume_targets,
                   'collection_account': account_binding,
                   'candidate_policy': candidate_policy, 'discovery_job': discovery_job,
+                  'discovery_only': discovery_only,
                   'resolve_video_titles': True, 'known_video_titles': known_titles,
                   'refresh_video_metrics': True, 'known_video_metrics': known_metrics,
                   'captcha': {'mode':'manual'} if control.get('manual_verification') else captcha_runtime.configuration()}
@@ -682,12 +707,8 @@ def run(task_id, control):
                 if loading in (dict(version='comment-loading-v2',state='video_shell',wait_ms=8000),
                                dict(version='comment-loading-v2',state='comment_panel',wait_ms=8000)):
                     snapshot['loading'] = loading
-                encoded = json.dumps(snapshot, ensure_ascii=False)
-                if len(encoded) <= 20000:
-                    with app.db() as c:
-                        n = c.execute("SELECT COUNT(*) FROM collection_diagnostics WHERE task_id=? AND stage!='comment_paging'", (task_id,)).fetchone()[0]
-                        if n < 25:
-                            c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)', (task_id, app.clean(message.get('stage'), 80), encoded, app.now()))
+                with app.db() as c:
+                    store_diagnostic(c,task_id,app.clean(message.get('stage'),80),snapshot)
         process.wait(timeout=10)
         if control.get('timeout'):
             terminal_received = True

@@ -17,6 +17,45 @@ VIDEO = '7600000000000000001'
 
 
 class MonitorTests(unittest.TestCase):
+    def test_work_timings_do_not_block_evidenced_network_recovery(self):
+        self.http_baseline();task=sch.tick(NOW);self.data_network_failure(task)
+        queue={'processing':dict(version='comment-lanes-v1',phase='front_pages',works=1,page_concurrency=1,newest_order_verified=False,lane='front')}
+        timing={'processing':dict(version='work-timing-v1',video_id=VIDEO,lane='front',duration_ms=15015,outcome='partial')}
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            queue['processing']['page_concurrency']=min(row['page_concurrency'],row['video_limit'])
+            c.execute("INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,'work_read_queue',?,?)",(task,json.dumps(queue),NOW))
+            tid=c.execute("INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,'work_timing',?,?)",(task,json.dumps(timing),NOW)).lastrowid
+            self.assertEqual(sch.transient_data_wait(c,row),0)
+            bad=[{'verification_indicated':True},{'http_status':429},{'duration_ms':True},{'duration_ms':-1},
+                 {'lane':'history'},{'outcome':'accepted'},{'version':'unknown'},{'video_id':'bad'}]
+            for change in bad:
+                with self.subTest(change=change):
+                    c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps({'processing':{**timing['processing'],**change}}),tid))
+                    self.assertIsNone(sch.transient_data_wait(c,row))
+            c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps(timing),tid))
+            for status,code in [('needs_verification',200),('needs_login',401),('access_denied',403),('rate_limited',429)]:
+                gate=c.execute("INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,'http_read',?,?)",
+                    (task,json.dumps({'responses':[dict(operation='comments',transport='http',status=status,http_status=code)]}),NOW)).lastrowid
+                self.assertIsNone(sch.transient_data_wait(c,row),'A local duration must never hide a late platform gate')
+                c.execute('DELETE FROM collection_diagnostics WHERE id=?',(gate,))
+            c.execute("INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,'work_timing',?,?)",(task,json.dumps(timing),NOW))
+            self.assertIsNone(sch.transient_data_wait(c,row),'Duplicate local timing receipts fail closed')
+
+    def test_local_budget_and_cancelled_sibling_do_not_hide_one_network_failure(self):
+        self.http_baseline();task=sch.tick(NOW);self.data_network_failure(task)
+        budget=dict(operation='comments',transport='http',status='resource_limited',reason='request_budget',requests_used=24,request_limit=24)
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
+            bid=c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',
+                (task,'http_read',json.dumps({'responses':[budget,dict(operation='replies',transport='http',status='cancelled')]}),NOW)).lastrowid
+            self.assertEqual(sch.transient_data_wait(c,row),0)
+            for change in [{'request_limit':True},{'requests_used':23},{'reason':'response_overflow'},{'http_status':429},{'verification_indicated':True}]:
+                c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps({'responses':[{**budget,**change}]}),bid))
+                self.assertIsNone(sch.transient_data_wait(c,row))
+            c.execute('UPDATE collection_diagnostics SET stage=? WHERE id=?',('diagnostic_overflow',bid))
+            self.assertIsNone(sch.transient_data_wait(c,row))
+
     def queue_markers(self,task,phases=('front_pages','history_and_replies')):
         with app.db() as c:
             row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task,)).fetchone()
@@ -103,7 +142,7 @@ class MonitorTests(unittest.TestCase):
             c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps(marker),ids[0]))
             self.assertIsNone(sch.transient_data_wait(c,row))
 
-    def test_front_cadence_counts_from_start_and_never_overlaps(self):
+    def test_front_completion_releases_batch_slot_without_overlapping(self):
         import discovery_tracking as discovery
         self.http_baseline()
         for seconds in (8,40):
@@ -120,7 +159,7 @@ class MonitorTests(unittest.TestCase):
                     # Settle before the next due instant so no second task starts.
                     sch.tick(created)
                 due=mon.state()['next_run_at']
-                self.assertEqual(due,(datetime.fromisoformat(created)+timedelta(seconds=max(30,seconds))).isoformat())
+                self.assertEqual(due,(datetime.fromisoformat(created)+timedelta(seconds=seconds)).isoformat())
                 mon.command('stop')
 
     def data_network_failure(self, task):
@@ -757,7 +796,7 @@ class MonitorTests(unittest.TestCase):
         for field, bad in [('lookback_hours', 0), ('lookback_hours', 8761), ('lookback_hours', True),
                 ('lookback_hours', 1.5), ('lookback_hours', '2.0'), ('lookback_hours', None),
                 ('interval_seconds', 29), ('interval_seconds', 86401), ('comment_limit', 101),
-                ('video_limit', 6), ('page_concurrency', 5), ('target', '')]:
+                ('video_limit', 6), ('page_concurrency', 6), ('target', '')]:
             with self.subTest(field=field, value=bad), self.assertRaises(ValueError):
                 mon.save({field: bad})
         self.assertEqual(sch.state(), [])

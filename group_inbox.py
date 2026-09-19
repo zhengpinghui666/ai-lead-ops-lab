@@ -60,6 +60,7 @@ def messages(account,group,*,cursor=0,limit=20,provider=None,exchange=None):
                     +wire.field(4,1 if cursor else 3)+wire.field(5,cursor)+wire.field(6,limit))
     info=inbox._read('messages',body,account,provider,exchange,evidence)
     output=[];indices=[];seen={};skipped=0;duplicates=0
+    message_types={};skip_reasons=dict(nontext_or_unsupported_type=0,deleted=0,invalid_text=0)
     for row in inbox._items(info,1,limit):
         if wire.text(row,1)!=cid or wire.one(row,2,0)!=2 or wire.one(row,5,0)!=short:
             raise inbox.ReadError('message_conversation_mismatch')
@@ -81,13 +82,17 @@ def messages(account,group,*,cursor=0,limit=20,provider=None,exchange=None):
                     break
             continue
         seen[mid]=row
-        if wire.one(row,6,0)!=7 or wire.one(row,12,0,0)!=0:
+        kind=wire.one(row,6,0);label=str(kind) if type(kind) is int else 'unknown'
+        message_types[label]=message_types.get(label,0)+1
+        if kind!=7 or wire.one(row,12,0,0)!=0:
+            skip_reasons['nontext_or_unsupported_type' if kind!=7 else 'deleted']+=1
             skipped+=1;continue
         uid=str(inbox._number(wire.one(row,7,0),1));wire.numeric_uid(uid)
         try:
             content=json.loads(wire.text(row,8));text=content.get('text') if isinstance(content,dict) else None
             if not isinstance(text,str) or not text.strip() or len(text)>5000:raise ValueError()
         except (ValueError,TypeError):
+            skip_reasons['invalid_text']+=1
             skipped+=1;continue
         sec=wire.text(row,14)
         output.append(dict(message_id=mid,uid=uid,raw_text=text,index=str(index),
@@ -95,7 +100,7 @@ def messages(account,group,*,cursor=0,limit=20,provider=None,exchange=None):
                            created_at_raw=str(inbox._number(wire.one(row,10,0,0)))))
     more=inbox._flag(info,3);next_cursor=inbox._number(wire.one(info,2,0,0))
     if more and (not next_cursor or cursor and next_cursor>=cursor):raise inbox.ReadError('nonadvancing_cursor')
-    return dict(messages=output,skipped=skipped,duplicates=duplicates,has_more=more,next_cursor=str(next_cursor),
+    return dict(messages=output,skipped=skipped,duplicates=duplicates,message_types=message_types,skip_reasons=skip_reasons,has_more=more,next_cursor=str(next_cursor),
                 minimum_index=str(min(indices)) if indices else None,maximum_index=str(max(indices)) if indices else None,
                 evidence=evidence,group_sent=False,read_marker_requested=False)
 

@@ -86,4 +86,20 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(row['archived_comments'],0)
 
 
+class PerformanceTests(unittest.TestCase):
+    def test_measured_work_times_exclude_failed_tasks_and_keep_empty_unknown(self):
+        import sqlite3,json
+        c=sqlite3.connect(':memory:');c.row_factory=sqlite3.Row
+        self.addCleanup(c.close)
+        c.executescript('CREATE TABLE collection_tasks(id INTEGER,status TEXT,kind TEXT,transport TEXT,created_at TEXT,finished_at TEXT); CREATE TABLE collection_diagnostics(task_id INTEGER,stage TEXT,snapshot TEXT);')
+        empty=monitor_board.performance(c);self.assertIsNone(empty['work_mean_seconds']);self.assertIsNone(empty['batch_gap_mean_seconds'])
+        for i,status,created,finished in [(1,'completed','2026-09-15T10:00:00+08:00','2026-09-15T10:00:02+08:00'),(2,'completed','2026-09-15T02:00:04+00:00','2026-09-15T02:00:06+00:00'),(3,'network_error','2026-09-15T02:00:07+00:00','2026-09-15T02:00:09+00:00')]:
+            c.execute('INSERT INTO collection_tasks VALUES(?,?,?,?,?,?)',(i,status,'video','http',created,finished))
+        for task,duration,outcome in [(1,200,'done'),(2,800,'done'),(2,90000,'partial'),(3,90000,'done')]:
+            c.execute('INSERT INTO collection_diagnostics VALUES(?,?,?)',(task,'work_timing',json.dumps({'processing':dict(version='work-timing-v1',lane='front',duration_ms=duration,outcome=outcome)})))
+        r=monitor_board.performance(c)
+        self.assertEqual(r['work_samples'],2);self.assertEqual(r['work_mean_seconds'],.5);self.assertEqual(r['work_p95_seconds'],.8)
+        self.assertEqual(r['gap_samples'],1);self.assertEqual(r['batch_gap_mean_seconds'],2)
+
+
 if __name__=='__main__':unittest.main()

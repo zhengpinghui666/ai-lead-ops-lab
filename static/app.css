@@ -285,7 +285,7 @@ dialog.collection-modal .modal-actions{flex-wrap:wrap}
 .workspace-nav a{padding:10px 2px 13px;color:var(--muted);border-radius:0;white-space:nowrap;border-bottom:2px solid transparent;font-size:14px}
 .workspace-nav a:hover{color:var(--teal);background:transparent;text-decoration:none}.workspace-nav a.selected{color:var(--teal);border-bottom-color:var(--teal);font-weight:600}
 .detail-breadcrumb{margin-bottom:13px;font-size:13px}.detail-breadcrumb a{display:inline-flex;align-items:center;gap:7px}
-.overview-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:18px}
+.overview-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:18px}
 .overview-kpi{display:block;color:var(--ink);padding:20px;min-width:0}.overview-kpi:hover{text-decoration:none;border-color:#a6cabe;background:#f7fbf9}
 .overview-kpi .metric-label{display:flex;justify-content:space-between;gap:8px}.overview-kpi .metric-label svg{width:14px;height:14px;color:var(--muted)}
 .overview-kpi strong{display:block;font-size:32px;margin:12px 0 8px;line-height:1.2}.overview-kpi small{display:block;font-size:12px;line-height:1.65}
@@ -355,3 +355,7 @@ main>#lead-detail{max-width:900px;position:static}main>#lead-detail .card-body{p
 
 /* Daily intent target shares the existing KPI card; no extra first-level panel. */
 .intent-goal-progress{display:block;height:4px;background:rgba(8,127,119,.12);border-radius:4px;margin-top:8px;overflow:hidden}.intent-goal-progress>i{display:block;height:100%;background:var(--accent,#087f77);border-radius:inherit}
+
+.monitor-performance{font-size:12px;color:#657b83;margin:0 0 14px;line-height:1.6}.monitor-performance b{color:#193b43}.monitor-performance span{margin-left:10px}
+
+.collection-speed-kpi{font:inherit;text-align:left;cursor:pointer}.collection-speed-values{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 8px}.collection-speed-values strong{font-size:22px;margin:2px 0 0}.collection-speed-values small{white-space:nowrap}.collection-speed-kpi .metric-label>span{display:flex;align-items:center;gap:4px;white-space:nowrap}.collection-speed-kpi:focus-visible{outline:2px solid #087f77;outline-offset:3px}

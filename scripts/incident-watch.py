@@ -106,6 +106,8 @@ def main():
     commands.add_parser('watch');commands.add_parser('status');commands.add_parser('self-test')
     hold=commands.add_parser('hold');hold.add_argument('--seconds',type=int,required=True)
     ack=commands.add_parser('ack');ack.add_argument('--id',required=True);ack.add_argument('--state',choices=['received','resolved','needs_user','failed'],required=True)
+    review=commands.add_parser('review');review.add_argument('--id')
+    learn=commands.add_parser('learn');learn.add_argument('--id',required=True);learn.add_argument('--file',type=Path,required=True)
     args=parser.parse_args();bridge=Bridge(args.data_dir)
     if args.command=='configure':bridge.configure(args.thread,args.codex)
     elif args.command=='watch':return run(bridge,args.port)
@@ -114,6 +116,11 @@ def main():
     elif args.command=='ack':
         report=health(args.data_dir,args.port) if args.state=='resolved' else None
         bridge.acknowledge(args.id,args.state,report)
+    elif args.command=='review':
+        print(json.dumps(bridge.reviews(args.id),ensure_ascii=False));return
+    elif args.command=='learn':
+        if args.file.stat().st_size>131072:raise ValueError('Postmortem file too large')
+        bridge.learn(args.id,json.loads(args.file.read_text('utf-8'))['incidents'])
     print(json.dumps(bridge.status()))
 
 

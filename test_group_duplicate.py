@@ -54,5 +54,13 @@ class GroupDuplicates(InboxTests):
         row=self.fields(**{'6':8});result=self.read_rows([row,row])
         self.assertEqual(result['messages'],[])
         self.assertEqual((result['skipped'],result['duplicates']),(1,1))
+        self.assertEqual(result['message_types'],{'8':1})
+        self.assertEqual(result['skip_reasons'],dict(nontext_or_unsupported_type=1,deleted=0,invalid_text=0))
+
+    def test_skip_diagnostics_distinguish_deleted_and_unparsed_text(self):
+        result=self.read_rows([self.fields(**{'12':1}),self.fields(**{'3':987654322,'8':'broken json'})])
+        self.assertEqual(result['skip_reasons'],dict(nontext_or_unsupported_type=0,deleted=1,invalid_text=1))
+        self.assertEqual(result['message_types'],{'7':2})
+        self.assertFalse(result['read_marker_requested'])
 
 if __name__=='__main__':unittest.main()

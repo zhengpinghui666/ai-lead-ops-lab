@@ -63,6 +63,10 @@ def capture_rule(c, kind, record_id):
 
 def migrate(c):
     c.executescript(SCHEMA)
+    import semantic_routing
+    c.executescript(semantic_routing.SCHEMA)
+    import semantic_copy
+    c.executescript(semantic_copy.SCHEMA)
     for kind, table in (('comment', 'comments'), ('live', 'live_messages'), ('group', 'group_messages')):
         for row in c.execute(f"""SELECT x.id FROM {table} x WHERE analysis_method='rules'
             AND NOT EXISTS(SELECT 1 FROM intent_results r WHERE r.evidence_type=?
@@ -94,6 +98,9 @@ def compatible_engine(recorded, current):
         return False
     if recorded == current:
         return True
+    if current.startswith('split-v1|'):
+        parts=current.split('|')
+        return len(parts)==3 and any(compatible_engine(recorded,part) for part in parts[1:] if not part.startswith('split-v1'))
     return any(f':intent-prompt-v{old}:' in recorded and
                recorded.replace(f':intent-prompt-v{old}:', f':intent-prompt-v{new}:') == current
                for old, new in ((6, 7), (6, 8), (7, 8), (6, 9), (7, 9), (8, 9), (6, 10), (7, 10), (8, 10), (9, 10),

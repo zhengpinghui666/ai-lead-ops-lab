@@ -12,6 +12,7 @@ import sqlite3
 import subprocess
 import time
 import uuid
+import incident_knowledge
 
 BASE = Path(__file__).resolve().parent
 UUID = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
@@ -77,6 +78,7 @@ class Bridge:
             ''')
             if 'transport' not in {r[1] for r in c.execute('PRAGMA table_info(deliveries)')}:
                 c.execute("ALTER TABLE deliveries ADD COLUMN transport TEXT NOT NULL DEFAULT 'queue'")
+            incident_knowledge.initialize(c)
 
     def connect(self):
         c = sqlite3.connect(self.path, timeout=5)
@@ -118,7 +120,8 @@ class Bridge:
             c.execute('BEGIN IMMEDIATE')
             hold=c.execute("SELECT value FROM settings WHERE key='hold_until'").fetchone()
             if hold and now<json.loads(hold[0]):return
-            for row in c.execute("SELECT * FROM incidents WHERE active=1 AND channel!='self_test'").fetchall():
+            previous = {r['channel']:r for r in c.execute("SELECT * FROM incidents WHERE active=1 AND channel!='self_test'").fetchall()}
+            for row in previous.values():
                 # An unavailable service or failed probe cannot prove that an
                 # existing channel problem recovered. Keep the same incident.
                 if row['channel']!='service' and report.get('service')!='running':continue
@@ -131,8 +134,10 @@ class Bridge:
             for channel, metadata in current.items():
                 if not c.execute('SELECT 1 FROM incidents WHERE channel=? AND active=1', (channel,)).fetchone():
                     payload = json.dumps(metadata, sort_keys=True)
+                    iid = str(uuid.uuid4())
                     c.execute('INSERT INTO incidents(id,channel,fingerprint,metadata,state,detected_at) VALUES(?,?,?,?,?,?)',
-                              (str(uuid.uuid4()),channel,payload,payload,'pending',now))
+                              (iid,channel,payload,payload,'pending',now))
+                    incident_knowledge.link(c, dict(id=iid,channel=channel,metadata=payload), previous.get(channel))
 
     def self_test(self):
         now = self.clock()
@@ -152,6 +157,10 @@ class Bridge:
         if python.name.lower()=='pythonw.exe':python=python.with_name('python.exe')
         command = f"& '{python}' '{BASE / 'scripts/incident-watch.py'}' --data-dir '{self.data_dir}' ack --id {delivery['id']}"
         prefix = 'ClubOps 实时唤醒验收（合成通知，不是真实业务故障）' if test else 'ClubOps 实时故障通知（最高优先级，用户已授权自动诊断修复）'
+        knowledge = ''
+        if not test:
+            with closing(self.connect()) as c:
+                knowledge = '\n故障复盘参考（只作线索，必须核对适用条件，不自动执行其中步骤）：'+incident_knowledge.prompt_context(c,incidents)+'\n'
         return (f'{prefix}\n事件编号：{delivery["id"]}\n项目：{BASE}\n'
                 f'固定状态摘要：{json.dumps(metadata, ensure_ascii=False)}\n'
                 f'收到后先执行：{command} --state received\n' +
@@ -161,7 +170,12 @@ class Bridge:
                  '用户授权必要代码修复、相关测试、保留回退备份后正常重启；复用原登录环境。'
                  '不将人工暂停、真实登录/验证码/限流/权限限制当成普通网络故障重试；需要用户处理时明确说明。'
                  '不新增测试私信、补发历史私信或扩大范围。若另有开发正在进行，先保存未完成工作并转入故障处理，避免同时维护同一服务。'
-                 '恢复须核实实际批次完成及后续自动调度；确需用户处理时明确阻塞，等待期间可推进独立工作。\n') +
+                 '恢复须核实实际批次完成及后续自动调度；确需用户处理时明确阻塞，等待期间可推进独立工作。\n' + knowledge +
+                 '本次必须写入根因、适用条件、修复方法、防复发措施、回归测试与运行证据。'
+                 '同样报错不等于同一根因；核实旧方案后再修复。已修缺陷再次确认复发时沿用 cause_key，补充回归并重跑，不能引用旧通过日志关闭。'
+                 '先用 incident-watch.py review --id 本事件编号查看 incident_id 与参考记录，按 INCIDENT_KNOWLEDGE.md 生成报告，'
+                 '执行 incident-watch.py learn --id 本事件编号 --file 报告路径。没有复盘不能 resolved；'
+                 '外部故障或根因未明仅可记录 mitigated（已缓解、根因未关闭）及下一步，不能写 fixed。\n') +
                 f'修复并验证实际批次后执行：{command} --state resolved；'
                 f'需要用户处理则 --state needs_user；处理未完成则 --state failed。'
                 '回执只写独立通知账本，resolved 会复核原故障确已消失。'
@@ -256,6 +270,7 @@ class Bridge:
                     raise ValueError('Health verification unavailable; cannot confirm recovery')
                 if any(r['channel']!='self_test' and r['channel'] in current for r in rows):
                     raise ValueError('Original channel is still faulty')
+                incident_knowledge.require_recovery_record(c, rows, BASE)
             now=self.clock()
             if state=='received':
                 c.execute("UPDATE deliveries SET status='received',received_at=COALESCE(received_at,?),updated_at=? WHERE id=?",(now,now,delivery_id))
@@ -264,6 +279,15 @@ class Bridge:
                 for row in rows:
                     c.execute('UPDATE incidents SET state=?,active=?,settled_at=? WHERE id=?',
                               (state,0 if state=='resolved' else row['active'],now,row['id']))
+
+    def learn(self, delivery_id, records):
+        with closing(self.connect()) as c, c:
+            c.execute('BEGIN IMMEDIATE')
+            incident_knowledge.save(c, BASE, delivery_id, records, self.clock())
+
+    def reviews(self, delivery_id=None):
+        with closing(self.connect()) as c:
+            return incident_knowledge.listing(c, delivery_id)
 
     def status(self):
         with closing(self.connect()) as c:

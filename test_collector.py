@@ -37,6 +37,21 @@ class CollectorTests(unittest.TestCase):
         row = {'video_id': '7600000000000000001', 'comment_id': cid, 'user_id': '123456789012', 'nickname': '测试夹具用户', 'text': '国服找个陪练，预算100', 'video_title': '测试夹具：无畏契约陪玩', **changes}
         col.observe(task_id, self.source(), {'type': 'comment', 'record': row})
 
+    def test_cancel_does_not_overwrite_terminal_emitted_during_write(self):
+        tid=self.start();process=Mock();process.poll.return_value=None
+        def finish(_):col.update(tid,status='cancelled',detail='worker finished',finished_at=app.now())
+        process.stdin.write.side_effect=finish;col.ACTIVE[tid]['process']=process
+        col.command(tid,'cancel')
+        with app.db() as c:row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(tid,)).fetchone()
+        self.assertEqual(row['status'],'cancelled');self.assertIsNotNone(row['finished_at'])
+
+    def test_cancel_does_not_regress_finished_worker_awaiting_cleanup(self):
+        tid=self.start();process=Mock();process.poll.return_value=None;col.ACTIVE[tid]['process']=process
+        col.update(tid,status='completed',finished_at=app.now())
+        col.command(tid,'cancel')
+        process.stdin.write.assert_not_called()
+        with app.db() as c:self.assertEqual(c.execute('SELECT status FROM collection_tasks WHERE id=?',(tid,)).fetchone()[0],'completed')
+
     def test_options_and_url_allowlist(self):
         self.assertEqual(col.canonical_video('https://www.douyin.com/video/7600000000000000001?secret=drop'), 'https://www.douyin.com/video/7600000000000000001')
         for url in ['http://localhost/video/12345', 'https://evil.example/video/12345', 'https://www.douyin.com.evil.example/video/12345', 'https://u:p@www.douyin.com/video/12345', 'https://www.douyin.com:8443/video/12345', 'https://v.douyin.com/test', 'file:///12345']:
@@ -72,8 +87,10 @@ class CollectorTests(unittest.TestCase):
         self.assertIsNone(col.state()['last_received'])
 
     def test_page_concurrency_validation_progress_and_recovery(self):
-        for value in [0, 5, 1.5, True, '2.0', None]:
+        for value in [0, 6, 1.5, True, '2.0', None]:
             with self.assertRaises(ValueError): col.page_options({'page_concurrency': value})
+        self.assertEqual(col.page_options({'page_concurrency':5}),5)
+        self.assertEqual(col.page_options({'page_concurrency':'5'}),5)
         task = self.start(page_concurrency=2)
         self.assertEqual(self.start(page_concurrency='2'), task)
         with self.assertRaises(ValueError): self.start(page_concurrency=1)
@@ -241,6 +258,32 @@ class CollectorTests(unittest.TestCase):
         self.assertNotIn('PRIVATE_SENTINEL',row[0])
         self.assertEqual(col.state()['tasks'][0]['status'],'network_error')
         self.assertFalse(col.state()['tasks'][0]['active'])
+
+    def test_late_http_failure_survives_success_diagnostic_limit(self):
+        import collection_scheduler as scheduler
+        task_id=self.start()
+        good=dict(operation='comments',transport='http',status='valid_page',http_status=200)
+        identity=dict(operation='identity',transport='http',status='identity_verified',http_status=200,verification_indicated=False)
+        with app.db() as c:
+            c.execute("UPDATE collection_tasks SET transport='http' WHERE id=?",(task_id,))
+            col.store_diagnostic(c,task_id,'http_read',{'responses':[identity]})
+            for _ in range(40):col.store_diagnostic(c,task_id,'http_read',{'responses':[good]})
+            col.store_diagnostic(c,task_id,'http_read',{'responses':[dict(operation='comments',transport='http',status='network_error')]})
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM collection_diagnostics WHERE task_id=?',(task_id,)).fetchone()[0],26)
+        col.update(task_id,status='network_error',finished_at=app.now())
+        with app.db() as c:
+            row=c.execute('SELECT * FROM collection_tasks WHERE id=?',(task_id,)).fetchone()
+            self.assertEqual(scheduler.transient_data_wait(c,row),0)
+            col.store_diagnostic(c,task_id,'http_read',{'responses':[dict(operation='comments',transport='http',status='rate_limited',http_status=429)]})
+            self.assertIsNone(scheduler.transient_data_wait(c,row),'A late real gate must remain visible and block retries')
+
+    def test_failure_diagnostics_are_bounded_and_overflow_is_explicit(self):
+        task_id=self.start()
+        with app.db() as c:
+            for _ in range(100):
+                col.store_diagnostic(c,task_id,'http_read',{'responses':[dict(status='network_error')]})
+            rows=c.execute('SELECT stage FROM collection_diagnostics WHERE task_id=?',(task_id,)).fetchall()
+            self.assertEqual(len(rows),51);self.assertEqual(sum(r[0]=='diagnostic_overflow' for r in rows),1)
 
     def test_automatic_analysis_does_not_spend_batch_on_unrelated_backlog(self):
         app.ingest({'records': [dict(comment_id=f'backlog-{i}', video_id='import-video',

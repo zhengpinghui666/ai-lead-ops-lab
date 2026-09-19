@@ -85,6 +85,21 @@ def validated_work_queue_marker(snapshot, task, previous):
                  and p['works']==previous['works']) else None
 
 
+def validated_work_timing(snapshot,queue,timed):
+    """A strict local duration receipt; never a replacement for HTTP evidence."""
+    if not queue or not isinstance(snapshot,dict) or set(snapshot)!={'processing'}:return False
+    p=snapshot['processing']
+    if (not isinstance(p,dict) or set(p)!={'version','video_id','lane','duration_ms','outcome'}
+            or p['version']!='work-timing-v1' or not isinstance(p['video_id'],str)
+            or not re.fullmatch(r'\d{5,30}',p['video_id'])
+            or p['lane']!=queue.get('lane','combined')
+            or type(p['duration_ms']) is not int or not 0<=p['duration_ms']<=86400000
+            or p['outcome'] not in ('done','partial')
+            or p['video_id'] in timed or len(timed)>=queue['works']):return False
+    timed.add(p['video_id'])
+    return True
+
+
 def transient_reply_wait(connection, task):
     """Retry a malformed reply envelope only with identity and same-video evidence.
 
@@ -97,10 +112,13 @@ def transient_reply_wait(connection, task):
         identity = False
         main_videos = set()
         failed = []
-        queue=None
+        queue=None;timed=set()
         for row in connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=? ORDER BY id', (task['id'],)):
             if row['stage']=='comment_paging':
                 continue  # Parent-generated cursor receipts are separate from HTTP evidence.
+            if row['stage']=='work_timing':
+                if not identity or not validated_work_timing(json.loads(row['snapshot']),queue,timed):return None
+                continue
             if row['stage']=='work_read_queue':
                 queue=validated_work_queue_marker(json.loads(row['snapshot']),task,queue)
                 if not identity or queue is None:return None
@@ -174,11 +192,14 @@ def transient_data_wait(connection, task):
     if not task or task['transport'] != 'http' or task['status'] != 'network_error' or not task['finished_at']:
         return None
     identity, failed = False, 0
-    queue=None
+    queue=None;timed=set()
     try:
         for row in connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=? ORDER BY id', (task['id'],)):
             snapshot = json.loads(row['snapshot'])
             if row['stage'] == 'comment_paging':
+                continue
+            if row['stage']=='work_timing':
+                if not identity or not validated_work_timing(snapshot,queue,timed):return None
                 continue
             if row['stage']=='work_read_queue':
                 queue=validated_work_queue_marker(snapshot,task,queue)
@@ -216,6 +237,15 @@ def transient_data_wait(connection, task):
                     return None
                 elif item.get('status') == 'network_error' and item.get('http_status') is None:
                     failed += 1
+                elif item.get('status') == 'resource_limited' and item.get('reason') == 'request_budget':
+                    # A sibling may reach the local budget while another request is still in flight.
+                    if (set(item)-{'operation','transport','status','reason','requests_used','request_limit'}
+                            or type(item.get('request_limit')) is not int or not 1<=item['request_limit']<=192
+                            or type(item.get('requests_used')) is not int or item['requests_used']!=item['request_limit']):return None
+                elif item.get('status') == 'cancelled' and item.get('http_status') in (None,200):
+                    # Only a network_error terminal batch with one evidenced failure may recover;
+                    # a user cancellation has its own terminal status and fails the entry guard.
+                    if item.get('response_shape',{}).get('status_code') not in (None,0):return None
                 elif item.get('status') != 'valid_page' or item.get('http_status') != 200 or item.get('skipped_reasons', {}).get('invalid_record', 0):
                     return None
         return 0 if identity and failed == 1 else None
@@ -223,7 +253,7 @@ def transient_data_wait(connection, task):
         return None
 
 
-def transient_browser_body_wait(connection, task, *, resource_missing_only=False):
+def transient_browser_body_wait(connection, task, *, resource_missing_only=False, diagnostics=None):
     """One failed body transfer amid verified pages; preserve partial and retry."""
     if not task or task['transport']!='local_browser' or task['status'] not in ('partial','schema_changed') or not task['finished_at']:
         return None
@@ -232,7 +262,8 @@ def transient_browser_body_wait(connection, task, *, resource_missing_only=False
         checkpoints={r['video_url']:r['status'] for r in connection.execute('SELECT video_url,status FROM collection_checkpoints WHERE task_id=?',(task['id'],))}
         expected={url for url,status in checkpoints.items() if status!='unavailable'}
         if not expected or 'partial' not in checkpoints.values() or any(s not in ('done','partial','unavailable') for s in checkpoints.values()):return None
-        for row in connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=?',(task['id'],)):
+        rows = diagnostics if diagnostics is not None else connection.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=? ORDER BY id',(task['id'],))
+        for row in rows:
             snapshot=json.loads(row['snapshot'])
             if row['stage'] in ('search-scope','candidate_selection'):continue
             if row['stage']=='note-comments-open':
@@ -488,6 +519,10 @@ def command(plan_id, action, mode='live', *, allow_monitor=False):
                     c.execute('UPDATE collection_manual_recoveries SET state=?,detail=?,settled_at=? WHERE task_id=?',
                               ('continued', '已核验本批有效读取；按新的开启操作继续原监控，部分读取记录和断点保留', app.now(), latest['id']))
             if not healthy:
+                healthy = bool(row['continuous'] and discovery_tracking.verified_discovery_continuation(c,latest))
+            if not healthy:
+                healthy = bool(row['continuous'] and discovery_tracking.verified_browser_work_recovery(c,latest))
+            if not healthy:
                 raise ValueError('请先手动完成一批实际读到评论的采集，再启用持续计划；目前尚未验证或最近一批未正常完成')
             status, due = 'running', app.now()
             if retry:
@@ -546,6 +581,23 @@ def attach_login_continuation(c, context, child_id):
     app.event(c, 'collection-plan', f'计划 #{row["id"]} 的任务 #{context["task_id"]} 经登录恢复接续至 #{child_id}')
 
 
+def completed_next_run(plan,task,bound):
+    """Release successful due-work slots without shortening each work's timer."""
+    if task['status']!='completed':raise ValueError('Only completed batches use the normal cadence')
+    finished=datetime.fromisoformat(task['finished_at'])
+    due=finished+timedelta(seconds=plan['interval_seconds'])
+    channel=bound.get('channel') if bound else None
+    work=channel=='work' and task['transport']=='http' and task['kind']=='video' and bound.get('read_lane') in ('front','history')
+    discovery=(channel=='author' and task['kind']=='author' and task['transport']=='http'
+               or channel=='search' and task['kind']=='search' and task['transport'] in ('http','local_browser'))
+    if plan['continuous'] and (work or discovery):
+        # select_work_targets still enforces next_check_at and weight. Only
+        # the shared batch slot becomes available for another due work. Author
+        # and keyword next-check times remain enforced by discovery.choose.
+        due=finished
+    return due.astimezone(timezone.utc).isoformat(timespec='seconds')
+
+
 def tick(instant=None):
     instant = instant or app.now()
     with collector.GUARD:
@@ -596,13 +648,9 @@ def tick(instant=None):
                 elif not p['continuous'] and p['run_count'] >= p['run_limit']:
                     new_status, detail = 'completed', '已达到本计划总批次上限，不再自动请求'
                 elif p['status'] == 'running':
-                    finished = datetime.fromisoformat(task['finished_at'])
-                    due = (finished + timedelta(seconds=p['interval_seconds'])).astimezone(timezone.utc).isoformat(timespec='seconds')
-                    if p['continuous'] and (discovery_tracking.worker_config(c,task['id']) or {}).get('read_lane')=='front':
-                        # Front checks use start-to-start cadence, never overlap
-                        # batches and never shorten error/platform backoff.
-                        due=max(finished,datetime.fromisoformat(task['created_at'])+timedelta(seconds=p['interval_seconds'])).astimezone(timezone.utc).isoformat(timespec='seconds')
-                    detail = '上一批完成，等待下一批；间隔不代表平台认可的请求频率'
+                    due = completed_next_run(p,task,discovery_tracking.worker_config(c,task['id']))
+                    detail = ('上一批完成，接续读取已到期作品；每个作品仍按权重控制检查时间' if due==task['finished_at'] else
+                              '上一批完成，等待下一批；间隔不代表平台认可的请求频率')
                 c.execute('UPDATE collection_plans SET settled_count=settled_count+1,settled_task_id=?,status=?,detail=?,next_run_at=?,updated_at=? WHERE id=?', (task['id'], new_status, detail, due, instant, p['id']))
                 if task['status'] != 'completed':
                     app.event(c, 'monitor-incident', f'批次 #{task["id"]} · {task["status"]} · {detail}')

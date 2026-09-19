@@ -1125,4 +1125,74 @@ for _n in dir(DiscoveryTrackingTests):
     if _n.startswith('test_') and _n not in GlobalLaneTests.__dict__:setattr(GlobalLaneTests,_n,None)
 
 
+class SearchDiscoverySeparationTests(unittest.TestCase):
+    def setUp(self):
+        import sqlite3
+        self.c=sqlite3.connect(':memory:');self.c.row_factory=sqlite3.Row
+        self.clock=patch('clubops.now',return_value='2026-09-15T07:00:00+00:00');self.clock.start()
+        self.c.executescript('''
+        CREATE TABLE collection_accounts(account_id TEXT,sender_uid TEXT,storage TEXT,enabled INTEGER,roles TEXT);
+        CREATE TABLE collection_task_accounts(task_id INTEGER,account_id TEXT,sender_uid TEXT,storage TEXT);
+        CREATE TABLE collection_tasks(id INTEGER,kind TEXT,transport TEXT,status TEXT,created_at TEXT,finished_at TEXT,lookback_hours INTEGER,comment_limit INTEGER,interactive INTEGER,comments INTEGER,filtered_old INTEGER,filtered_unknown INTEGER,filtered_future INTEGER,filtered_keyword INTEGER,filtered_blocked INTEGER);
+        CREATE TABLE collection_diagnostics(task_id INTEGER,stage TEXT,snapshot TEXT);
+        CREATE TABLE collection_checkpoints(task_id INTEGER,video_id TEXT,status TEXT);
+        CREATE TABLE discovery_jobs(task_id INTEGER,config TEXT);
+        INSERT INTO collection_accounts VALUES('a','11111','isolated',1,'["comments","discovery"]');
+        INSERT INTO collection_tasks VALUES(10,'search','local_browser','needs_interaction','2026-09-15T06:56:00+00:00','2026-09-15T06:57:00+00:00',24,30,0,0,0,0,0,0,0);
+        INSERT INTO collection_tasks VALUES(11,'video','http','completed','2026-09-15T06:58:00+00:00','2026-09-15T06:59:00+00:00',24,30,0,1,0,0,0,0,0);
+        INSERT INTO collection_tasks VALUES(12,'search','local_browser','running','2026-09-15T07:00:00+00:00',NULL,24,30,0,0,0,0,0,0,0);
+        INSERT INTO collection_checkpoints VALUES(11,'760000001','done');
+        INSERT INTO collection_checkpoints VALUES(11,'760000002','done');
+        ''')
+        for tid in (10,11,12):self.c.execute("INSERT INTO collection_task_accounts VALUES(?,'a','11111','isolated')",(tid,))
+        for tid in (10,12):self.c.execute('INSERT INTO discovery_jobs VALUES(?,?)',(tid,json.dumps({'channel':'search'})))
+        self.identity={'operation':'identity','status':'identity_verified','identity_check_version':'identity-check-v2','collection_account':'a','collection_sender_uid':'11111','http_status':200,'business_code':0,'verification_indicated':False}
+        self.c.execute('INSERT INTO collection_diagnostics VALUES(11,?,?)',('identity',json.dumps({'responses':[self.identity]})))
+        self.c.execute('INSERT INTO collection_diagnostics VALUES(10,?,?)',('candidate_selection',json.dumps({'responses':[{'policy':'candidate-vertical-rotation-v2','selected':['760000001','760000002']}]})))
+        self.note={'page_url':'https://www.douyin.com/note/760000001','responses':[],'navigation_http_status':200,'navigation_error':''}
+        self.c.execute('INSERT INTO collection_diagnostics VALUES(10,?,?)',('needs_interaction',json.dumps(self.note)))
+    def tearDown(self):self.clock.stop();self.c.close()
+    def task(self,id):return self.c.execute('SELECT * FROM collection_tasks WHERE id=?',(id,)).fetchone()
+    def test_same_account_verified_complete_recovery_and_discovery_mode(self):
+        self.assertTrue(discovery.verified_browser_work_recovery(self.c,self.task(10)))
+        self.assertTrue(discovery.search_discovery_only(self.c,self.task(12)))
+
+    def test_explicit_resume_after_discovery_only_requires_recent_account_proof(self):
+        self.c.execute("UPDATE collection_tasks SET status='completed',finished_at='2026-09-15T06:59:30+00:00' WHERE id=12")
+        marker={'processing':{'version':'search-discovery-only-v1','selected':['760000001'],'comment_reading':'deferred_http'}}
+        self.c.execute('INSERT INTO collection_diagnostics VALUES(12,?,?)',('search-discovery-complete',json.dumps(marker)))
+        self.assertTrue(discovery.verified_discovery_continuation(self.c,self.task(12)))
+        for statement in ["UPDATE collection_tasks SET status='needs_verification' WHERE id=12", "UPDATE collection_task_accounts SET account_id='b' WHERE task_id=11", "UPDATE collection_tasks SET finished_at='2026-09-15T06:40:00+00:00' WHERE id=11", "DELETE FROM collection_diagnostics WHERE task_id=12"]:
+            with self.subTest(statement=statement):
+                self.c.execute('SAVEPOINT resume_check');self.c.execute(statement)
+                self.assertFalse(discovery.verified_discovery_continuation(self.c,self.task(12)))
+                self.c.execute('ROLLBACK TO resume_check');self.c.execute('RELEASE resume_check')
+    def test_future_search_has_no_comment_read_proof_without_identity(self):
+        self.c.execute('DELETE FROM collection_diagnostics WHERE task_id=11')
+        self.assertFalse(discovery.search_discovery_only(self.c,self.task(12)))
+        self.assertFalse(discovery.verified_browser_work_recovery(self.c,self.task(10)))
+    def test_manual_search_keeps_original_reading(self):
+        self.c.execute('UPDATE collection_tasks SET interactive=1 WHERE id=12')
+        self.assertFalse(discovery.search_discovery_only(self.c,self.task(12)))
+    def test_foreign_account_or_stale_proof_does_not_unlock(self):
+        for statement in ["UPDATE collection_task_accounts SET account_id='b' WHERE task_id=11", "UPDATE collection_tasks SET finished_at='2026-09-15T06:40:00+00:00' WHERE id=11", "UPDATE collection_accounts SET roles='[\"discovery\"]'", "UPDATE collection_accounts SET enabled=0"]:
+            with self.subTest(statement=statement):
+                self.c.execute('SAVEPOINT case_check');self.c.execute(statement)
+                self.assertFalse(discovery.search_discovery_only(self.c,self.task(12)))
+                self.assertFalse(discovery.verified_browser_work_recovery(self.c,self.task(10)))
+                self.c.execute('ROLLBACK TO case_check');self.c.execute('RELEASE case_check')
+    def test_real_gate_and_partial_scope_never_unlock(self):
+        statements=["UPDATE collection_tasks SET status='needs_verification' WHERE id=10", "UPDATE collection_tasks SET status='rate_limited' WHERE id=12", "UPDATE collection_checkpoints SET status='partial' WHERE video_id='760000002'", "DELETE FROM collection_checkpoints WHERE video_id='760000002'", "UPDATE collection_tasks SET lookback_hours=1 WHERE id=11", "UPDATE collection_tasks SET created_at='2026-09-15T06:55:00+00:00' WHERE id=11"]
+        for statement in statements:
+            with self.subTest(statement=statement):
+                self.c.execute('SAVEPOINT case_check');self.c.execute(statement)
+                self.assertFalse(discovery.verified_browser_work_recovery(self.c,self.task(10)))
+                self.c.execute('ROLLBACK TO case_check');self.c.execute('RELEASE case_check')
+    def test_ambiguous_page_or_platform_response_never_unlock(self):
+        for change in [{'navigation_http_status':429},{'navigation_http_status':403},{'navigation_error':'ERR_FAILED'},{'page_url':'https://www.douyin.com/video/760000001'},{'page_url':'https://www.douyin.com/note/760000009'},{'responses':[{'http_status':429}]},{'navigation_retry_after_seconds':60}]:
+            with self.subTest(change=change):
+                self.c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE task_id=10 AND stage=?',(json.dumps({**self.note,**change}),'needs_interaction'))
+                self.assertFalse(discovery.verified_browser_work_recovery(self.c,self.task(10)))
+
+
 if __name__=='__main__':unittest.main()

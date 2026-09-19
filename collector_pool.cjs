@@ -1,7 +1,7 @@
 'use strict';
 // Bounded page work. Settles every lane before returning; first failure stops admission.
 async function runPool(items,limit,run,{check=()=>{},onActivity=async()=>{},onError=()=>{}}={}){
-  if(!Number.isInteger(limit)||limit<1||limit>4)throw Error('Invalid page concurrency');
+  if(!Number.isInteger(limit)||limit<1||limit>5)throw Error('Invalid page concurrency');
   let cursor=0,active=0,peak=0,failure;
   const outcomes=new Array(items.length);
   function remember(error){

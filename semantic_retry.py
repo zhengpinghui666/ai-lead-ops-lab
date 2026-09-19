@@ -30,7 +30,7 @@ def eligible(c, job, settings, engine, stamp):
         # Recovery of the old 1,000-character description guard: no model
         # request was created. Do not retry other unknown local exceptions.
         return result is None and 1000<len(source['title'])<=5000
-    if not result or result['id']!=job['result_id'] or result['status']!='failed' or result['engine']!=engine:return False
+    if not result or result['id']!=job['result_id'] or result['status']!='failed' or not store.compatible_engine(result['engine'],engine):return False
     diagnostic=result['result'].get('diagnostic',{})
     code,status=diagnostic.get('code'),diagnostic.get('http_status')
     if status is not None and status not in (200,500,502,503,504):return False

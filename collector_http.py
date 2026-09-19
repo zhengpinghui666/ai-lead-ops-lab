@@ -254,9 +254,12 @@ def parse_page(body, operation, video='', parent='', title='', *, requested_curs
     return result
 
 
-def exchange(url, headers, cancelled):
+def exchange(url, headers, cancelled, *, client=None):
     """One GET, TLS verified, no redirects, no ambient proxies, bounded body."""
-    from curl_cffi.requests import Session
+    owned = client is None
+    if owned:
+        from curl_cffi.requests import Session
+        client=Session(trust_env=False,discard_cookies=True)
     raw = bytearray()
     overflow = False
     def receive(block):
@@ -269,19 +272,40 @@ def exchange(url, headers, cancelled):
         raw.extend(block)
         return len(block)
     try:
-        with Session(trust_env=False) as client:
-            response = client.get(url, headers=headers, timeout=15, allow_redirects=False,
-                verify=True, impersonate='chrome', content_callback=receive)
-            # A callback may stop consuming the body without curl raising.
-            if cancelled():
-                raise ReadError('cancelled')
-            if overflow:
-                raise ReadError('resource_limited')
-            return response.status_code, response.headers.get('content-type', ''), bytes(raw)
+        response = client.get(url, headers=headers, timeout=15, allow_redirects=False,
+            verify=True, impersonate='chrome', content_callback=receive)
+        if cancelled():raise ReadError('cancelled')
+        if overflow:raise ReadError('resource_limited')
+        return response.status_code, response.headers.get('content-type', ''), bytes(raw)
     except Exception:
         if cancelled():
             raise ReadError('cancelled') from None
         raise ReadError('resource_limited' if overflow else 'network_error') from None
+    finally:
+        if owned:client.close()
+
+
+class ThreadTransport:
+    """Reuse connections within one account batch, one handle per reader."""
+    def __init__(self,factory=None):
+        self.factory=factory;self.local=threading.local();self.clients=[];self.lock=threading.Lock();self.closed=False
+    def __call__(self,url,headers,cancelled):
+        with self.lock:
+            if self.closed:raise ReadError('cancelled')
+            client=getattr(self.local,'client',None)
+            if client is None:
+                factory=self.factory
+                if factory is None:
+                    from curl_cffi.requests import Session
+                    factory=Session
+                client=factory(trust_env=False,discard_cookies=True,use_thread_local_curl=False)
+                self.clients.append(client);self.local.client=client
+        return exchange(url,headers,cancelled,client=client)
+    def close(self):
+        # The worker calls this after its executor joined every reader.
+        with self.lock:
+            self.closed=True;clients=self.clients;self.clients=[]
+        for client in clients:client.close()
 
 
 def comment_window(rows, since, observed):
@@ -309,7 +333,7 @@ class Client:
         self.signer = signer
         self.signers = {}  # Endpoint choice is fixed, never an automatic retry/fallback.
         self.real_transport = transport is None
-        self.transport = transport or exchange
+        self.transport = transport or ThreadTransport()
         self.cancelled, self.diagnostic = cancelled, diagnostic
         self.count = 0
         self.request_limit = request_limit
@@ -318,6 +342,9 @@ class Client:
         self.comment_since=int(since.timestamp()) if since is not None else None
         self.deadline = time.monotonic() + 180
         self.lock = threading.Lock()
+
+    def close(self):
+        if self.real_transport:self.transport.close()
 
     def check_gate(self, operation):
         if self.real_transport and sessions.identity_state(self.session)['status'] == 'identity_failed':
@@ -471,6 +498,16 @@ class Client:
                     raise ReadError('resource_limited', {'reason':'local_status_write_failed'}) from None
             return result
         except ReadError as exc:
+            shape=evidence.get('response_shape',{})
+            if (operation=='comments' and cursor==0 and evidence.get('http_status')==200
+                    and exc.status=='schema_changed' and exc.evidence.get('reason')=='invalid_page_container'
+                    and shape.get('version')=='http-page-shape-v1' and shape.get('status_code_type')=='int'
+                    and shape.get('status_code')==0 and shape.get('has_more_type')=='int' and shape.get('has_more')==0
+                    and shape.get('comments_type')=='NoneType' and shape.get('cursor_type')=='missing'
+                    and shape.get('total_type')=='missing' and shape.get('verification_indicated') is False):
+                # This is not a valid empty page. Permit one same-work detail
+                # check to distinguish a removed/private work from schema drift.
+                exc.evidence={**exc.evidence,'work_visibility_probe':True}
             evidence.update(status=exc.status, **exc.evidence)
             if self.real_transport and exc.status == 'needs_verification':
                 scope = 'search' if operation == 'search' and evidence.get('reason') == 'search_verification_required' and evidence.get('search_nil_type') == 'verify_check' else 'account'

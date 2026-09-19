@@ -18,6 +18,26 @@ function run(scenario,{interactive=false,onStatus,kind='search',candidatePolicy=
 }
 const terminal=messages=>messages.filter(m=>m.type==='status').at(-1)?.status;
 (async()=>{
+  const manualNames=['success','nochange','wrong-work','limited','denied','schema','cancel'];
+  const manualCases=await Promise.all(manualNames.map(s=>run('comment-empty-manual-'+s,{kind:'video',interactive:true,onStatus:(m,c)=>{
+    if(m.status==='needs_interaction')c.stdin.write(s==='cancel'?'{"command":"cancel"}\n':'{"command":"resume"}\n');
+  }})));
+  assert.deepEqual(manualCases.map(terminal),['completed','empty_response','empty_response','rate_limited','access_denied','schema_changed','cancelled']);
+  assert.equal(manualCases[0].filter(m=>m.type==='comment').length,1);
+  assert.ok(manualCases[0].some(m=>m.stage==='comment-manual-read-restored'&&m.snapshot.manual_read.new_valid_response===true));
+  for(const messages of manualCases.slice(1))assert.ok(!messages.some(m=>m.type==='comment'||m.type==='checkpoint'&&m.status==='done'||m.stage==='comment-manual-read-restored'));
+  if(process.env.CLUBOPS_TEST_MANUAL_EMPTY_ONLY==='1'){console.log('PASS: seven manual empty-response handoff scenarios; fresh same-work read required, no-change/wrong-work/schema/access/rate/cancel stay stopped. Synthetic only.');return;}
+  const emptyCases=await Promise.all(['comment-empty','comment-empty-mixed','comment-empty-login','comment-empty-limited'].map(s=>run(s,{kind:'video'})));
+  assert.deepEqual(emptyCases.map(terminal),['empty_response','schema_changed','needs_login','rate_limited']);
+  for(const messages of emptyCases)assert.ok(!messages.some(m=>m.type==='comment'||m.type==='checkpoint'&&m.status==='done'));
+  assert.ok(emptyCases[0].some(m=>m.stage==='comment-empty-response'&&m.snapshot.responses[0].body_bytes===0));
+  const emptyContext=emptyCases[0].find(m=>m.stage==='comment-empty-response').snapshot.responses[0].request_context;
+  assert.equal(emptyContext.header_capture,'all_headers');
+  assert.equal(emptyContext.ticket_headers_present['bd-ticket-guard-client-data'],true);
+  assert.equal(emptyContext.session_headers_present.uifid,true);
+  assert.ok(emptyCases[1].some(m=>m.snapshot?.responses?.some(r=>r.request_context?.header_capture==='all_headers_unavailable')));
+  assert.ok(!JSON.stringify(emptyCases).includes('PRIVATE_'));
+  if(process.env.CLUBOPS_TEST_EMPTY_ONLY==='1'){console.log('PASS: empty transport, mixed unknown schema and real login/rate guards; native installed-browser identity. Synthetic only.');return;}
   const loading=await Promise.all(['comment-loading-delayed','comment-loading-timeout','comment-loading-limited','comment-loading-login'].map(s=>run(s,{kind:'video'})));
   assert.deepEqual(loading.map(terminal),['completed','network_error','rate_limited','needs_login']);
   assert.equal(loading[0].filter(m=>m.type==='comment').length,1);

@@ -1,3 +1,110 @@
+## 2026-09-15 21:54 当前：原7446评论已实读，自动搜索仍有验证码；直播1004连接故障恢复验收中
+
+用户已完成原7446重新登录。先移走5类网页存储并未恢复（4658仍空）；随后备份并清理原profile中71条Douyin Cookie、保留4条其他域Cookie及原路径，用户在原窗口重新登录。作业e20c9823b91340d5b18f2ef2f90adb88在21:41:24 completed并捕获原账号HTTP/IM新会话。4659浏览器和4660 HTTP均实际成功：2一级+1回复，3条均旧并过滤。空响应当前已缓解，但未识别具体失效Cookie或平台根因，不能记为永久软件修复。回退：data/private/repair-backups/comment-cookie-renewal-20260915-2140，禁止重复清理/覆盖。
+
+21:46按原plan3恢复监控，自动搜索4661遇真实slider验证码；5分钟后授权第1次额外重采4662仍needs_verification，下一次第2/2在21:56:57。不能把单作品成功当自动链路恢复，也不能将网页验证码推测成仅搜索接口限制，现有严格保护保持。若第2次仍失败，走collector-verify原批次人工接管；CUA仍不可用，用户需要在原验证窗口处理。
+
+新直播事件e5851038-ba3d-498e-ad03-ed7a732ef641 / incident b8cfb16c-7583-42dd-a161-aa71cbdc57be已ack received并review。1004原track71是identity三次connect/connection_failed，无HTTP响应，0帧0消息；不是之前974的HTTP200未知身份响应，当前快照21:41已更新。21:53同域名只做DNS/TCP/TLS检查成功46ms，未发HTTP或凭据；按原scope=library/参数/7446角色正常start track72于21:54:08，正在等待真实批次与下一轮自动验收。artifacts/live-1004-20260915-2154保存before/start。不得提前ack resolved；未知底层连接原因只能unknown/mitigated。
+
+17原群健康，9517仍仅outreach，未新增测试/历史私信，inbox原关闭。当前为clubops heartbeat，结束需heartbeat XML。此前“4657等待用户是否关窗”等段落已过时。
+
+## 2026-09-15 当前：原profile普通启动也失败，存储重建后待完成浏览器验证
+
+用户通过Win+R打开原7446 profile，先Chrome首次使用提示（已告知保持未登录Google），随后截图同视频评论“服务异常”。只读CIM确认PID273228用精确原browser-profile、非automation、非headless。普通Default Chrome和Edge正常，说明问题不只在自动化启动。用户明确“已关闭那个专用窗口”后，确认无占用，对5类网站存储做可回退重建，保持原路径、Cookie/Local State/Preferences/Login Data哈希即时一致。私有回退data/private/repair-backups/comment-site-storage-20260915-2124含操作manifest/moved/result和加密HTTP/IM会话备份；脚本artifacts/comment-har-20260915-2047/rebuild-site-storage.ps1，禁止再次运行或覆盖回退。
+
+4655重建后首次视频壳无评论响应，network_error结束。原account-login-start作业8eeb86e3174d49ecae6b640474f8ada0于21:29:13 completed，原7446身份+采集/IM会话完成。4656新HTTP身份/详情有效、评论仍0字节；4657浏览器校验21:31:57因窗口关闭interrupted，无读取结果，**不能**当重建后浏览器仍空/已恢复。已async问用户是否手动关闭新窗口（若是可重开验证；若非本人则查浏览器中断；若要求暂停则保持暂停），目前待答。不要将疑似人工关窗当网络错自动重试，也不要抢占正在人工使用的profile。
+
+21点只读复盘完成：精准4/100、当前模型无积压；同时间原文24h内1296对昨日1515低14.46%；63高权重检查年龄P50约209分钟。artifacts/operational-reviews/20260915-2135-analysis.md。评论仍未恢复，直播与原17群健康，未发送测试/补发。当前heartbeat触发clubops，如本轮结束需最终heartbeat XML；用户新输入仍优先合并处理。
+
+## 2026-09-15 历史：普通 Chrome 也能读；原 profile 普通启动对照尚未打开
+
+用户已答复：日常普通Chrome同7446可见三条评论，不能再问这项。故障进一步限于专用profile或采集启动环境，仍未确认根因。已准备 artifacts/comment-har-20260915-2047/open-original-profile-manual.cmd/.ps1，供用户自己复用原profile普通启动；只打开既有Chrome+原作品，未增加自动化/调试参数、不改profile资料、不调用业务API。用户答复“入口没有成功打开”。检查确无原browser-profile主进程（仅正常Chrome及live-browser-profile）；本机执行策略RemoteSigned，脚本语法和拦截Start-Process的无UI预检均通过，尚不知是否文件链接只显示预览。
+
+CUA重新rewriteDocumentation/getState仍nodeRepl.fetch失败，不得通过其他技术绕过UI控制限制。下一步给用户Win+R直接命令启动**同一原profile**来手动比较，之后等待评论显示结果。不要把普通Chrome Default profile成功当作原采集profile已恢复，不要抢占用户的原profile窗口、重登或无条件再试平台。主评论仍paused，4654最后empty_response正常关窗。HAR对照及诊断代码已保存，见下。
+
+## 2026-09-15 21:10：HAR 已完成对照，评论仍未恢复
+
+用户上传 C:/Users/admin/Desktop/www.douyin.com.har；已本机只读分析，禁止打印/重放其中票据、Cookie、签名URL。正常Edge同7446（HAR self的UID和short_id也确认）20:45:24成功收到14886字节、2一级+1内嵌回复；离线现有HTTP解析器正常，三条均旧评论，未写业务或发送。artifacts/comment-har-20260915-2047/REPORT.md 和安全JSON保存全部证据。
+
+公共参数对照单次HTTP仍200/0字节，无效参数改动未部署。新增脱敏请求诊断已通过回归并在4654实际生效：原Chrome allHeaders显示5项ticket-guard和uifid头齐全，query键集合及所有临时字段非空情况与Edge相同，但仍空。不能再将“缺票据头”当作已证实根因；字段存在也不证明其有效。4654已continue只结算原失败，21:04:05 empty_response正常关窗；没有刷新重试或恢复主计划。6源文件（helper/test/reader/fixture/worker测试/白名单）源码备份+哈希齐全，无Python重启。
+
+已通过async问用户：**日常直接打开的普通Chrome**（不是采集专用窗口），同7446/同作品是否能读三条。这个对照此前没做；浏览器检查工具失联需用户结果。不能重复问原专用Chrome刷新/重登（都失败）或Edge是否同号（已确认）。暂未收到答复，不当作许可/成功。根因仍unknown/open，不重放HAR、不换9517、不改出口、不继续无条件平台试探；实际批次及下轮成功后才可恢复。上一直播事件已resolved，不重ack。原直播/17群持续，comments paused。
+
+## 2026-09-15 20:20 历史：评论环境故障未恢复；直播及17群已恢复
+
+用户已答复：原7446 Chrome真正退出重登后仍服务异常；正常Edge Ctrl+F5仍能看三条评论，并在个人页核对也为7446。不要再问同一账号/重新登录/刷新问题。4651已显式继续结算empty_response，窗口关闭。
+
+直播实时事件1f903951-4f59-448f-b32e-e6e73a3fef21/incident9bebedf6-6d4a-4911-b1e5-a73d20b2e1d5：974旧会话身份预检HTTP200/unrecognized_response失败。已先ack received、核对健康/知识库/review。备份密文后account-login-start作业b4b6b311550344669ca963c276171ae9在20:00:52完成原7446/UID50887922274身份及HTTP/IM会话同步。原角色不变，9517仍仅outreach。按原library配置恢复track71，975与自动976均completed/18帧0文字；后续979已自动running。17群均running，最近群读取completed。artifacts/session-recapture-20260915-2005保存证据和复盘，kind=unknown/mitigated，已learn并ack resolved。不能把旧身份响应根因或评论称已修复。
+
+评论4652使用新捕获会话HTTP检查仍空。确认原profile无Chrome占用后，备份移走Default/Cache与Code Cache（其余登录资料未动），4653可见原Chrome仍空；已continue结算empty_response并正常关闭，没有不变条件重试。artifacts/comment-cache-check-20260915-2018保存记录，私有缓存回退data/private/repair-backups/comment-cache-check-20260915-2018。主评论仍paused，不提高并发、不换9517、不把失败改完成。
+
+只读网络查明本机代理7897规则模式，Edge和Chrome访问www.douyin.com均DIRECT/IPv4（目的服务器不同，不足以证明CDN故障）；未调整代理/DNS/出口。CUA broker仍nodeRepl.fetch失败，前轮原生CUA网址检查拦截没有被绕过。下一步需用户在正常Edge导出HAR（已清理）留本机，提供保存路径，比较仅该作品的评论请求契约/结构；不要打印/重放凭据或整份HAR。不要继续以“再登录一次”代替诊断。
+
+## 2026-09-15 历史：4651原Chrome人工检查等待重新登录结果（已答复见上）
+
+用户再次要求修复。新增人工空响应检查入口已部署（3个Node/测试文件，源码备份+回归通过），artifacts/comment-manual-check-20260915-1945/REPORT.md。实际4651在7446原profile/同作品/单路/24h等候needs_interaction，窗口保留最多10min。用户刷新仍“服务异常”，截图已确认；随后已async请求退出并重新登录同一7446，然后打开原视频，等待答复。不要关闭正在登录的窗口、重启服务、启动争抢同profile的任务。若已超时先核对实际任务，不假设仍开着。
+
+用户正常Edge可看，原采集Chrome即便人工刷新仍失败，所以不是解析器漏读页面上可见评论。此前19:19只核对现有登录并捕获，没有真正退出后重建登录。新人工入口严格等待新的本作品有效响应才完成，未自动刷新/重试，无变化/错作品/权限限流/结构错误不成功。若用户新登录能看到评论，可collector-resume4651让任务结算；结束后通过既有account-login-start再次独立核对7446并捕获，然后单作品HTTP实测，成功再恢复原监控及验下一轮。否则仍未恢复，不提高并发/换9517。其他渠道目前原设置，未新增消息操作。无本次通知ID，不ack旧事件。
+
+## 2026-09-15 19:33 用户正常Edge能读；采集环境仍空（优先继续）
+
+用户确认7446正常Edge可读7646766523524605146三条评论。现有account-login-start在原7446隔离profile成功核对并刷新会话，但4647浏览器/4648HTTP仍空。修正collector_runner强制Playwright设备UA151与实际Chrome152不一致；collector_reader将严格HTTP200/0字节归empty_response且保留权限登录验证优先级，混合未知schema仍不放行。后台4649及可见4650依然empty_response，根因未定、评论仍paused，勿声称恢复。备份/测试/原始证据 artifacts/comment-session-20260915-1920/REPORT.md 与runtime-verification.json。6个仅Node源码/测试文件已部署，下一子进程生效，服务未重启且其他业务开关未变。4新场景+完整worker+parallel+parser通过；verification有13项因staging可选OCR缺失跳过。
+
+原60个cookies/作用域(1过期)变61无过期；此前说4个cookie是错把4个作用域当cookie数。私有回退在data/private/repair-backups/comment-session-20260915-1920。Native sky可列窗口，但激活正常Edge后安全控制明确中止Computer Use：无法可靠确认当前URL；不得继续此轮UI输入或绕过该控制。CUA先前broker失联。下一步正常浏览器和原采集profile请求/账号环境对照；禁止不变条件下重复探测、换9517绕过、提高并发或伪造恢复。无本次通知ID需要ack。
+
+## 2026-09-15 19:09 心跳复核：评论跨作品仍空；群覆盖13
+
+19:04新单路正常浏览器诊断4646针对原4641同批另一个作品7646766523524605146，仍HTTP200/empty_body/0评论。未恢复评论；不能认定author_secret或验证码。已async请求用户用7446手动检查该作品评论，停止继续无条件平台探测，等用户/外部恢复新证据。旧评论主计划仍paused/绑定4642；不要改失败为成功。服务272304，直播持续、群13；18:20修复后新群文字33/直播文字208。需以各源真实批次与下一轮证明恢复，不由服务健康推导。
+
+19点只读复盘：精准今日4/100、最近24h4、昨日同时间当前有效4；模型排队0，今日6发送平台接受、需求到尝试P50 10秒/P95 16秒。采集首见35912对昨日同时间16087，但24h内原文1296对1514下降14.4%；历史量掩盖新鲜度问题。高权重63作品距检查P50约70.7分钟，先解除评论阻塞。完整证据和可执行动作 artifacts/operational-reviews/20260915-1900-analysis.md。不要把全天API模型时延当作当前4B时延，不把昨日历史10意向当精准4，不假造订单/关注/已读。
+
+## 2026-09-15 18:25 直播/群速度诊断及修复；评论仍被平台空响应阻塞
+
+最新服务 PID 272304，正常停止/ClubOps Local Service 重启；维护 hold=0。当前4群、1直播库跟踪、9517身份确认后的原板板自动私信运行；inbox仍原关闭。comments仍paused：4642完成后被cancel竞争写回cancelling；随后4643同4作品HTTP200零字节，4644同一作品正常浏览器也empty_body且页面“服务异常，刷新拉取数据”，12分钟后4645同样。没有明确验证码/429证据，不能将其说成一般网络错、验证码或已修复；不继续无限重试，不改失败历史。需要复核平台正常评论页面恢复后再通过真实批次恢复评论。
+
+用户最新要求查直播/群低速原因并参考GitHub。18:17近一小时：269启用房间串行，每轮均182.27秒+30秒全局空等，11完成会话10轮0文字；28新弹幕。群43账号记录只有3启用，119页读取0新增；旧9517仅outreach角色，其19个对口群assigned_elsewhere给7446但入群有关注7/30天、会员/审批条件。已async问允许9517临时兼只读原群或保持分工，尚无回复不能自行改角色。7446原人工暂停群仍暂停。
+
+artifacts/live-group-speed-20260915-1815/REPORT.md及diagnosis.json：发现group_accounts.sources_for永远取同前三个移交群主且忽略自己的next_check_at，挤占OWNER_BATCH=3；已按账号检查期限和未检查优先修复。实际上线检查后续群主，并接通第4群和纱后援团（已由现有范围/成员核验）。group_inbox新增message_types/skip_reasons，实际42返回3个1001；43多为非文字，type7无invalid_text。不能把类型号未经验证全部叫系统消息。
+
+live_room_pool对completed但observed0单独按5/10/20/40/60分钟降频，不伪造失败。947实际完成0文字/18帧/failures0，因历史连续安静，next_check延至1h。常驻多房间、按价值抢占和取消全局30秒空等尚未实现；GitHub方法报告有明确分界，不能说已实时覆盖269房。collector.command取消状态写入挪到发stdin前，SQL只更新finished_at NULL，避免终态退回；两条竞态回归通过，未冒充生产又发生且修好。8源码文件部署，source-before.zip/两库快照/semantic备份/installed hashes齐全；144相关回归与后续118群回归通过（重叠不相加）。生产runtime-verification.json冻结证据，发送jobs50/attempts49/messages38。
+
+此前16:35至17:50采集提效已上线（旧16:33段落“未上线”已过时）：前台/补历史成功批完成立即唤醒；成功作者/搜索发现也不再全局30秒空等；threadlocal HTTP Session同批连接复用；已知标题front不读detail；严格work_timing诊断及均值P95。先后同4路窗口2.73倍作品检查、再2.12倍对照，窗口不相同，不相乘当准确总倍数。17:31 front162实测均724ms/P951235ms，front detail0；44作品检查/分钟来自7m8s窗口，不是每分钟全库SLA。作品已有按权重next_check_at、近期活跃加权，但首屏“最新排序”仍未验证。
+
+真实故障4464(ea2a2ffa...)与4575/4577(fe946e79...)已learn/resolved，勿重ack或覆盖冻结证据。前者work_timing新诊断未被严格恢复分类识别，补本地字段精确白名单；后者隐私作品comments稀疏响应，单次同作品detail确认status_self_see后只退役该作品。分别artifacts/collection-front-metadata-20260915-1717和incident-4575-20260915-1739，production-verification.json/runtime-verification.json已作为learn哈希证据。
+
+首页改动已实际部署：单作品筛选显示范围并提供清除；去DMaccepted卡与线，精准意向单线；去首页验证码KPI（明细保留）；近1小时三来源速度卡。最新12h图在artifacts/collection-speed-12h-20260915-1753，API实测trend720分钟、5min/点、144点；card还是60min总数/60。11后端+20前端状态验证；未能实际浏览器截图检查（broker不可用），不要冒充UI实拍。12h数据只是既有只读首次观察查询的5min桶，不把重复采集算新消息。
+
+## 2026-09-15 16:33 本地模型完成部署；采集批次空等继续处理
+
+最新主服务 PID 269364；正常 ScheduledTask 启动。Ollama v0.34.0 已校验官方 ZIP SHA256 与 Authenticode，独立任务 `ClubOps Local Model` 开机登录后后台常驻（powershell.exe 必须通过 Start-Process 重定向 native stderr，不能把普通日志作为 ErrorAction Stop）。本地 127.0.0.1:11434，NO_CLOUD=1，单模型、单并发、4096 上下文，模型文件 data/private/local-models。Qwen3.5 4B Q4_K_M 已选用；9B 已下载但不常驻。分析及短文案新任务和原 qwen3.8-max API 持久化 1:1 交替分配，重试留原通道；主 max_concurrency=3，本地锁=1；旧 API 有效结果兼容，不批量重审历史。
+
+实测最终 4B 41/48 分类、保留样本12/16，9B 46/48、保留16/16；两者 buyer TP14/FN0/FP0，都是小构造集，不是生产准确率。4B平均1.492秒/P951.609，CPU整机8.3%，整机显存峰值5476MiB；9B平均5.070秒/P955.453，CPU47.6%，显存7669MiB，部分CPU卸载。优先采集资源选4B。报告 artifacts/local-model-20260915-1521/MODEL_REPORT.md、原始JSON齐全。174模型/私信边界测试+86调度恢复测试+20前端结构状态通过。实际隔离真实调用：4分析(local2/api2)+2短文案(local1/api1)，重复拟稿不重调用；三张发送表均0。AI拟短文案只填草稿，未修改自动发送模板。生产分流开启但16:29检查尚无新模型路由任务，不能冒充已完成生产比例验收。
+
+上线保留source-before.zip、两库SQLite快照、semantic-before.json；修复恢复条件补丁另存source-before-amendment.zip。第一次重启恢复被旧条件误拦：最新local_browser批次4174是正常 discovery-only，却没评论。新增 verified_discovery_continuation，只在明确完成标记及同账号15分钟内真实HTTP身份/读取成功的证据成立时允许明确恢复；验证码/限流不放行。16:29真实4265 HTTP completed（30旧评论），配置仍4路/4作品/24h。原3群、1直播、9517身份核对后板板自动私信均恢复，其他账号/范围未改；维护hold=0。后续采集效率仍要完成，尤其每批固定30秒空等、连接复用、全局工作队列；尚未宣称这些已上线。
+
+4166原故障已在15:20按复盘+真实后续批次闭环解决：搜索与评论读取耦合。自动browser搜索只发现候选，HTTP负责评论；4168同5目标真实完成、4169 discovery-only完成无comment checkpoint、4171后续HTTP完成。事件7b1fc774-f731-47cf-88aa-2634e0651159已resolved，有不可覆盖复盘与运行证据（artifacts/incident-4166-20260915-1457）。不要重投旧通知或覆盖原失败状态。当前发现的新正常恢复条件问题也已补上，见上段。
+
+## 2026-09-15 14:24 故障复盘机制、4104恢复、Github评论调研
+
+用户要求每次实时故障必须根因修复并记录防复发；同时质疑采集总数升而需求降，并要求GitHub方法调研。期间真实事件9124bdb1-9749-4c61-8965-87cd3fe0856c于14:03推送、14:04 received，4104评论network_error暂停。定位到25条诊断上限丢弃末尾失败（实际1身份+22成功页+1本地预算+1队列），导致已有有界恢复看不到失败证据。collector现在重要异常保留至50条，超限显式diagnostic_overflow；scheduler严格识别本地预算及同批取消，不将真实登录/验证码/限流/权限放行。底层连接中断原因仍未明，不宣称外部网络永不再断。
+
+artifacts/incident-learning-20260915-1355：131项相关测试通过；正常维护，11文件（包含白名单），353当前源码，原350源ZIP与两业务库及独立通知库快照保留。ZIP白名单出现两份相同条目，内容一致，不影响恢复。PID244564→267588，原20群/直播/7446采集4路4作品/9517身份核对后原板板私信恢复，inbox原关闭。14:17运行验收4105/4106/4107自动完成；14:22健康且最近4116完成。消息计数46/45/34未变。运行证据、回退说明见该目录。14:18写入复盘后resolved复核成功，pending0，hold0。
+
+incident_knowledge.py新增相似症状、连续事件段、稳定根因键、不可覆盖修订与证据SHA。incident-watch.py新增review/learn；真实resolved必须先写复盘且证据/源码未变，仍核对当前健康；fixed必须软件缺陷+通过回归+运行证据，unknown/external只能缓解或待处理。已确认旧因复发重开并要求新回归日志，不能拿旧通过记录关闭；合成接收测试不算案例。已录入4104及此前两种搜索隔离缺陷，共3个具体案例。后续真实通知带相关案例。查看INCIDENT_KNOWLEDGE.md再处理新故障，不直接用旧ack命令跳过复盘。
+
+14:00同时间段对照今日26467首次评论/941条24h内（3.6%），昨日14813/1350（9.1%），模型无当前积压，精准仍1/100；raw buyer2中3404已纠正seller。没有放宽板板标准。用户问二级评论：包括，worker读取replies并保存分页进度，非每轮全量。
+
+GitHub实际固定读取4库：MediaCrawler d6f7c5b（非商业学习许可）、DouyinComments a4fa0e5、F2 7dab3e2、DTK v5 9fa3e54。代码仍逐作品cursor分页，未找到已验证全作品最新评论推送。可借鉴持久连接复用、请求级预算/租约/故障隔离；我方已有front/history但共用批次通道，每次exchange新建Session。报告及原始只读源码：artifacts/operational-reviews/github-20260915/REPORT.md。持续请求调度与连接池是建议方向，尚未上线；还需按30/100/300高价值作品验证首屏是否时间最新、延迟与新鲜意向产出。不能把调研当架构优化已完成。多游戏等原未完成清单仍继续；双机和公众号暂缓。
+13:28最终验收：5路配置上限已上线（14文件，350源码ZIP与两库快照，PID244564），但正式仍4路/4作品。同5目标4039四路completed3秒，4040五路确实重叠375ms、首屏469ms，但network_error共17秒，4done/1partial，故未提升。没有限流证据；不得将响应日志中的0页错误当整批成功，失败请求明细缺失已单列。恢复后4041—4049九个自动批完成、继续调度，原20群/直播/账号/板板私信保持；无新消息任务/尝试（46/45/34）。实际UI值4、上限5，无JS错误。见artifacts/concurrency-limit-five-20260915-1313/runtime-verification.json及operational-reviews/20260915-1300-analysis.md。源远端最后13:00 d41b1c...为此前版本，当前新增源码本地回退齐全，按23点例行备份；不将此前备份冒充包含本批。
+
+## 2026-09-15 13点获客复盘与5路校验扩展
+
+首读健康，继续只读复盘：13:03今日精准仍1/100，模型无积压；最新一小时首次观察1072/24h内56，前日同段1605/171。窗口包含已处理的3996搜索暂停和维护，不能直接归因为并发。高权重56里53为历史安静组；另3个（其中仅1个近一小时有1条）检查年龄中位159秒、P95 549秒，不能把“非历史安静”都称活跃。最新小时120名额里49历史安静。未放宽点单标准，公众号/订单/已读未知，inbox原暂停。
+
+原账号1267597446同5个已启用作品的4路基线4023完成，5断点done/身份及HTTP正常。5路第一次被本地1–4参数校验拒绝，未发平台请求；已立即恢复原4/4计划，未把它误报平台限流。本批仅把本地验证、浏览器池和UI最大值统一扩到5，默认与正式配置保持4，等真实5路成功才小步启用；仍不超过本批作品数和最多5作品。用户已授权逐步实测边界，真实登录/验证/权限/限流仍停止。
+
+artifacts/concurrency-limit-five-20260915-1313：243项Python采集/调度/账号/恢复测试通过；有5线程屏障证明并行；Node池5路与14浏览器进程fixture通过（真实限流停止等保持）；20页面状态前端通过。原前端fixture漏了已上线精准意向series，根目录旧版同样失败，已同步fixture到qualified_intent_users，未改统计实现。运行部署/恢复/真实对照证据以本目录及artifacts/concurrency-20260915-1308为准；目前不宣称5路已通过平台长期边界或分钟SLA。
+
 生产验收补记（2026-09-15 12:58）：14文件已正常部署，PID247184→256892，350源码和双库回退齐全；原账号角色、20群和直播恢复，inbox原暂停。9517独立identity_verified后恢复原授权私信。自动取消8/17/27/29/30/38六个旧任务，45条uid_message_attempts与备份逐字段一致，无新增测试或历史补发。当前精准1/100，原始模型2条中3404接单误判已扣除。153项发送/群/队列/指标测试、131项调度/语义/时效测试通过（有重复基础用例），最终27项发送测试通过。前端真实只读页面已显示仅板板自动发送，首页1/100，无JS错误。
 
 真实恢复3997搜索完成、3998评论完成新增5条、3999作者及4000评论随后自动完成；事件3d195f26于12:56 resolved校验通过，hold0。完整源码hash/回执/批次证据位于artifacts/quote-direction-20260915-1233/runtime-verification.json及ui-production.json。不能把恢复称为100日目标或分钟SLA已达到；多游戏等未完成项继续见交付清单。
@@ -882,3 +989,4 @@ v2 邀约初筛、v8 潜在需求定义、相同来源的旧模型结果保持�
 
 
 本轮源码314文件已成功备份到私有GitHub codex/backup：cec96ea7ce2ad5b286f58b21ef63bfbfd821de20，2026-09-14T10:55:11Z。该补充注记本身尚未包含于此提交。
+

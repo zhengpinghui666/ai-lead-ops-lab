@@ -115,6 +115,14 @@ def settle(c, session, config):
     seconds = (config['offline_retry_minutes'] * 60 if status == 'ended' else
                min(3600, config['empty_retry_minutes'] * 60 * 2 ** min(max(failures - 1, 0), 6)) if failures else
                max(60, config['interval_seconds']))
+    if status == 'completed' and session['observed'] == 0:
+        # A valid connection with no text is healthy, but should not get the
+        # same revisit rate as a room producing chat. Keep failure counts separate.
+        quiet = 0
+        for previous in c.execute('SELECT status,observed FROM live_sessions WHERE room_url=? AND id<=? ORDER BY id DESC LIMIT 6', (session['room_url'],session['id'])):
+            if previous['status'] != 'completed' or previous['observed'] != 0:break
+            quiet += 1
+        seconds = min(3600,config['empty_retry_minutes'] * 60 * 2 ** max(0,quiet-1))
     c.execute('UPDATE live_rooms SET last_session_id=?,last_settled_session_id=?,last_status=?,last_checked_at=?,next_check_at=?,failures=?, '
               'successful_batches=successful_batches+?,saved_messages=saved_messages+? WHERE room_url=?',
               (session['id'], session['id'], status, session['finished_at'], later(session['finished_at'], seconds), failures,

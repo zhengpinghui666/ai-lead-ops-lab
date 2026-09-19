@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('node:assert/strict');
+const {requestContext}=require('./collector_request_diagnostics.cjs');
+const secret='PRIVATE_SENTINEL_AUTHENTICATION';
+const url='https://www.douyin.com/aweme/v1/web/comment/list/?aweme_id=7646766523524605146&count=5&browser_name=Chrome&msToken='+secret+'&uifid='+secret+'&a_bogus='+secret+'&unknown='+secret;
+const result=requestContext(url,{'Cookie':secret,'Authorization':secret,'bd-ticket-guard-client-data':secret,'bd-ticket-guard-ree-public-key':secret,'User-Agent':'Fixture Chrome/152.0.0.0','x-unknown':secret});
+assert.deepEqual(result.parameters,{aweme_id:'7646766523524605146',count:'5',browser_name:'Chrome'});
+assert.equal(result.session_fields_present.msToken,true);assert.equal(result.session_fields_present.fp,false);
+assert.equal(result.ticket_headers_present['bd-ticket-guard-client-data'],true);
+assert.equal(result.public_headers['user-agent'],'Fixture Chrome/152.0.0.0');
+assert.ok(!JSON.stringify(result).includes(secret));
+assert.deepEqual(requestContext('https://other.example/aweme/v1/web/comment/list/?msToken='+secret),{});
+assert.deepEqual(requestContext('https://www.douyin.com/aweme/v1/web/user/profile/self/?msToken='+secret),{});
+assert.equal(requestContext(url+'&count=%0D%0Aunsafe').parameters.count,'5');
+assert.doesNotThrow(()=>requestContext(url));
+console.log('PASS: public metadata, header case, token/ticket redaction, foreign endpoint exclusion and malformed values. No platform requests.');

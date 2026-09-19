@@ -39,6 +39,38 @@ class DailyDashboardTests(unittest.TestCase):
         self.assertEqual(value['granularity'],'day')
         self.assertIsNone(value['conversions']['orders'])
         self.assertTrue(all(n == 0 for n in value['totals'].values()))
+        speed=value['collection_speed']
+        self.assertEqual(speed['per_minute'],dict(comments=0,live=0,groups=0))
+        self.assertTrue(all(len(v)==144 for v in speed['trend']['series'].values()))
+
+    def test_rolling_speed_counts_first_observation_and_preserves_daily_totals(self):
+        with app.db() as c:
+            for key,stamp in [('a','11:30:00'),('b','11:30:59'),('c','11:31:00'),('d','12:29:59'),
+                              ('future','12:30:01'),('old','11:29:59'),('old','12:00:00'),('a','12:10:00')]:
+                task=self.task(c)
+                c.execute("INSERT INTO collection_observations(task_id,kind,external_id,page_url,observed_at,payload_hash,comment_text) VALUES(?,'comment',?,'https://example.test/v',?,'hash','fixture')",(task,key,'2026-09-13T'+stamp+'+08:00'))
+        value=dashboard.snapshot(reference=NOON);speed=value['collection_speed']
+        self.assertEqual(value['totals']['comments'],5)
+        self.assertEqual(speed['totals']['comments'],4)
+        self.assertAlmostEqual(speed['per_minute']['comments'],4/60)
+        trend=speed['trend']
+        self.assertEqual((trend['series']['comments'][131],trend['series']['comments'][132],trend['series']['comments'][-1]),(.2,.6,.2))
+        self.assertEqual(trend['labels'][-1],NOON.isoformat())
+        self.assertEqual(trend['window_minutes'],720)
+        self.assertEqual(trend['totals']['comments'],5)
+
+    def test_speed_window_crosses_midnight_and_counts_each_channel_separately(self):
+        reference=datetime.fromisoformat('2026-09-13T00:30:00+08:00')
+        with app.db() as c:
+            session=c.execute("INSERT INTO live_sessions(request_id,room_url,config,status,detail,started_at,updated_at) VALUES('speed-fixture','https://example.test/live','{}','completed','fixture',?,?)",(DAY,DAY)).lastrowid
+            group=c.execute("INSERT INTO monitored_groups(account_uid,conversation_id,conversation_short_id,name,description,notice,member,participants,matched,checked_at) VALUES('fixture','1','1','fixture','','',1,1,1,?)",(DAY,)).lastrowid
+            for i,stamp in enumerate(['2026-09-12T23:45:00+08:00','2026-09-13T00:10:00+08:00']):
+                c.execute("INSERT INTO live_messages(session_id,room_id,message_id,nickname,raw_text,observed_at,filter_reason,category,analysis_method,reason,facts,include_matches,exclude_matches,payload_hash) VALUES(?,'1',?,'fixture','fixture',?,'','unknown','rules','','{}','[]','[]','hash')",(session,str(i),stamp))
+            c.execute("INSERT INTO group_messages(group_id,message_id,uid,raw_text,group_title,message_index,observed_at,filter_reason,relevance,category,game,reason,facts) VALUES(?,'1','fixture','fixture','fixture','1','2026-09-12T23:50:00+08:00','','unknown','unknown','','','{}')",(group,))
+        value=dashboard.snapshot(reference=reference)
+        self.assertEqual(value['collection_speed']['totals'],dict(comments=0,live=2,groups=1))
+        self.assertEqual(value['totals']['live'],1)
+        self.assertEqual(value['totals']['groups'],0)
 
     def test_captcha_cumulative_counts_strict_evidence_and_midnight(self):
         with app.db() as c:
@@ -163,7 +195,7 @@ class DailyDashboardTests(unittest.TestCase):
         with patch('clubops.state',side_effect=AssertionError('full state')),patch('server.collection_state',side_effect=AssertionError('collector state')):
             v=server.workbench_state('live','overview')
         self.assertIn('dashboard',v)
-        self.assertLess(len(json.dumps(v)),12000)
+        self.assertLess(len(json.dumps(v)),24000)  # Includes 144 five-minute buckets for three speed series.
         self.assertEqual(v['comments'],[])
 
 

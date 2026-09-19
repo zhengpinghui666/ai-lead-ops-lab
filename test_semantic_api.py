@@ -147,7 +147,7 @@ class APITests(unittest.TestCase):
         with patch.object(semantic_api.ChatAPIAdapter,'request',return_value=response()) as request:
             self.assertTrue(queue.run_one())
         request.assert_called_once()
-        self.assertEqual(queue.state()['counts'],{'completed':1})
+        self.assertEqual(queue.state()['counts'],{'completed':1,'retry_wait':0})
         row=app.state()['comments'][0]
         self.assertEqual((row['analysis_method'],row['rule_category'],row['category']),('model','buyer','noise'))
         self.assertEqual(app.state()['leads'][0]['contact_basis'],'')
@@ -222,7 +222,7 @@ class APITests(unittest.TestCase):
         with app.db() as c:
             self.assertEqual(tuple(c.execute('SELECT uid,role FROM service_author_roles').fetchone()),('123456','club'))
             self.assertEqual(c.execute('SELECT COUNT(*) FROM uid_message_attempts').fetchone()[0],0)
-        self.assertEqual(queue.state()['counts'],{'completed':1})
+        self.assertEqual(queue.state()['counts'],{'completed':1,'retry_wait':0})
         self.assertEqual(app.state()['comments'][0]['category'],'club')
         self.assertEqual(app.state()['messages'],[])
 

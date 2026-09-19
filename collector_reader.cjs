@@ -2,6 +2,7 @@
 const parser=require('./collector_parser.cjs');
 const {OrderedResponseQueue}=require('./collector_queue.cjs');
 const {promptVisible,describe}=require('./captcha_browser.cjs');
+const {requestContext}=require('./collector_request_diagnostics.cjs');
 
 function retryAfterSeconds(response){
   const raw=String(response.headers?.()['retry-after']||'').trim();
@@ -33,12 +34,12 @@ function createReader(page,shared){
     await emit({type:'diagnostic',stage,snapshot:{title:await page.title().catch(()=>''),page_url:url,visible_text:(await visibleText()).slice(0,2500),video_links:await page.locator('a[href*="/video/"]').count().catch(()=>0),responses:responseMeta.slice(-15),navigation_error:navigationError,navigation_http_status:navigationStatus,navigation_retry_after_seconds:navigationRetryAfter,processing:{pending:queue.pending,high_water:queue.highWater,capacity:8,concurrency:2},...extra}});
   }
   async function pause(code,detail){await shared.pause(reader,code,detail);networkBlock='';}
-  async function guard(){
+  async function guard(holdRelease=false){
     for(let attempt=0;attempt<3;attempt++){
       await ready();
       const code=networkBlock||parser.blockFromText((await page.title().catch(()=>''))+'\n'+await visibleText())||
         (await promptVisible(page)?'needs_verification':'');
-      if(!code){shared.release(reader);return;}
+      if(!code){if(!holdRelease)shared.release(reader);return;}
       if(code==='rate_limited'||code==='access_denied')throw new Stop(code,shared.reasons[code]);
       await pause(code);
     }
@@ -59,6 +60,9 @@ function createReader(page,shared){
       meta.request_scope={cursor:/^\d{1,12}$/.test(query.get('cursor')||'')?query.get('cursor'):null,
         count:/^\d{1,4}$/.test(query.get('count')||'')?query.get('count'):null,
         query_keys:[...new Set(query.keys())].sort(),method:response.request?.().method?.()||'unknown'};
+      // This synchronous view can omit browser-managed headers. Do not infer
+      // missing authentication from it; failed reads capture all headers below.
+      meta.request_context={...requestContext(response.url(),response.request?.().headers?.()||{}),header_capture:'request_headers_partial'};
     }
     if(kind==='search'&&http!==200)searchEmptyOnly=false;
     if(http===429||http===403){networkBlock=http===429?'rate_limited':'access_denied';shared.fail(new Stop(networkBlock,shared.reasons[networkBlock]));return;}
@@ -78,7 +82,15 @@ function createReader(page,shared){
       meta.body_bytes=Math.min(raw.length,8_000_001);
       if(raw.length>8_000_000){meta.body_error='body_too_large';throw Error('Response exceeds byte budget');}
       const text=raw.toString('utf8');
-      if(!text.trim()){meta.body_error='empty_body';throw Error('Empty response body');}
+      if(!text.trim()){
+        meta.body_error='empty_body';
+        const request=response.request?.();
+        if(kind==='comment'&&request?.allHeaders){
+          try{meta.request_context={...requestContext(response.url(),await bounded(request.allHeaders(),1500)),header_capture:'all_headers'};}
+          catch{meta.request_context.header_capture='all_headers_unavailable';}
+        }
+        throw Error('Empty response body');
+      }
       try{return JSON.parse(text);}
       catch{meta.body_error='invalid_json';throw Error('Invalid response JSON');}
     },async body=>{
@@ -236,7 +248,33 @@ function createReader(page,shared){
         throw new Stop('network_error','作品仍未返回评论数据，已结束本批并保留断点，按网络故障策略退避。');
       }
     }
-    if(!recognized&&commentResponses){await diagnose('comment-schema');throw new Stop('schema_changed','收到了评论响应，但结构未能识别；不能将其当作零评论或完成采集。');}
+    if(!recognized&&commentResponses){
+      await guard(); // A login/verification/permission response takes precedence.
+      const replies=responseMeta.filter(m=>m.kind==='comment');
+      if(replies.length===commentResponses&&replies.every(m=>m.status===200&&m.body_bytes===0&&m.body_error==='empty_body')){
+        await diagnose('comment-empty-response');
+        if(config.interactive){
+          const beforeRequest=requestSerial,beforeReadErrors=readErrors,beforeSchemaErrors=schemaErrors;
+          // Keep the original account/page for an explicit human inspection.
+          // No automatic refresh, new request, retry loop, or CAPTCHA answer.
+          await shared.pause(reader,'needs_interaction','原账号的评论接口返回空内容。窗口已保留，请检查此窗口的评论区；能够看到评论后，回工作台点击“已处理，继续读取”。');
+          await drain();await guard(true);
+          const recovered=recognized&&lastValidRequest>beforeRequest&&readErrors===beforeReadErrors&&schemaErrors===beforeSchemaErrors&&!invalidComments&&
+            parser.contentPageKind(page.url(),row.video_id);
+          if(recovered){
+            // Only these already-recorded empty responses are superseded by a
+            // new valid same-work read. Preserve other pages' errors and evidence.
+            readErrors-=replies.length;
+            await diagnose('comment-manual-read-restored',{manual_read:{version:'comment-manual-read-v1',superseded_empty_responses:replies.length,new_valid_response:true}});
+            shared.release(reader);
+          }else{
+            await diagnose('comment-manual-read-unresolved');
+            throw new Stop(schemaErrors>beforeSchemaErrors||invalidComments?'schema_changed':'empty_response','人工检查后仍未取得本作品的新有效评论响应；本批结束，监控尚未恢复。');
+          }
+        }else throw new Stop('empty_response','评论接口返回空响应，未取得有效评论；不按零评论结算。请核对原账号的评论页面与采集环境。');
+      }
+      if(!recognized){await diagnose('comment-schema');throw new Stop('schema_changed','收到了评论响应，但结构未能识别；不能将其当作零评论或完成采集。');}
+    }
     if(!recognized&&!commentResponses){
       await guard();
       const unavailable=page.getByText('你要观看的视频不存在',{exact:true});
@@ -282,7 +320,7 @@ function createReader(page,shared){
   page.on('request',request=>requestNumbers.set(request,++requestSerial));
   page.on('response',onResponse);page.on('dialog',d=>d.dismiss().catch(()=>{}));
   const reader={page,discover,collect,diagnose,emptySearchConfirmed:()=>emptySearchConfirmed,readVersion:()=>requestSerial,
-    settleVerification:drain,
+    settleVerification:drain, verifyAccess:guard,
     async readableAfter(version){
       if(lastValidRequest<=version||networkBlock||phase==='idle')return false;
       try{

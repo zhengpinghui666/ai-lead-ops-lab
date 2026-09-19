@@ -65,7 +65,7 @@ class SchedulerTests(unittest.TestCase):
         sch.command(pid,'start');task=sch.tick(NOW)
         row=next(t for t in col.state()['tasks'] if t['id']==task)
         self.assertEqual(row['page_concurrency'],2);self.assertEqual(len(col.ACTIVE),1)
-        with self.assertRaises(ValueError):self.plan(page_concurrency=5)
+        with self.assertRaises(ValueError):self.plan(page_concurrency=6)
 
     def test_intervals_finite_budget_and_no_extra_runs(self):
         self.healthy_fixture();pid=self.plan();sch.command(pid,'start')

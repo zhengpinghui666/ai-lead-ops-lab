@@ -103,19 +103,29 @@ def snapshot(mode='live', reference=None):
     dates = [(history_start + timedelta(days=i)).date().isoformat() for i in range(90)]
     series = {}
     totals = {}
+    speed_start = end - timedelta(hours=12)
+    speed_series = {key:[0]*144 for key in ('comments','live','groups')}
     with app.db(mode) as c:
         c.execute('PRAGMA query_only=ON')
         c.execute('PRAGMA temp_store=MEMORY')
         c.execute('BEGIN')  # One WAL read snapshot, without taking the collector's writer lock.
-        args = dict(start=start.isoformat(), end=end.isoformat(), history_start=history_start.isoformat())
+        args = dict(start=start.isoformat(), end=end.isoformat(), history_start=history_start.isoformat(),speed_start=speed_start.isoformat())
 
         def measure(key, source):
             # Group first events by Beijing calendar day, then fill quiet days.
             # Daily values are not running totals and today's card stays today-only.
-            rows = c.execute(f"""SELECT date(stamp,'+8 hours') AS day,COUNT(*) AS n
+            # Reuse the existing first-observation scan for daily and minute
+            # buckets, instead of scanning and deduplicating the archive twice.
+            minute = "CASE WHEN julianday(stamp)>=julianday(:speed_start) THEN MIN(143,CAST((unixepoch(stamp)-unixepoch(:speed_start))/300 AS INTEGER)) ELSE -1 END" if key in speed_series else '-1'
+            rows = c.execute(f"""SELECT date(stamp,'+8 hours') AS day,{minute} AS minute_bucket,COUNT(*) AS n
                 FROM ({source}) WHERE julianday(stamp)>=julianday(:history_start)
-                AND julianday(stamp)<=julianday(:end) GROUP BY day""", args).fetchall()
-            days = {r['day']:r['n'] for r in rows if r['day'] is not None}
+                AND julianday(stamp)<=julianday(:end) GROUP BY day,minute_bucket""", args).fetchall()
+            days = {}
+            for r in rows:
+                if r['day'] is None:continue
+                days[r['day']]=days.get(r['day'],0)+r['n']
+                if key in speed_series and 0<=r['minute_bucket']<144:
+                    speed_series[key][r['minute_bucket']]+=r['n']
             totals[key] = days.get(dates[-1], 0)
             series[key] = [days.get(day, 0) for day in dates]
 
@@ -187,6 +197,14 @@ def snapshot(mode='live', reference=None):
     return dict(date=start.date().isoformat(), timezone='Asia/Shanghai', as_of=end.isoformat(),
                 labels=dates, granularity='day', history_days=90,
                 totals=totals, series=series, captcha=captcha, dm=dm, intent_goal=intent_goal,
+                collection_speed=dict(window_minutes=60,start=(end-timedelta(hours=1)).isoformat(),end=end.isoformat(),
+                    unit='条/分',totals={key:sum(values[-12:]) for key,values in speed_series.items()},
+                    per_minute={key:sum(values[-12:])/60 for key,values in speed_series.items()},
+                    trend=dict(window_minutes=720,bucket_minutes=5,start=speed_start.isoformat(),end=end.isoformat(),
+                        labels=[(speed_start+timedelta(minutes=(i+1)*5)).isoformat() for i in range(144)],
+                        granularity='minute',unit='条/分',series={key:[n/5 for n in values] for key,values in speed_series.items()},
+                        totals={key:sum(values) for key,values in speed_series.items()},
+                        per_minute={key:sum(values)/720 for key,values in speed_series.items()})),
                 runtime=dict(monitor=dict(plan) if plan else None, latest_batch=dict(last) if last else None,
                              model_pending=queued, outreach_enabled=outreach, feedback=feedback),
                 conversions=dict(official_account_follows=None,customer_service_adds=None,orders=None))

@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import sys
 import threading
+import time
 import traceback
 import video_metadata
 import video_discovery
@@ -20,6 +21,7 @@ from collector import video_targets
 
 
 def collect(config, emit, cancel, *, client=None, session=None, identity_probe=None):
+    owned_client = client is None
     stopped = threading.Event()
     failure = []
     lock = threading.Lock()
@@ -183,6 +185,7 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
             vid, title = target['video_id'], target['video_title']
             progress(1)
             active = True
+            active_started=time.monotonic();active_seconds=0.0;read_outcome='partial'
             seen = set()
             skipped = unsupported = 0
             read_comment_page = False
@@ -191,9 +194,16 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                 return max(0, config['comment_limit'] - len(seen) - skipped)
             try:
                 metadata_failed = False
+                if config.get('resolve_video_titles') and (not title or title == vid):
+                    title = config.get('known_video_titles', {}).get(vid) or title
+                    target = {**target, 'video_title': title or vid}
                 if config.get('refresh_video_metrics'):
                     metrics=target.get('metrics') or config.get('known_video_metrics',{}).get(vid)
-                    if video_metadata.stale(metrics):
+                    # Known works can inspect their front comments immediately.
+                    # Optional statistics still refresh in history/combined reads;
+                    # unknown titles still require detail before scope checking.
+                    defer_metrics = lane == 'front' and bool(title and title != vid)
+                    if video_metadata.stale(metrics) and not defer_metrics:
                         try:
                             target={**target,**client.page('detail',video=vid,count=1)['rows'][0]}
                             title=target['video_title']
@@ -247,8 +257,16 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                         page = client.page('replies', video=vid, parent=parent, title=title,
                             cursor=cursor, count=min(10,remaining()))
                     else:
-                        page = client.page('comments', video=vid, title=title, cursor=cursor,
-                            count=min(10,remaining()))
+                        try:
+                            page = client.page('comments', video=vid, title=title, cursor=cursor,
+                                count=min(10,remaining()))
+                        except http.ReadError as exc:
+                            if cursor==0 and exc.status=='schema_changed' and exc.evidence.get('work_visibility_probe') is True:
+                                # Only explicit, same-video work restrictions may
+                                # retire a work. A valid detail leaves the original
+                                # schema failure intact; account gates still stop.
+                                client.page('detail',video=vid,count=1)
+                            raise
                     read_comment_page = True
                     comment_response_seen.set()
                     complete=len(page['rows'])+page['skipped']<=remaining() and not page.get('skipped_reasons',{}).get('invalid_record',0)
@@ -264,14 +282,16 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                         head_pending=False
                         # Release this slot before any history/reply read so
                         # the next work can inspect its own front page first.
+                        active_seconds+=time.monotonic()-active_started
                         progress(-1);active=False
                         yield
                         if cancel.is_set() or stopped.is_set():
                             raise http.ReadError('cancelled')
-                        progress(1);active=True
+                        progress(1);active=True;active_started=time.monotonic()
                     if not remaining() or not complete:break
                 emit({'type': 'checkpoint', 'video_id': vid, 'status': 'partial' if unsupported else 'done',
                       'detail': '达到本批观察预算或已读取响应可见末页；无文字内容计入跳过，不代表全量评论' if not unsupported else '部分记录结构不支持，保留已读取数据'})
+                read_outcome='partial' if unsupported else 'done'
             except http.ReadError as exc:
                 restriction = video_discovery.work_restriction(exc, vid)
                 if restriction:
@@ -304,6 +324,9 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
                 stopped.set()
                 emit({'type': 'checkpoint', 'video_id': vid, 'status': 'partial', 'detail': 'HTTP 响应处理异常；已停止整批并保留已有数据'})
             finally:
+                if active:active_seconds+=time.monotonic()-active_started
+                emit({'type':'diagnostic','stage':'work_timing','snapshot':{'processing':dict(
+                    version='work-timing-v1',video_id=vid,lane=lane,duration_ms=max(0,round(active_seconds*1000)),outcome=read_outcome)}})
                 with lock:
                     counts['skipped'] += skipped
                     counts['unsupported'] += unsupported
@@ -350,6 +373,8 @@ def collect(config, emit, cancel, *, client=None, session=None, identity_probe=N
         emit({'type': 'status', 'status': exc.status, 'detail': detail})
     except Exception as exc:
         emit({'type': 'status', 'status': 'failed', 'detail': 'HTTP 采集器异常，已保留数据；错误类型：' + type(exc).__name__})
+    finally:
+        if owned_client and client is not None and callable(getattr(client,'close',None)):client.close()
 
 
 MAX_CONFIG_BYTES = 1024*1024

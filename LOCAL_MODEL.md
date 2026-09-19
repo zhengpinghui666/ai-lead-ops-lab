@@ -1,5 +1,13 @@
 # 本机模型运行与验证
 
+2026-09-15 已部署版本：Ollama v0.34.0，地址 `127.0.0.1:11434`，模型 `qwen3.5:4b`，量化 Q4_K_M。原 API 保留，分析与拟稿新任务交替分配 1:1；生产任务分配记录在 `semantic_routes`，重试不改派。短文案入口只生成草稿。以下旧端口和手动部署说明属于早期记录，当前以本段及实测报告为准。
+
+后台任务 `ClubOps Local Model` 调用 `scripts/start-local-model.ps1`，监听回环地址、禁用云模型、GPU 单并发、4096 上下文；Windows PowerShell 的 native stderr 必须由 Start-Process 重定向，否则普通运行日志会让启动脚本误退出。可在本地查看 `data/private/local-model-runtime/stderr.log` 诊断启动问题，勿向外部提交整份日志。
+
+4B 与 9B 已实测 CPU、显存、物理内存、冷启动、预热后延迟和固定样本。报告：[模型实测](artifacts/local-model-20260915-1521/MODEL_REPORT.md)。选择 4B 给采集留资源，9B 不常驻。4B 样本分类41/48、9B46/48，不应表述为真实业务准确率。
+
+回退：先在模型设置关闭“本地与 API 各一半”，保留原 API；如需源码回退，正常停服务后使用 `artifacts/local-model-20260915-1521/source-before.zip` 及 `semantic-before.json`。数据库迁移均新增表，可保留，不要覆盖后续业务数据。需要恢复数据库时必须先备份最新数据并评估停机后的新增记录。
+
 最新选择（2026-09-10）：按用户提供的 API 切换为远程 `qwen3.8-max` 分析，见 `MODEL_API.md`。以下保留本机通道的启动说明与历史验证；API 分析不依赖 Ollama。
 
 工作台支持本机 Ollama。模型服务单独启动；保存配置不启动服务、不下载模型，也不启动评论采集或发送消息。需求先由规则初筛，模型支持手动逐条触发或新内容自动入队，见 MODEL_QUEUE.md。

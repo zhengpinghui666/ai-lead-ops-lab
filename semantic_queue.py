@@ -186,7 +186,7 @@ def run_one(*, adapter_factory=None):
                 if not demand_freshness.record(c,job['evidence_type'],job['record_id'])['eligible']:
                     finish(c,job_id,dict(status='stale',detail='需求已超出24小时，不再重试模型'))
                     return True
-            retrying_failure=bool(retry and retry['retries'] and existing and existing['status']=='failed' and existing['id']==retry['source_result_id'] and existing['engine']==job['engine'])
+            retrying_failure=bool(retry and retry['retries'] and existing and existing['status']=='failed' and existing['id']==retry['source_result_id'] and store.compatible_engine(existing['engine'],job['engine']))
             if existing and not retrying_failure and (existing['engine'] == job['engine'] or retained_result(c, job['evidence_type'], job['record_id'], existing, job['engine'])):
                 finish(c, job_id, dict(status='skipped', detail='此版本原文已有模型分析记录，未重复调用', id=existing['id']))
                 return True

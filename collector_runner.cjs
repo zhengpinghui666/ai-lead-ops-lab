@@ -53,8 +53,8 @@ input.on('line',line=>{
 });
 input.on('close',()=>{cancelled=true;releaseGate();context?.close().catch(()=>{});});
 async function main(){
-  let chromium,devices;
-  try{({chromium,devices}=require(process.env.CLUBOPS_PLAYWRIGHT||'playwright'));}catch{await status('dependency_missing','未安装 Playwright 浏览器控制库。');return;}
+  let chromium;
+  try{({chromium}=require(process.env.CLUBOPS_PLAYWRIGHT||'playwright'));}catch{await status('dependency_missing','未安装 Playwright 浏览器控制库。');return;}
   const deadline=setTimeout(()=>{timedOut=true;releaseGate();context?.close().catch(()=>{});},900000);
   const shared={config,emit,status,Stop,reasons,check,ready,pause,fail,stopping:()=>cancelled||contextClosed||!!fatal||timedOut,
     release:reader=>{if(gate?.owner===reader&&!gate.resume)releaseGate();},
@@ -63,9 +63,11 @@ async function main(){
   let peak=0;
   try{
     const concurrency=config.page_concurrency??1;
-    if(!config.profile_dir||!['search','video'].includes(config.kind)||!Number.isInteger(concurrency)||concurrency<1||concurrency>4||config.comment_limit<1||config.comment_limit>100||config.video_limit<1||config.video_limit>5)throw new Stop('failed','任务参数无效。');
+    if(!config.profile_dir||!['search','video'].includes(config.kind)||!Number.isInteger(concurrency)||concurrency<1||concurrency>5||config.comment_limit<1||config.comment_limit>100||config.video_limit<1||config.video_limit>5)throw new Stop('failed','任务参数无效。');
     await status('running',`正在启动${config.interactive?'专用 Chrome 窗口':'后台 Chrome，不显示窗口'}；本批视频读取并发上限 ${concurrency}，不是平台安全频率保证。`);
-    context=await chromium.launchPersistentContext(config.profile_dir,{...require('./browser_config.cjs')(),userAgent:devices['Desktop Chrome'].userAgent,headless:!config.interactive,acceptDownloads:false,viewport:{width:1360,height:900},timeout:25000});
+    // Keep the installed browser's own identity. The bundled device preset can
+    // lag the independently updated Chrome channel and contradict its version.
+    context=await chromium.launchPersistentContext(config.profile_dir,{...require('./browser_config.cjs')(),headless:!config.interactive,acceptDownloads:false,viewport:{width:1360,height:900},timeout:25000});
     context.on('close',()=>{contextClosed=true;releaseGate();});
     readers.push(createReader(context.pages()[0]||await context.newPage(),shared));
     const rows=config.resume_targets?.length?config.resume_targets:config.kind==='search'?await readers[0].discover():[{video_id:new URL(config.target).pathname.split('/').pop(),video_title:new URL(config.target).pathname.split('/').pop(),video_url:config.target}];
@@ -80,6 +82,13 @@ async function main(){
       await readers[0].diagnose('search-empty');throw new Stop('no_data','没有从搜索页面取得可识别的视频；不生成占位数据，也不代表搜索结果为空。');
     }
     if(rows.length>config.video_limit||new Set(rows.map(r=>r.video_id)).size!==rows.length)throw new Stop('failed','视频目标超出范围或重复。');
+    if(config.discovery_only===true){
+      if(config.kind!=='search'||config.interactive||config.resume_targets?.length||config.discovery_job?.channel!=='search'||!config.candidate_policy)throw new Stop('failed','发现阶段配置无效。');
+      check();await readers[0].settleVerification();await readers[0].verifyAccess();check();
+      await emit({type:'diagnostic',stage:'search-discovery-complete',snapshot:{processing:{version:'search-discovery-only-v1',selected:rows.map(r=>r.video_id),comment_reading:'deferred_http'}}});
+      await status('completed',`已发现 ${rows.length} 个本批候选作品；评论交给原账号 HTTP 作品队列，尚未读取评论。`);
+      return;
+    }
     await emit({type:'targets',records:rows});
     for(let slot=1;slot<Math.min(concurrency,rows.length);slot++){check();readers.push(createReader(await context.newPage(),shared));}
     const result=await runPool(rows,concurrency,(row,index,slot)=>readers[slot].collect(row),{

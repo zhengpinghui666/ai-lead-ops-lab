@@ -85,6 +85,63 @@ class RecoveryTests(unittest.TestCase):
             p=c.execute('SELECT status,detail FROM collection_plans WHERE id=?',(pid,)).fetchone()
             self.assertEqual(p['status'],'attention');self.assertNotIn('正在人工处理',p['detail'])
 
+    def manual_body_evidence(self):
+        parent=self.original();pid=self.plan(parent);child=self.start(parent)
+        attempt=str(uuid.uuid4())
+        prefix=[('captcha_dom',dict(responses=[])),
+            ('needs_verification',dict(page_url='https://www.douyin.com/search/'+__import__('urllib.parse',fromlist=['quote']).quote('测试夹具：瓦陪'),navigation_http_status=200,navigation_error='',responses=[])),
+            ('captcha_workflow',dict(verification=dict(phase='detected',transport='local_browser',attempt_id=attempt,submissions=0))),
+            ('captcha_workflow',dict(verification=dict(phase='needs_review',reason='manual_mode',transport='local_browser',attempt_id=attempt,submissions=0)))]
+        with app.db() as c:
+            for stage,snapshot in prefix:
+                c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(child,stage,json.dumps(snapshot),app.now()))
+        self.partial_evidence(child)
+        with app.db() as c:
+            row=c.execute("SELECT id,snapshot FROM collection_diagnostics WHERE task_id=? AND stage='comment-read'",(child,)).fetchone()
+            s=json.loads(row['snapshot']);s.update(navigation_http_status=200,navigation_error='')
+            s['processing']['parse_errors']=1
+            s['responses'][0].update(content_kind='json',invalid_records=0)
+            s['responses'].insert(0,dict(kind='comment',status=200,content_kind='json',body_error='body_unavailable',body_failure_reason='resource_missing'))
+            c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps(s),row['id']))
+            c.execute("UPDATE collection_checkpoints SET detail='1 次响应解析失败，保留已读记录；不能确认本批完整性' WHERE task_id=?",(child,))
+        return parent,pid,child
+
+    def test_manual_search_gate_cleared_then_known_body_loss_can_restore_partial(self):
+        parent,pid,child=self.manual_body_evidence();self.finish(child,'partial')
+        with app.db() as c:
+            self.assertEqual(recovery.record(c,child)['state'],'recovered')
+            task=c.execute('SELECT * FROM collection_tasks WHERE id=?',(child,)).fetchone()
+            self.assertEqual(task['status'],'partial')
+            self.assertIsNone(scheduler.transient_browser_body_wait(c,task))
+            self.assertEqual(c.execute('SELECT status,last_task_id FROM collection_plans WHERE id=?',(pid,)).fetchone()[:],('running',child))
+
+    def test_manual_body_recovery_keeps_new_gates_and_unknown_errors_blocked(self):
+        parent,pid,child=self.manual_body_evidence()
+        with app.db() as c:
+            c.execute("UPDATE collection_tasks SET status='partial',finished_at=? WHERE id=?",(app.now(),child))
+            task=c.execute('SELECT * FROM collection_tasks WHERE id=?',(child,)).fetchone()
+            self.assertTrue(recovery.reading_restored(c,task))
+            row=c.execute("SELECT id,snapshot FROM collection_diagnostics WHERE task_id=? AND stage='comment-read'",(child,)).fetchone();original=json.loads(row['snapshot'])
+            for change in [dict(status=429),dict(status=403),dict(status=401),dict(body_error='empty_body'),dict(body_failure_reason='unknown'),dict(body_error='invalid_json')]:
+                s=json.loads(row['snapshot']);s['responses'][0].update(change)
+                c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(json.dumps(s),row['id']))
+                self.assertFalse(recovery.reading_restored(c,task),change)
+            c.execute('UPDATE collection_diagnostics SET snapshot=? WHERE id=?',(row['snapshot'],row['id']))
+            for stage in ['needs_verification','needs_login','captcha_workflow','finished-error']:
+                extra=c.execute('INSERT INTO collection_diagnostics(task_id,stage,snapshot,created_at) VALUES(?,?,?,?)',(child,stage,'{}',app.now())).lastrowid
+                self.assertFalse(recovery.reading_restored(c,task),stage)
+                c.execute('DELETE FROM collection_diagnostics WHERE id=?',(extra,))
+            self.assertFalse(recovery.reading_restored(c,dict(task,interactive=0)))
+            self.assertFalse(recovery.reading_restored(c,dict(task,kind='video')))
+            for status in ['needs_verification','needs_login','rate_limited','access_denied','cancelled','interrupted']:
+                self.assertFalse(recovery.reading_restored(c,dict(task,status=status)))
+
+    def test_manual_body_evidence_can_support_explicit_start_after_restart(self):
+        parent,pid,child=self.manual_body_evidence();scheduler.recover();self.finish(child,'partial')
+        with app.db() as c:self.assertEqual(recovery.record(c,child)['state'],'plan_changed')
+        self.assertFalse(monitoring.state()['enabled'])
+        monitoring.command('start');self.assertTrue(monitoring.state()['enabled'])
+
     def test_restart_still_blocks_callback_but_new_explicit_start_can_use_verified_partial(self):
         parent=self.original();pid=self.plan(parent);child=self.start(parent)
         self.partial_evidence(child);scheduler.recover();self.finish(child,'partial')

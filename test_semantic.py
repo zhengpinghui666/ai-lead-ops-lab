@@ -47,6 +47,40 @@ class SchemaTests(unittest.TestCase):
         self.assertEqual((result['category'], result['proposed_category']), ('uncertain', 'buyer'))
         self.assertIsNone(result['confidence'])
 
+    def test_local_game_grammar_uses_literal_source_spans(self):
+        source=dict(kind='comment',text='瓦片掉了？',parent='',title='三角洲行动端游')
+        props=model.ollama_schema(source)['properties']
+        choices=[{k:v['const'] for k,v in item['properties'].items()} for item in props['game']['oneOf']]
+        self.assertFalse(any(x['value']=='无畏契约' for x in choices))
+        self.assertTrue(any(x['value']=='三角洲行动' and x['source']=='title' for x in choices))
+        self.assertEqual(props['classification_quote']['enum'],[source['text']])
+        for item in choices:
+            if item['value']:self.assertIn(item['quote'],source[item['source']])
+
+    def test_local_optional_fact_omission_preserves_supported_buyer(self):
+        source=dict(kind='comment',text='能给我安排一位瓦女陪吗，怎么付款',parent='',title='国服无畏契约陪玩')
+        raw=ollama_prediction(source);raw['category']='buyer'
+        raw['game']=dict(value='无畏契约',quote='无畏契约',source='title')
+        raw['facts']['region']=dict(value='国服',quote='国服')
+        adapter=model.OllamaAdapter(dict(model.DEFAULTS,model='synthetic'))
+        replies=[{'cloud':{'disabled':True}},{'model_info':{'synthetic':True}},
+                 {'done':True,'done_reason':'stop','message':{'content':json.dumps(raw)}}]
+        with patch.object(adapter,'request',side_effect=replies):
+            value,_=adapter.predict(source)
+        checked=model.validate_result(value,source)
+        self.assertEqual(checked['category'],'buyer')
+        self.assertEqual(checked['facts']['region'],'')
+        self.assertEqual(adapter.omitted_fields,['region'])
+
+    def test_local_fact_omission_does_not_accept_fabricated_category_evidence(self):
+        source=dict(kind='comment',text='有没有一起玩的啊',parent='',title='无畏契约陪玩')
+        raw=ollama_prediction(source);raw.update(category='buyer',classification_quote='想点女陪')
+        adapter=model.OllamaAdapter(dict(model.DEFAULTS,model='synthetic'))
+        replies=[{'cloud':{'disabled':True}},{'model_info':{'synthetic':True}},
+                 {'done':True,'done_reason':'stop','message':{'content':json.dumps(raw)}}]
+        with patch.object(adapter,'request',side_effect=replies):value,_=adapter.predict(source)
+        with self.assertRaises(ValueError):model.validate_result(value,source)
+
     def test_field_attached_evidence_reaches_shared_literal_and_ownership_checks(self):
         value = ollama_prediction(self.source)
         value['game'] = dict(value='无畏契约', quote='无畏契约', source='text')

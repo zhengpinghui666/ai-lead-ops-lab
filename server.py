@@ -345,6 +345,9 @@ class Handler(BaseHTTPRequestHandler):
                 result = uid_messaging.probe_identity(mode)
             elif action == 'semantic-analyze':
                 result = semantic.analyze_one(body, mode)
+            elif action == 'semantic-copy':
+                import semantic_copy
+                result = semantic_copy.generate(body, mode)
             elif action == 'semantic-save':
                 result = semantic.save(body, mode)
             elif action == 'semantic-queue-cancel':

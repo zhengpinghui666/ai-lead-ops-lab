@@ -1,10 +1,29 @@
 """Read-only work-level view of actual plans, checkpoints and observed comments."""
 from datetime import datetime, timedelta
 import json
+import math
 
 import clubops as app
 import video_metadata
 from collector import video_targets
+
+
+def performance(c):
+    tasks=[dict(r) for r in c.execute("SELECT id,status,kind,transport,created_at,finished_at FROM collection_tasks ORDER BY id DESC LIMIT 40")]
+    values=[];gaps=[]
+    for r in c.execute("SELECT snapshot FROM collection_diagnostics WHERE stage='work_timing' AND task_id IN (SELECT id FROM collection_tasks WHERE status='completed' ORDER BY id DESC LIMIT 40)"):
+        try:p=json.loads(r[0]).get('processing',{});value=p.get('duration_ms')
+        except (ValueError,TypeError):continue
+        if p.get('version')=='work-timing-v1' and p.get('outcome')=='done' and p.get('lane')=='front' and type(value) is int and 0<=value<=180000:values.append(value/1000)
+    for earlier,later in zip(tasks[::-1],tasks[-2::-1]):
+        if any(t['status']!='completed' or t['kind']!='video' or t['transport']!='http' or not t['finished_at'] for t in (earlier,later)):continue
+        try:gap=(datetime.fromisoformat(later['created_at'])-datetime.fromisoformat(earlier['finished_at'])).total_seconds()
+        except (ValueError,TypeError):continue
+        if 0<=gap<=300:gaps.append(gap)
+    values.sort()
+    return dict(work_samples=len(values),work_mean_seconds=sum(values)/len(values) if values else None,
+      work_p95_seconds=values[math.ceil(len(values)*.95)-1] if values else None,gap_samples=len(gaps),
+      batch_gap_mean_seconds=sum(gaps)/len(gaps) if gaps else None,scope='recent_40_batches_front_work_active_time')
 
 
 def build(tasks, plans, mode='live', *, compact=False, include_rows=True):
@@ -12,6 +31,7 @@ def build(tasks, plans, mode='live', *, compact=False, include_rows=True):
     cutoff = (datetime.fromisoformat(instant)-timedelta(hours=1)).isoformat()
     active = {t['id']:t for t in tasks if t.get('active')}
     with app.db(mode) as c:
+        performance_summary=performance(c)
         # One WAL read snapshot; rendering must not hold the global writer lock.
         c.execute('BEGIN')
         # Aggregate in SQLite; historical comments are not shipped to this view.
@@ -93,7 +113,7 @@ def build(tasks, plans, mode='live', *, compact=False, include_rows=True):
     output_rows=rows if include_rows else []
     if compact:
         output_rows=[{**r,'verticality':{k:r['verticality'][k] for k in ('matched','label') if k in r['verticality']} if r.get('verticality') else None} for r in output_rows]
-    return dict(updated_at=instant,rows=output_rows,scope='configured_and_archived_works',
+    return dict(updated_at=instant,rows=output_rows,scope='configured_and_archived_works',performance=performance_summary,
         summary=dict(tracked=sum(r['continuous_monitoring'] for r in rows),
             covered=sum(bool(r['continuous_monitoring'] or r['state'] in ('reading','queued','pending_read')) for r in rows),
             reading=sum(r['state']=='reading' for r in rows),works=len(rows),

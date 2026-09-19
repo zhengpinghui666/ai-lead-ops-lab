@@ -75,6 +75,59 @@ def attach(c, parent_id, child_id):
                   (f'原批次 #{parent_id} 正在人工处理验证；等待 #{child_id} 实际读取完成后恢复', app.now(), context['id']))
 
 
+def manual_search_body_restored(c, task):
+    """An old manual search prompt must not invalidate later verified work reads.
+
+    This is not a retry classification or a CAPTCHA pass verdict. A terminal
+    partial batch has passed the reader's final access guard. Only its initial
+    empty search prompt may precede strictly validated same-work body loss.
+    """
+    if (task['kind'] != 'search' or task['transport'] != 'local_browser'
+            or task['interactive'] != 1 or task['status'] != 'partial'
+            or not task['finished_at'] or not record(c, task['id'])):
+        return False
+    from urllib.parse import urlsplit, unquote
+    import re
+    import collection_scheduler
+    phases, attempt, prompts, following = [], None, 0, []
+    try:
+        for row in c.execute('SELECT stage,snapshot FROM collection_diagnostics WHERE task_id=? ORDER BY id', (task['id'],)):
+            stage, s = row['stage'], json.loads(row['snapshot'])
+            if stage not in ('captcha_dom','needs_verification','captcha_workflow'):
+                following.append(row)
+                continue
+            # A challenge after collection starts is a new gate, not old history.
+            if following:
+                return False
+            if stage == 'captcha_workflow':
+                v = s.get('verification', {})
+                if (v.get('transport') != 'local_browser' or v.get('submissions') != 0
+                        or not re.fullmatch(r'[a-fA-F0-9-]{36}', v.get('attempt_id', ''))):
+                    return False
+                if attempt is not None and attempt != v['attempt_id']:
+                    return False
+                attempt = v['attempt_id']
+                phases.append(v.get('phase'))
+                if v.get('phase') == 'needs_review' and v.get('reason') != 'manual_mode':
+                    return False
+            else:
+                if s.get('responses') != []:
+                    return False
+                if stage == 'needs_verification':
+                    u = urlsplit(s.get('page_url', ''))
+                    if (u.scheme != 'https' or u.netloc != 'www.douyin.com'
+                            or unquote(u.path) != '/search/' + task['target'] or u.query or u.fragment
+                            or s.get('navigation_http_status') != 200 or s.get('navigation_error')):
+                        return False
+                    prompts += 1
+        if phases != ['detected','needs_review'] or not 1 <= prompts <= 2:
+            return False
+        return collection_scheduler.transient_browser_body_wait(
+            c, task, resource_missing_only=True, diagnostics=following) == 0
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
 def reading_restored(c, task):
     """Partial coverage is distinct from a login, CAPTCHA or parsing failure."""
     if task['status'] == 'completed':
@@ -82,7 +135,7 @@ def reading_restored(c, task):
     if task['status'] != 'partial' or not task['finished_at']:
         return False
     import collection_scheduler
-    if collection_scheduler.transient_batch_wait(c, task) != 0:
+    if collection_scheduler.transient_batch_wait(c, task) != 0 and not manual_search_body_restored(c, task):
         return False
     try:
         expected = {r['video_url'] for r in c.execute("SELECT video_url FROM collection_checkpoints WHERE task_id=? AND status!='unavailable'", (task['id'],))}

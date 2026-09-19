@@ -74,4 +74,4 @@ class Page extends EventEmitter{
   getByRole(){return this.locator('button');}
   getByText(){return {count:async()=>0,isVisible:async()=>false};}
 }
-module.exports={devices:{'Desktop Chrome':{userAgent:'fixture Desktop Chrome'}},chromium:{launchPersistentContext:async(profile,options)=>{if(options.userAgent!=='fixture Desktop Chrome')throw Error('Desktop client configuration missing');trace(options.headless?'headless-browser':'visible-browser');return new Context();}}};
+module.exports={devices:{'Desktop Chrome':{userAgent:'fixture Desktop Chrome'}},chromium:{launchPersistentContext:async(profile,options)=>{if(Object.hasOwn(options,'userAgent'))throw Error('Installed browser identity must not be overridden by a stale device preset');trace(options.headless?'headless-browser':'visible-browser');return new Context();}}};

@@ -6,7 +6,7 @@ import sqlite3
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from incident_bridge import Bridge, faults, feedback
 
 THREAD='01a09666-68bb-7860-979d-b3415b851bed'
@@ -78,7 +78,16 @@ class BridgeTests(unittest.TestCase):
         with self.assertRaises(ValueError):other.acknowledge(did,'resolved',failure)
         with self.assertRaises(ValueError):other.acknowledge(did,'resolved',{})
         with self.assertRaises(ValueError):other.acknowledge(did,'resolved',dict(report(),issues=['probe:OperationalError']))
-        other.acknowledge(did,'resolved',report());other.acknowledge(did,'resolved',report())
+        # Runtime recovery is separate from proving a software root fixed.
+        (self.root/'artifacts').mkdir();(self.root/'artifacts/recovery.json').write_text('{"recovered":true}')
+        (self.root/'source-files.json').write_text('[]')
+        iid=other.reviews(did)['incidents'][0]['incident_id']
+        with patch('incident_bridge.BASE',self.root):
+            other.learn(did,[dict(incident_id=iid,cause_key=None,kind='unknown',disposition='mitigated',
+                root_cause='Unknown synthetic connection interruption.',match_conditions='Only this isolated fixture episode.',
+                remedy='Synthetic runtime recovery has been verified.',prevention='Keep the original failure episode and capture more evidence.',
+                next_action='Identify the actual failed request and connection phase.',runtime_evidence=[{'path':'artifacts/recovery.json'}])])
+            other.acknowledge(did,'resolved',report());other.acknowledge(did,'resolved',report())
         other.observe(failure);self.assertIsNotNone(other.dispatch(runner=self.runner))
         self.assertEqual(self.runner.call_count,2,'A new failure episode may notify after recovery')
 
