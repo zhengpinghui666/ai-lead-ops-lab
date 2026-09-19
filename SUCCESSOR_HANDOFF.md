@@ -10,6 +10,8 @@
 
 遗漏源码备份已补跑pushed 841e596899e29b59977ed0b4125d15db7c24c4bb，358白名单文件，API传输；本文更新后会再次确认最终回执，精确最新以data/github-backup/last-run.json为准。原已received评论通知f2cbe2ed-65c0-42e5-ba1f-8a7abe6d64cb须按unknown/investigating复盘并ack failed（处理未完成），不是resolved，也不是等待已回答的问题；释放旧接手状态对后续通知的阻塞。当前HTTP没有恢复，不逐小时重复同样请求。结束heartbeat需XML。
 
+17:32通知通道额外维护：旧事件已learn并ack failed。新评论事件投递9d0ae6e0-4620-47f7-b0b6-f0ec40186b67曾retry/codex_executable_unavailable；旧Codex程序路径确已不存在，同时多个有效app pipe使旧地址不能唯一解析。只读适配器initialize/tools-list通过，未发测试消息。已用Bridge.configure/configure_app保留原thread修正为本机现存程序和当前pipe，备份设置到私有repair-backups。等待原调度下一次投递回执，不能仅据配置更新称通知恢复；最终回执见本轮artifacts内记录。没有改生产代码或重启主服务。
+
 ## 2026-09-15 21:54 当前：原7446评论已实读，自动搜索仍有验证码；直播1004连接故障恢复验收中
 
 用户已完成原7446重新登录。先移走5类网页存储并未恢复（4658仍空）；随后备份并清理原profile中71条Douyin Cookie、保留4条其他域Cookie及原路径，用户在原窗口重新登录。作业e20c9823b91340d5b18f2ef2f90adb88在21:41:24 completed并捕获原账号HTTP/IM新会话。4659浏览器和4660 HTTP均实际成功：2一级+1回复，3条均旧并过滤。空响应当前已缓解，但未识别具体失效Cookie或平台根因，不能记为永久软件修复。回退：data/private/repair-backups/comment-cookie-renewal-20260915-2140，禁止重复清理/覆盖。
