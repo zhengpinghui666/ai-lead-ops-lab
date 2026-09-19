@@ -167,6 +167,20 @@ class MonitorTests(unittest.TestCase):
             self.assertFalse(monitor.eligible(c,raw,semantic.state()['engine'],SENDER))
         self.assertEqual(self.add([msg()]),[])
 
+    def test_sports_profile_filters_chatter_but_keeps_explicit_service_request(self):
+        import author_roles
+        with app.db() as c:
+            author_roles.remember(c,RECEIVER,nickname='普通球迷',signature='@皇家马德里足球俱乐部')
+        ids=self.add([msg(10,'我id'),msg(11,'come baby'),msg(12,'那你们玩'),msg(13)])
+        self.assertEqual(len(ids),1)
+        self.assertEqual(queue.enqueue('group',ids)['queued'],1)
+        with app.db() as c:
+            rows=c.execute('SELECT raw_text,filter_reason FROM group_messages ORDER BY id').fetchall()
+            self.assertEqual(len(rows),4)
+            self.assertTrue(all(r['filter_reason'] for r in rows[:3]))
+            self.assertEqual(rows[-1]['filter_reason'],'')
+            self.assertTrue(monitor.routing(c,ids[0])['model_allowed'])
+
     def test_verified_matching_group_coverage_is_not_capped_at_five(self):
         groups=[dict(GROUP,conversation_id=str(int(GROUP['conversation_id'])+i),conversation_short_id=str(int(GROUP['conversation_short_id'])+i),name=f'瓦搭子群{i}') for i in range(6)]
         monitor.discover(reader=lambda *a,**kw:dict(groups=groups,has_more=False,evidence=[]))

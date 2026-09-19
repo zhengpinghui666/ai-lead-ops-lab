@@ -15,6 +15,19 @@ from test_semantic import prediction
 
 
 class RoleTests(unittest.TestCase):
+    def test_sports_profile_does_not_supply_gaming_service_hint(self):
+        for value in ('休逝 @皇家马德里足球俱乐部','篮球俱乐部粉丝','羽毛球俱乐部'):
+            self.assertFalse(author_roles.service_hint(value))
+        for value in ('电竞俱乐部','足球俱乐部粉丝，兼做瓦陪玩','陪玩店客服','篮球俱乐部，另有陪练工作室'):
+            self.assertTrue(author_roles.service_hint(value))
+        import sqlite3
+        with sqlite3.connect(':memory:') as c:
+            c.row_factory=sqlite3.Row;c.executescript(author_roles.SCHEMA)
+            author_roles.remember(c,'123456',nickname='普通球迷',signature='@皇家马德里足球俱乐部')
+            self.assertFalse(author_roles.related(c,'123456'))
+            author_roles.remember(c,'123456',nickname='普通球迷',signature='足球俱乐部粉丝，兼做瓦陪玩')
+            self.assertTrue(author_roles.related(c,'123456'))
+
     def test_waiting_for_price_enquiries_is_supply_not_buying(self):
         for text in ('等个问价','等一个问价','等人来问价','等问价','等个询价'):
             self.assertEqual(service_roles.classify(text,'无畏契约陪玩')['category'],'seller')

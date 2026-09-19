@@ -277,10 +277,20 @@ def exchange(url, headers, cancelled, *, client=None):
         if cancelled():raise ReadError('cancelled')
         if overflow:raise ReadError('resource_limited')
         return response.status_code, response.headers.get('content-type', ''), bytes(raw)
-    except Exception:
+    except Exception as exc:
         if cancelled():
             raise ReadError('cancelled') from None
-        raise ReadError('resource_limited' if overflow else 'network_error') from None
+        # Exception messages can contain signed URLs or headers. Keep only a
+        # bounded numeric transport code, never the exception text or response.
+        evidence = {}
+        code = getattr(exc, 'code', None)
+        if isinstance(code, int) and not isinstance(code, bool) and 1 <= code <= 999:
+            evidence['transport_error_code'] = int(code)
+            evidence['transport_error_kind'] = {
+                6: 'dns', 7: 'connect', 28: 'timeout', 35: 'tls_handshake',
+                60: 'tls_peer_verification', 77: 'local_ca_load',
+            }.get(code, 'other')
+        raise ReadError('resource_limited' if overflow else 'network_error', evidence) from None
     finally:
         if owned:client.close()
 

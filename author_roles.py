@@ -48,6 +48,16 @@ def remember(c,uid,*,text='',nickname='',signature=None,source='platform_comment
       (uid,*values,app.now(),source))
 
 
+def gaming_profile_text(value):
+    # A sports club mention alone is not evidence of a gaming service account.
+    # Remove only that phrase, preserving any separate explicit service clues.
+    return re.sub(r'(?:足球|篮球|排球|棒球|网球|乒乓球|羽毛球|橄榄球)俱乐部','',value)
+
+
+def service_hint(value):
+    return bool(re.search(r'俱乐部|陪|打手|接单|客服|工作室|老板|招人',gaming_profile_text(value),re.I))
+
+
 def context(c,kind,rid):
     if kind=='comment':
         person=c.execute('SELECT p.external_id FROM comments x JOIN people p ON p.id=x.person_id WHERE x.id=?',(rid,)).fetchone()
@@ -56,13 +66,13 @@ def context(c,kind,rid):
     if not person or not person[0]:return None
     r=c.execute('SELECT uid,nickname,signature,self_description FROM observed_author_profiles WHERE uid=?',(person[0],)).fetchone()
     if not r:return None
-    if not re.search(r'俱乐部|陪|打手|接单|客服|工作室|老板|招人',r['nickname']+r['signature']+r['self_description'],re.I):return None
+    if not service_hint(' '.join(r[k] for k in ('nickname','signature','self_description'))):return None
     return dict(r)
 
 
 def related(c,uid):
     r=c.execute('SELECT nickname,signature,self_description FROM observed_author_profiles WHERE uid=?',(uid,)).fetchone()
-    return bool(r and re.search(r'俱乐部|陪玩|陪练|男陪|女陪|打手|接单|陪玩店|工作室|招人',' '.join(r)))
+    return bool(r and re.search(r'俱乐部|陪玩|陪练|男陪|女陪|打手|接单|陪玩店|工作室|招人',gaming_profile_text(' '.join(r))))
 
 
 def confirm(c,source,result):

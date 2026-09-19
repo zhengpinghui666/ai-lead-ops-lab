@@ -18,8 +18,8 @@
     },
     {
       "name": "AFTERNOON_REQUIREMENTS_20260914.md",
-      "sha256": "7871ea76e7d4faa54fff21828b380868b9e5197efab33c215bc14e1bff020472",
-      "bytes": 20932
+      "sha256": "1992e32f8b467a9ad6120a8c7d06ff640caaf74712af4cac3c77828305e1387f",
+      "bytes": 23607
     },
     {
       "name": "ASSET_VERTICALITY.md",
@@ -213,8 +213,8 @@
     },
     {
       "name": "SUCCESSOR_HANDOFF.md",
-      "sha256": "82ce1fb7a04d466ca554b66164407ad7a82f1106a2136aaa662347c8398a8d85",
-      "bytes": 241537
+      "sha256": "4e0f32dbeaa64553bb4a1a20a26c8b4328307427297a0069bf756ce2eb0fc330",
+      "bytes": 249521
     },
     {
       "name": "UID_HTTP.md",
@@ -278,8 +278,8 @@
     },
     {
       "name": "author_roles.py",
-      "sha256": "49f41fc0490bc0e09a58fd827c7164fbbab557cf0ebf3bc5fc097121037e2b03",
-      "bytes": 6653
+      "sha256": "072dc32a4c0ecb54fc9c5d048e9a74b55f5636af85c507b9a225428ef91e45c9",
+      "bytes": 7077
     },
     {
       "name": "bark_notify.py",
@@ -383,8 +383,8 @@
     },
     {
       "name": "collector_http.py",
-      "sha256": "3f31b8862f2531eb0a40531369fbf536c814150e42b3cea283bf0ec08c2dcc2b",
-      "bytes": 30535
+      "sha256": "9c6506ebb3a44252aa2c550f0f620de52cb456647d954c38a5f2307d3c6e1228",
+      "bytes": 31137
     },
     {
       "name": "collector_http_session.py",
@@ -1223,8 +1223,8 @@
     },
     {
       "name": "test_collector_http.py",
-      "sha256": "cbb9668fcb144df563417dd26a88c073a63141c8e22212dc983e4d0345ec1964",
-      "bytes": 65314
+      "sha256": "e3d3d5be70dc5219f5cc0ec365971e7f5061ac5ce7725e1fd6579643fc22d0c0",
+      "bytes": 66485
     },
     {
       "name": "test_collector_request_diagnostics.cjs",
@@ -1323,8 +1323,8 @@
     },
     {
       "name": "test_group_monitor.py",
-      "sha256": "de1e985206d3d8509c0077428eb06142b6da16cedf77e06a9ac3a30a6aa458ba",
-      "bytes": 25527
+      "sha256": "b6c88d9ccd830dd88ba7089e30fc981784dec61e1e87540c94236eaff871860b",
+      "bytes": 26350
     },
     {
       "name": "test_group_profiles.py",
@@ -1613,8 +1613,8 @@
     },
     {
       "name": "test_service_roles.py",
-      "sha256": "d548efcfc08f592fedc52317f6d418e929133faf13ce9259c9bd0870c4428cf7",
-      "bytes": 7910
+      "sha256": "7f97806b6ab64321e7a1a4a493808955a70ec92ae27a2759cd7fc1695cce0ad8",
+      "bytes": 8867
     },
     {
       "name": "test_team_access.py",

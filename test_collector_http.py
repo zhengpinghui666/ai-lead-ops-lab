@@ -609,6 +609,25 @@ class HTTPReadTests(unittest.TestCase):
                 self.assertEqual(caught.exception.status,reason)
                 self.assertEqual(len(calls),1)
 
+    def test_transport_diagnostics_keep_code_without_sensitive_exception_text(self):
+        for code, kind in [(77,'local_ca_load'),(60,'tls_peer_verification'),(28,'timeout'),
+                           (7,'connect'),(99,'other'),(True,None),('77',None),(1000,None),(None,None)]:
+            with self.subTest(code=code):
+                error=Exception('SECRET signed URL and cookie');error.code=code
+                class Client:
+                    def get(self,*args,**kw):
+                        self.options=kw
+                        raise error
+                client=Client()
+                with self.assertRaises(http.ReadError) as caught:
+                    http.exchange('https://www.douyin.com/',{},lambda:False,client=client)
+                self.assertEqual(caught.exception.status,'network_error')
+                self.assertEqual(caught.exception.evidence,{} if kind is None else
+                    {'transport_error_code':code,'transport_error_kind':kind})
+                self.assertNotIn('SECRET',str(caught.exception))
+                self.assertTrue(client.options['verify'])
+                self.assertFalse(client.options['allow_redirects'])
+
     def test_reply_contract_binds_video_parent_and_saved_cookie(self):
         calls = []
         def transport(url, headers, cancel):

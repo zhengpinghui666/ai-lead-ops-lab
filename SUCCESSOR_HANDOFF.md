@@ -1,4 +1,45 @@
-## 2026-09-19 17:27 当前：群/直播持续恢复；普通与原采集浏览器可读，HTTP仍阻塞
+## 2026-09-19 当前恢复阻塞
+
+原服务276620已自然退出，原Windows托管任务启动新服务285256；数据库备份quick_check=ok，恢复前业务计数与原账号绑定核对通过，原53群恢复且有66261/66262等实际completed。author_roles/collector_http修改已由新进程加载，原验证码窗口4671超时记录保留。新人工恢复4672仍由服务active_task_id及verification_recovery确认存活，状态needs_verification、无结束时间；计划attention/next_run_at=NULL，尚无实际评论恢复或下一自动批次验收。
+
+原自动私信维护前开启，当前尚未恢复：独立HTTP身份核对连续返回本地“已有HTTP核对或发送正在处理”400，未发出身份探测，未执行新发送；恢复动作待原验证互斥释放后重做。不可把这次忙碌误作账号验证失败，不改既有授权内容或范围。直播429继续暂停。
+
+用户明确评论恢复最高优先级，停止其他开发。相同平台验证条件跨多轮仍未解除；已有独立修补与必要测试完成，当前评论恢复依赖本人通过原窗口验证码。保留现有窗口，不重复创建，不解题或绕过验证。完整目标未完成。后续收到本人完成验证后，继续原批次、验证结算与下一自动调度，再完成维护遗留的原授权开关恢复。
+
+## 群初筛误入修补（待加载与自然运行验收）
+
+5条模型invalid_result样本均来自同一作者，入库时relevance明确为“作者资料含服务身份线索”；该资料仅提足球俱乐部。只读重算消息自身初筛5条均不通过。已让author_roles.related/context忽略足球、篮球等明确体育俱乐部短语，但保留其他独立陪玩/陪练/电竞俱乐部线索。不放宽真实需求判断，不改历史分类，不重跑模型，不发消息。
+
+首轮只改context不足：群routing使用已保存relevance，旧行当然仍准入；已补正实际入库用related路径。ingest-comparison.json证明5条在相同资料下不再仅因足球俱乐部触发新入队。31项角色/API/目标回归通过，final-validation.json记录最终哈希。不能证明模型invalid_result具体字段原因（未保存原始输出），不能声称找回新需求或消除全部失败。
+
+本次修改尚未在常驻服务加载。原人工验证4671仍由服务报告active，计划attention且无下次调度；为保留用户窗口不重启。待该批正常结束后，按SERVICE_LIFECYCLE正常维护加载author_roles.py，并核对新自然消息的过滤和模型结果；未做这一步不得勾选上线完成。上一轮为活动句柄核验与诊断证据进展，本轮为独立群初筛修补进展，完整目标active。
+
+
+## 后续诊断修补（2026-09-19）
+
+服务只读 /api/collector?view=monitor 确认 active_task_id=verification_recovery=4671，原计划 attention、next_run_at=NULL；该批仍 needs_verification、finished_at=NULL，保留现有句柄等本人验证，不重复新建。上一目标轮只有回答用户问题，归类no progress；本轮重新核验活动句柄并修补独立诊断缺口，为progress。
+
+collector_http.exchange 现在仅保存有界整数transport_error_code及固定类别（77 local_ca_load、60 tls_peer_verification等），不保存可能包含签名URL/Cookie的异常文本。保持原network_error状态、TLS校验、无重定向、预算、取消和重试语义。70项 test_collector_http/test_http_head_priority 合成回归通过；不是实际平台成功或验证码通过证据。新HTTP子进程将加载此文件；主服务内已加载模块未重启，未宣称所有进程热更新。当前验证码批次仍在运行，不为加载诊断而中断。原detail403和live429未修复，完整目标保持active。
+
+## 2026-09-19 18:31：纠正HTTP诊断，恢复原批次遇到新搜索验证码
+
+之前独立评论HTTP诊断的 network_error 不能作为生产通道故障证据：诊断命令使用 -X utf8，令 curl_cffi 按UTF-8编码中文CA路径而Windows ACP为936，导致curl77。正式worker无该参数。正确native运行方式已在原7446会话单页 comments 实读 HTTP200/business0，2条主评论、total3、1回复入口、has_more0、406ms；均旧数据，不是新需求，不算正式监控批次或恢复。证据 artifacts/http-path-diagnosis-20260919-1825/comments-native-encoding.json。原4668详情403记录保留，没有author_secret，不隔离作品、不放行403。
+
+用户已确认普通浏览器作品和评论可见，原profile4669也已实读。18:28:51通过既有monitor-start恢复原计划3（无代码变更/无重启），原冻结搜索“瓦开黑群”新批4670于18:29:00明确needs_verification，0评论。已通过collector-verify打开同账号原批人工处理4671，当前实际needs_verification/finished_at=NULL，提示完成后“继续读取”；计划3 attention、next_run_at=NULL。已请求本人完成新搜索验证码，不重复询问旧作品是否可见。尚未验证实际批次完成或下一自动批，不报告恢复。验证完成后使用既有继续读取入口，核验结算接回原计划及后续自动批次。不可替用户解验证码，不换入口掩盖验证。
+
+18点业务复盘仍有效：评论连续采集断档为低产出首要瓶颈；新HTTP成功只是缩小定位，尚无新采集延迟/有效需求提升样本。此前“评论HTTP全面受限、无可推进动作”结论被本次证据修正。直播1048真实429仍暂停，群原范围继续；未新增私信/扩大范围。本轮无生产代码修改、无部署、未改指标/完成勾选。全局目标仍未完成。
+
+## 2026-09-19 18:05 当前：直播新增429暂停；评论HTTP限制仍在，53群正常
+
+首读新鲜health仅旧评论故障；18:02实时事件1aa60293-9227-4e3d-a47a-d55f4c93b4fb/incident cf77ac8a-3ce9-4701-a7bd-baf7f5e455d4已收到并立即核查。原7446 track74在1033—1047共15批completed后，1048于18:02:22 rate_limited；当前runner只有live.douyin.com HTTP429触发该状态。身份200、主页面200、8个webcast200和一次IM轮询有效；429具体请求路径与Retry-After未保存，不能断言限制环节或作用范围。track74 attention/next_run_at=NULL，live_recovery.eligible=false，不重启、不无限重试、不换账号、不把限流当1032导航超时。证据artifacts/live-rate-limit-20260919-1802/evidence.json；复盘external/investigating，以failed表示处理未完成，不能resolved。未来获得可核验的解除条件/明确平台指引后才能做原范围有限验证，真实批次和下一自动调度通过再报恢复。
+
+评论沿用上轮403/连接失败阻塞；普通和原采集浏览器可读的用户对照早已完成，不再重复询问，也不逐小时重复同请求。现53启用群均有实际完成，恢复58分钟955页，无群/账号问题；本轮没有改变群范围。通知正常实际送达，未再修改配置。
+
+18点只读复盘今日/24h真实需求1，昨日同小时0；群1424新文字、64通过规则，模型58完成/5群校验失败/0排队。模型完成P50=3秒/P95=53秒，等待P95=122秒。旧报表live rule_passed=67只是采集关键词通过：当前只读模型准入为1允许、66不通过初筛，唯一模型结果social；不能误判66条丢队列。63高权重作品检查年龄P50约96.15h；需求/时效目标未验收。attempts49/messages38不变，唯一buyer受群禁止商业联系约束；回复/关注/客服/订单/已读未知。详见artifacts/operational-reviews/20260919-1805-analysis.md。
+
+本轮无生产代码修改、无平台请求或发送，只冻结证据、结算通知和更新复盘。当前不是23点，未重复源码备份；最近17:37 pushed 0b6c3210da151c825f14af83e391c7bc7945a348。相同限制无新证据保持静默；当前本轮是新增直播限制需通知。心跳最终使用XML。
+
+## 2026-09-19 17:27 历史恢复：群/直播曾恢复；普通与原采集浏览器可读，HTTP仍阻塞
 
 本次首读新鲜health attention，服务276620和原健康任务运行，无重启。此前9/16—19心跳之间没有执行记录，不假装已逐小时巡检；全局goal实际paused，本轮仅执行新heartbeat授权维护。原7446经account-login-start作业d46afe8cb94f41b39d4b226d7054d7b2于17:07:35完成，新IM解除409阻塞。原51开启群全部真实完成，162页截至17:14:45，多个群后续自动页和next_run_at已核对。原live track74/library配置，1033 completed18帧0文字，1034自动running；9517原主profile通过既有IM bootstrap完成独立身份/IM只读核验，两个renewal均waiting。原inbox关闭、角色保持，未发测试/补发。
 
